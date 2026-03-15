@@ -1,0 +1,57 @@
+.card {
+  padding: 20px;
+  border: 1px solid #ddd;
+  border-radius: 8px;
+  background: white;
+
+  cursor: pointer;
+  transition: transform 0.15s ease, box-shadow 0.15s ease;
+}
+.card:hover {
+  transform: translateY(-3px);
+  box-shadow: 0 6px 14px rgba(0, 0, 0, 0.08);
+}
+
+.dashboard-grid {
+  display: grid;
+  gap: 16px;
+
+  /* mobile first */
+  grid-template-columns: 1fr;
+}
+
+/* tablet */
+@media (min-width: 768px) {
+  .dashboard-grid {
+    grid-template-columns: 1fr 1fr;
+  }
+}
+
+/* desktop */
+@media (min-width: 1024px) {
+  .dashboard-grid {
+    grid-template-columns: 1fr 1fr 1fr 1fr;
+  }
+}
+
+.teams-grid {
+  display: grid;
+  gap: 16px;
+
+  /* mobile first */
+  grid-template-columns: 1fr;
+}
+
+/* tablet */
+@media (min-width: 768px) {
+  .teams-grid {
+    grid-template-columns: 1fr 1fr;
+  }
+}
+
+/* desktop */
+@media (min-width: 1024px) {
+  .teams-grid {
+    grid-template-columns: 1fr 1fr 1fr;
+  }
+}

@@ -1,4 +1,9 @@
 from flask import jsonify, url_for
+from flask_jwt_extended import get_jwt_identity
+from src.api.models import User
+import secrets
+import string
+
 
 class APIException(Exception):
     status_code = 400
@@ -39,3 +44,31 @@ def generate_sitemap(app):
         <p>Start working on your project by following the <a href="https://start.4geeksacademy.com/starters/full-stack" target="_blank">Quick Start</a></p>
         <p>Remember to specify a real endpoint path like: </p>
         <ul style="text-align: left;">"""+links_html+"</ul></div>"
+
+def get_current_user():
+    """
+    Obtiene el usuario autenticado usando el JWT.
+    Lanza una APIException si el usuario no existe.
+    """
+
+    user_id = get_jwt_identity()
+    user = User.query.get(user_id)
+
+    if not user:
+        raise APIException(
+            "Usuario no encontrado",
+            status_code=404
+        )
+
+    return user
+
+def error_response(message, code, status):
+    return jsonify({
+        "error": True,
+        "message": message,
+        "code": code
+    }), status
+
+def generate_temp_password(length=10):
+    alphabet = string.ascii_letters + string.digits
+    return ''.join(secrets.choice(alphabet) for _ in range(length))
