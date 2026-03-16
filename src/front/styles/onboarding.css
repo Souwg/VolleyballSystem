@@ -1,38 +1,35 @@
-/* onboarding layout */
-
-.onboarding-container {
-  min-height: 100vh;
-  display: flex;
-  justify-content: center;
-  align-items: center;
-  background: #f5f7fb;
-  padding: 20px;
-}
-
-.onboarding-card {
-  width: 100%;
-  max-width: 500px;
-  background: white;
-  padding: 30px;
-  border-radius: 12px;
-  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.05);
-}
-
-/* step indicator */
+/* Step indicator */
 
 .step-indicator {
   display: flex;
   gap: 8px;
-  margin-bottom: 20px;
+  margin-bottom: 24px;
 }
 
 .step {
   flex: 1;
   height: 6px;
   background: #e5e7eb;
-  border-radius: 4px;
+  border-radius: 999px;
+  transition: all 0.2s ease;
 }
 
 .step.active {
   background: #2563eb;
+}
+
+/* onboarding forms */
+
+.form {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  margin-top: 20px;
+}
+
+.form select {
+  width: 100%;
+  padding: 12px;
+  border-radius: 8px;
+  border: 1px solid #ddd;
 }

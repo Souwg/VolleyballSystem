@@ -1,15 +1,10 @@
 import React from "react";
-export const PageHeader = ({ title }) => {
+
+export const PageHeader = ({ title, subtitle }) => {
   return (
-    <div style={{ marginBottom: "20px" }}>
-      <h1
-        style={{
-          fontSize: "24px",
-          fontWeight: "600",
-        }}
-      >
-        {title}
-      </h1>
+    <div className="page-header">
+      <h1>{title}</h1>
+      {subtitle && <p>{subtitle}</p>}
     </div>
   );
 };
