@@ -1,8 +1,8 @@
 import React, { useContext } from "react";
-import { Navigate } from "react-router-dom";
+import { Navigate, Outlet } from "react-router-dom";
 import { Context } from "../store/appContext";
 
-export const ProtectedRoute = ({ children, allowFirstLogin = false }) => {
+export const ProtectedRoute = ({ allowFirstLogin = false }) => {
   const { store } = useContext(Context);
 
   if (!store.token) {
@@ -31,5 +31,5 @@ export const ProtectedRoute = ({ children, allowFirstLogin = false }) => {
     return <Navigate to="/onboarding" replace />;
   }
 
-  return children;
+  return <Outlet />;
 };

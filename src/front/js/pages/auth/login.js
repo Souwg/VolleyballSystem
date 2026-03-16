@@ -2,6 +2,8 @@ import React, { useState, useContext } from "react";
 import { Context } from "../../store/appContext";
 import { useNavigate } from "react-router-dom";
 import { AuthLayout } from "../../component/authLayout";
+import { Button } from "../../component/ui/button";
+import { Input } from "../../component/ui/input";
 
 export const Login = () => {
   const { actions } = useContext(Context);
@@ -38,21 +40,21 @@ export const Login = () => {
   return (
     <AuthLayout title="Welcome back" subtitle="Login to your club dashboard">
       <form onSubmit={handleLogin} className="auth-form">
-        <input
+        <Input
           type="email"
           placeholder="Email"
           value={email}
           onChange={(e) => setEmail(e.target.value)}
         />
 
-        <input
+        <Input
           type="password"
           placeholder="Password"
           value={password}
           onChange={(e) => setPassword(e.target.value)}
         />
 
-        <button type="submit">Login</button>
+        <Button type="submit">Login</Button>
       </form>
     </AuthLayout>
   );

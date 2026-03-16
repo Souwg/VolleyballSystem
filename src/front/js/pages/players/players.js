@@ -75,6 +75,7 @@ export const Players = () => {
 
         <div>
           <select
+            className="select"
             value={teamFilter}
             onChange={(e) => setTeamFilter(e.target.value)}
           >

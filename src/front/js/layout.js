@@ -1,7 +1,6 @@
 import React, { useEffect, useState, useContext } from "react";
 import { BrowserRouter, Route, Routes } from "react-router-dom";
 import { Context } from "./store/appContext";
-import "../styles/layout.css";
 
 import ScrollToTop from "./component/scrollToTop";
 import { RoleRedirect } from "./component/roleRedirect";
@@ -61,16 +60,6 @@ const Layout = () => {
       <ScrollToTop>
         <Routes>
           <Route
-            path="/admin/clients"
-            element={
-              <ProtectedRoute>
-                <AdminShell>
-                  <Clients />
-                </AdminShell>
-              </ProtectedRoute>
-            }
-          />
-          <Route
             path="/login"
             element={
               <PublicRoute>
@@ -78,55 +67,24 @@ const Layout = () => {
               </PublicRoute>
             }
           />
+          <Route element={<ProtectedRoute />}>
+            <Route element={<AdminShell />}>
+              <Route path="/admin/clients" element={<Clients />} />
+            </Route>
+          </Route>
 
-          <Route
-            path="/dashboard"
-            element={
-              <ProtectedRoute>
-                <AppShell>
-                  <Dashboard />
-                </AppShell>
-              </ProtectedRoute>
-            }
-          />
-          <Route
-            path="/teams"
-            element={
-              <ProtectedRoute>
-                <AppShell>
-                  <Teams />
-                </AppShell>
-              </ProtectedRoute>
-            }
-          />
-          <Route
-            path="/teams/:team_id"
-            element={
-              <ProtectedRoute>
-                <AppShell>
-                  <TeamDetail />
-                </AppShell>
-              </ProtectedRoute>
-            }
-          />
-          <Route
-            path="/players"
-            element={
-              <ProtectedRoute>
-                <AppShell>
-                  <Players />
-                </AppShell>
-              </ProtectedRoute>
-            }
-          />
-          <Route
-            path="/set-password"
-            element={
-              <ProtectedRoute allowFirstLogin={true}>
-                <SetPassword />
-              </ProtectedRoute>
-            }
-          />
+          <Route element={<ProtectedRoute />}>
+            <Route element={<AppShell />}>
+              <Route path="/dashboard" element={<Dashboard />} />
+              <Route path="/teams" element={<Teams />} />
+              <Route path="/teams/:team_id" element={<TeamDetail />} />
+              <Route path="/players" element={<Players />} />
+            </Route>
+          </Route>
+
+          <Route element={<ProtectedRoute allowFirstLogin={true} />}>
+            <Route path="/set-password" element={<SetPassword />} />
+          </Route>
           <Route
             path="/onboarding"
             element={

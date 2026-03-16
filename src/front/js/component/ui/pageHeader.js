@@ -1,5 +1,4 @@
 import React from "react";
-
 export const PageHeader = ({ title, subtitle }) => {
   return (
     <div className="page-header">

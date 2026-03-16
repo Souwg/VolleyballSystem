@@ -146,13 +146,18 @@ export const Onboarding = () => {
                 onChange={(e) => setNumber(e.target.value)}
               />
 
-              <select value={sex} onChange={(e) => setSex(e.target.value)}>
+              <select
+                className="select"
+                value={sex}
+                onChange={(e) => setSex(e.target.value)}
+              >
                 <option value="">Sex</option>
                 <option value="male">Male</option>
                 <option value="female">Female</option>
               </select>
 
               <select
+                className="select"
                 value={selectedTeam}
                 onChange={(e) => setSelectedTeam(e.target.value)}
               >

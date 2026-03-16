@@ -106,7 +106,12 @@ export const TeamDetail = () => {
             required
           />
 
-          <select value={sex} onChange={(e) => setSex(e.target.value)} required>
+          <select
+            className="select"
+            value={sex}
+            onChange={(e) => setSex(e.target.value)}
+            required
+          >
             <option value="">Sex</option>
             <option value="male">Male</option>
             <option value="female">Female</option>

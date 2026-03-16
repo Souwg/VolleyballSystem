@@ -3,6 +3,9 @@ import { Context } from "../../store/appContext";
 import { useNavigate } from "react-router-dom";
 import { AuthLayout } from "../../component/authLayout";
 
+import { Button } from "../../component/ui/button";
+import { Input } from "../../component/ui/input";
+
 export const SetPassword = () => {
   const { actions } = useContext(Context);
   const navigate = useNavigate();
@@ -33,14 +36,16 @@ export const SetPassword = () => {
       {error && <p className="auth-error">{error}</p>}
 
       <form onSubmit={handleSubmit} className="auth-form">
-        <input
+        <Input
           type="password"
           placeholder="New password"
           value={password}
           onChange={(e) => setPassword(e.target.value)}
         />
 
-        <button type="submit">Save password</button>
+        <Button variant="secondary" type="submit">
+          Save password
+        </Button>
       </form>
     </AuthLayout>
   );

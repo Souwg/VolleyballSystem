@@ -1,55 +1,144 @@
-.card {
-  padding: 20px;
-  border: 1px solid #ddd;
-  border-radius: 8px;
-  background: white;
-
-  cursor: pointer;
-  transition: transform 0.15s ease, box-shadow 0.15s ease;
-}
-.card:hover {
-  transform: translateY(-3px);
-  box-shadow: 0 6px 14px rgba(0, 0, 0, 0.08);
-}
-
 .dashboard-grid {
   display: grid;
   gap: 16px;
-
-  /* mobile first */
   grid-template-columns: 1fr;
 }
 
-/* tablet */
+.teams-grid {
+  display: grid;
+  gap: 16px;
+  grid-template-columns: 1fr;
+}
+
+/* ===== APP SHELL ===== */
+
+.app-shell {
+  display: flex;
+  min-height: 100vh;
+  background: var(--color-background);
+}
+
+/* SIDEBAR */
+
+.sidebar {
+  width: 260px;
+  background: var(--color-surface);
+  border-right: 1px solid var(--color-border);
+  padding: 20px;
+}
+
+/* mobile sidebar hidden */
+@media (max-width: 768px) {
+  .sidebar {
+    position: fixed;
+    top: 0;
+    left: -260px;
+    height: 100vh;
+    z-index: 1050;
+    transition: left 0.3s ease;
+  }
+
+  .sidebar.open {
+    left: 0;
+  }
+}
+
+/* overlay mobile */
+
+.sidebar-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.35);
+  z-index: 1040;
+}
+
+/* SIDEBAR CONTENT */
+
+.sidebar-title {
+  font-weight: 600;
+  margin-bottom: 20px;
+}
+
+.sidebar-nav {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.sidebar-link {
+  padding: 10px 12px;
+  border-radius: 6px;
+  text-decoration: none;
+  color: var(--color-text);
+  font-size: 14px;
+  transition: background 0.2s ease;
+}
+
+.sidebar-link:hover {
+  background: var(--color-hover);
+}
+
+.sidebar-link.active {
+  background: var(--color-primary);
+  color: white;
+}
+
+/* MAIN */
+
+.main {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+}
+
+/* TOPBAR */
+
+.topbar {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  background: var(--color-surface);
+  border-bottom: 1px solid var(--color-border);
+  padding: 14px 20px;
+}
+
+.menu-button {
+  display: none;
+}
+
+/* mobile menu button */
+
+@media (max-width: 768px) {
+  .menu-button {
+    display: block;
+  }
+}
+
+/* CONTENT */
+
+.content {
+  padding: 20px;
+}
+
+/******************* responsive *************************/
 @media (min-width: 768px) {
   .dashboard-grid {
     grid-template-columns: 1fr 1fr;
   }
 }
 
-/* desktop */
 @media (min-width: 1024px) {
   .dashboard-grid {
     grid-template-columns: 1fr 1fr 1fr 1fr;
   }
 }
 
-.teams-grid {
-  display: grid;
-  gap: 16px;
-
-  /* mobile first */
-  grid-template-columns: 1fr;
-}
-
-/* tablet */
 @media (min-width: 768px) {
   .teams-grid {
     grid-template-columns: 1fr 1fr;
   }
 }
 
-/* desktop */
 @media (min-width: 1024px) {
   .teams-grid {
     grid-template-columns: 1fr 1fr 1fr;

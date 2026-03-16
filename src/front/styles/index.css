@@ -1,13 +1,42 @@
+/* ===== CSS RESET ===== */
+
 * {
   box-sizing: border-box;
   margin: 0;
   padding: 0;
 }
 
+/* ===== DESIGN TOKENS ===== */
+
+:root {
+  /* PRIMARY COLOR */
+  --color-primary: #2563eb;
+
+  /* BACKGROUNDS */
+  --color-background: #f1f5f9;
+  --color-surface: #ffffff;
+
+  /* TEXT */
+  --color-text: #111827;
+  --color-text-muted: #64748b;
+
+  /* BORDERS */
+  --color-border: #e5e7eb;
+
+  /* HOVER */
+  --color-hover: #f1f5f9;
+
+  /* STATES */
+  --color-success: #22c55e;
+  --color-danger: #ef4444;
+}
+
+/* ===== GLOBAL ===== */
+
 body {
   font-family: system-ui, -apple-system, sans-serif;
-  background: #f1f5f9;
-  color: #111827;
+  background: var(--color-background);
+  color: var(--color-text);
 }
 
 button {
