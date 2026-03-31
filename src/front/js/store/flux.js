@@ -17,6 +17,7 @@ const getState = ({ getStore, getActions, setStore }) => {
       adminClients: [],
       teams: [],
       players: [],
+      trainings: [],
     },
 
     actions: {
@@ -50,13 +51,7 @@ const getState = ({ getStore, getActions, setStore }) => {
 
           const result = await parseResponse(resp);
 
-          if (!result.ok) {
-            return {
-              success: false,
-              message: result.message,
-              code: result.code,
-            };
-          }
+          if (!result.ok) return result;
 
           const data = result.data;
 
@@ -71,9 +66,11 @@ const getState = ({ getStore, getActions, setStore }) => {
           localStorage.setItem("user", JSON.stringify(data.user));
 
           return {
-            success: true,
-            first_login: data.first_login,
-            user: data.user,
+            ok: true,
+            data: {
+              first_login: data.first_login,
+              user: data.user,
+            },
           };
         } catch (error) {
           console.error("Error login:", error);
@@ -88,13 +85,22 @@ const getState = ({ getStore, getActions, setStore }) => {
 
       logoutUser: async () => {
         try {
-          await authFetch("/api/logout", {
+          const resp = await authFetch("/api/logout", {
             method: "POST",
           });
+
+          const result = await parseResponse(resp);
+
+          if (!result.ok) {
+            console.warn("Logout failed:", result.message);
+            // No bloqueamos el logout local aunque falle el backend
+          }
         } catch (error) {
           console.error("Logout error:", error);
+          // Igual seguimos con logout local
         }
 
+        // 🔐 SIEMPRE limpiar local
         localStorage.removeItem("token");
         localStorage.removeItem("refresh");
         localStorage.removeItem("user");
@@ -105,19 +111,6 @@ const getState = ({ getStore, getActions, setStore }) => {
           onboardingStatus: null,
         });
       },
-
-      logoutLocal: () => {
-        localStorage.removeItem("token");
-        localStorage.removeItem("refresh");
-        localStorage.removeItem("user");
-
-        setStore({
-          token: null,
-          user: null,
-          onboardingStatus: null,
-        });
-      },
-
       setPassword: async (newPassword) => {
         try {
           const resp = await authFetch("/api/auth/set-password", {
@@ -132,13 +125,7 @@ const getState = ({ getStore, getActions, setStore }) => {
 
           const result = await parseResponse(resp);
 
-          if (!result.ok) {
-            return {
-              success: false,
-              message: result.message,
-              code: result.code,
-            };
-          }
+          if (!result.ok) return result;
 
           const store = getStore();
           const updatedUser = { ...store.user, first_login: false };
@@ -147,7 +134,7 @@ const getState = ({ getStore, getActions, setStore }) => {
           localStorage.setItem("user", JSON.stringify(updatedUser));
 
           return {
-            success: true,
+            ok: true,
           };
         } catch (error) {
           console.error("Error setting password:", error);
@@ -316,10 +303,14 @@ const getState = ({ getStore, getActions, setStore }) => {
         }
       },
 
-      deletePlayer: async (playerId) => {
+      updatePlayerStatus: async (playerId, status) => {
         try {
-          const resp = await authFetch(`/api/players/${playerId}`, {
-            method: "DELETE",
+          const resp = await authFetch(`/api/players/${playerId}/status`, {
+            method: "PUT",
+            headers: {
+              "Content-Type": "application/json",
+            },
+            body: JSON.stringify({ status }),
           });
 
           const result = await parseResponse(resp);
@@ -327,15 +318,13 @@ const getState = ({ getStore, getActions, setStore }) => {
           if (!result.ok) return result;
 
           const actions = getActions();
-
           await actions.getPlayers();
 
           return result;
         } catch (error) {
-          console.error("Error deleting player:", error);
+          console.error("Error updating player status:", error);
         }
       },
-
       getDashboard: async () => {
         try {
           const resp = await authFetch("/api/club/dashboard");
@@ -451,6 +440,117 @@ const getState = ({ getStore, getActions, setStore }) => {
           console.error("Error creating player:", error);
         }
       },
+
+      getTeamTrainings: async (teamId) => {
+        try {
+          const resp = await authFetch(`/api/teams/${teamId}/trainings`);
+
+          const result = await parseResponse(resp);
+
+          if (!result.ok) return result;
+
+          setStore({
+            trainings: result.data.trainings,
+          });
+
+          return result.data;
+        } catch (error) {
+          console.error("Error loading trainings:", error);
+        }
+      },
+      createTraining: async (trainingData) => {
+        try {
+          const resp = await authFetch("/api/trainings", {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+            },
+            body: JSON.stringify(trainingData),
+          });
+
+          const result = await parseResponse(resp);
+
+          if (!result.ok) return result;
+
+          return result;
+        } catch (error) {
+          console.error("Error creating training:", error);
+        }
+      },
+
+      saveAttendance: async (trainingId, attendanceList) => {
+        try {
+          const resp = await authFetch(
+            `/api/trainings/${trainingId}/attendance`,
+            {
+              method: "POST",
+              headers: {
+                "Content-Type": "application/json",
+              },
+              body: JSON.stringify({
+                attendance: attendanceList,
+              }),
+            },
+          );
+
+          const result = await parseResponse(resp);
+
+          return result;
+        } catch (error) {
+          console.error("Error saving attendance:", error);
+        }
+      },
+
+      getTrainingAttendance: async (trainingId) => {
+        try {
+          const resp = await authFetch(
+            `/api/trainings/${trainingId}/attendance`,
+          );
+
+          const result = await parseResponse(resp);
+
+          if (!result.ok) return result;
+
+          return result.data.attendance;
+        } catch (error) {
+          console.error("Error loading attendance:", error);
+        }
+      },
+      getPlayerAttendance: async (playerId) => {
+        try {
+          const resp = await authFetch(`/api/players/${playerId}/attendance`);
+
+          const result = await parseResponse(resp);
+
+          if (!result.ok) return result;
+
+          return result.data;
+        } catch (err) {
+          console.error(err);
+          return {
+            ok: false,
+            message: "Error de conexión",
+            code: "NETWORK_ERROR",
+          };
+        }
+      },
+      getAllTrainings: async () => {
+        try {
+          const resp = await authFetch("/api/trainings");
+
+          const result = await parseResponse(resp);
+
+          if (!result.ok) return result;
+
+          setStore({
+            trainings: result.data.trainings,
+          });
+
+          return result.data;
+        } catch (error) {
+          console.error("Error loading all trainings:", error);
+        }
+      },
       restoreSession: async () => {
         const refresh = localStorage.getItem("refresh");
 
@@ -495,8 +595,6 @@ const getState = ({ getStore, getActions, setStore }) => {
       },
     },
   };
-
-  setAuthActions(state.actions);
 
   return state;
 };

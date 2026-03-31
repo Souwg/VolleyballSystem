@@ -30,8 +30,11 @@ async function refreshToken() {
   }
 }
 
-export const setAuthActions = (actions) => {
+let showToastGlobal = null;
+
+export const setAuthActions = (actions, toastFn) => {
   actionsRef = actions;
+  showToastGlobal = toastFn;
 };
 
 export const authFetch = async (endpoint, options = {}) => {
@@ -71,11 +74,46 @@ export const authFetch = async (endpoint, options = {}) => {
   return response;
 };
 
+import { errorMessages } from "./errorMessages";
+
+const FORM_ERRORS = [
+  // CLIENTS
+  "FULL_NAME_REQUIRED",
+  "EMAIL_REQUIRED",
+  "CLUB_NAME_REQUIRED",
+  "CLIENT_ALREADY_EXISTS",
+
+  // LOGIN
+  "PASSWORD_REQUIRED",
+  "INVALID_CREDENTIALS",
+
+  //SET PASSWORD
+  "PASSWORD_TOO_SHORT",
+
+  //ONBOARDING
+  "LOCATION_REQUIRED",
+  "TEAM_NAME_REQUIRED",
+  "TEAM_ALREADY_EXISTS",
+  "FIRST_NAME_REQUIRED",
+  "LAST_NAME_REQUIRED",
+  "PLAYER_NUMBER_REQUIRED",
+  "INVALID_PLAYER_NUMBER",
+  "PLAYER_NUMBER_DUPLICATED",
+  "INVALID_SEX",
+  "TEAM_ID_REQUIRED",
+];
+
 export const parseResponse = async (resp) => {
   if (!resp) {
+    const message = errorMessages.SESSION_EXPIRED;
+
+    if (showToastGlobal) {
+      showToastGlobal(message, "error");
+    }
+
     return {
       ok: false,
-      message: "Sesión expirada",
+      message,
       code: "SESSION_EXPIRED",
       status: 401,
     };
@@ -88,13 +126,27 @@ export const parseResponse = async (resp) => {
   } catch (e) {}
 
   if (!resp.ok) {
+    const code = data?.code || "UNKNOWN_ERROR";
+    const backendMessage = data?.message;
+
+    const finalMessage =
+      errorMessages[code] || backendMessage || "Error inesperado";
+
+    if (showToastGlobal && !FORM_ERRORS.includes(code)) {
+      showToastGlobal(finalMessage, "error");
+    }
+
     return {
       ok: false,
-      message: data?.message || "Error inesperado",
-      code: data?.code || "UNKNOWN_ERROR",
+      message: finalMessage,
+      code,
       status: resp.status,
       raw: data,
     };
+  }
+
+  if (data?.message && showToastGlobal) {
+    showToastGlobal(data.message, "success");
   }
 
   return {

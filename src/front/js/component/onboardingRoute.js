@@ -13,9 +13,5 @@ export const OnboardingRoute = ({ children }) => {
     return <Navigate to="/set-password" replace />;
   }
 
-  if (store.onboardingStatus === "completed") {
-    return <Navigate to="/dashboard" replace />;
-  }
-
   return children;
 };

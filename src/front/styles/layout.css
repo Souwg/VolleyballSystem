@@ -1,15 +1,3 @@
-.dashboard-grid {
-  display: grid;
-  gap: 16px;
-  grid-template-columns: 1fr;
-}
-
-.teams-grid {
-  display: grid;
-  gap: 16px;
-  grid-template-columns: 1fr;
-}
-
 /* ===== APP SHELL ===== */
 
 .app-shell {
@@ -118,29 +106,4 @@
 
 .content {
   padding: 20px;
-}
-
-/******************* responsive *************************/
-@media (min-width: 768px) {
-  .dashboard-grid {
-    grid-template-columns: 1fr 1fr;
-  }
-}
-
-@media (min-width: 1024px) {
-  .dashboard-grid {
-    grid-template-columns: 1fr 1fr 1fr 1fr;
-  }
-}
-
-@media (min-width: 768px) {
-  .teams-grid {
-    grid-template-columns: 1fr 1fr;
-  }
-}
-
-@media (min-width: 1024px) {
-  .teams-grid {
-    grid-template-columns: 1fr 1fr 1fr;
-  }
 }

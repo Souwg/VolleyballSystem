@@ -4,14 +4,21 @@ import { Input } from "../../component/ui/input";
 import { Button } from "../../component/ui/button";
 import { PageHeader } from "../../component/ui/pageHeader";
 import { Container } from "../../component/ui/container";
+import { useToast } from "../../../../context/toastContext";
+import { validateClient } from "../../utils/validators";
+import { errorMessages } from "../../utils/errorMessages";
+
+import "../../../styles/clients.css";
 
 export const Clients = () => {
   const { store, actions } = useContext(Context);
-
+  const { showToast } = useToast();
   const [fullName, setFullName] = useState("");
   const [email, setEmail] = useState("");
   const [clubName, setClubName] = useState("");
-  const [flashMessage, setFlashMessage] = useState(null);
+  const [createdCredentials, setCreatedCredentials] = useState(null);
+  const [errors, setErrors] = useState({});
+  const [loading, setLoading] = useState(false);
 
   useEffect(() => {
     actions.getAdminClients();
@@ -20,14 +27,31 @@ export const Clients = () => {
   const createClient = async (e) => {
     e.preventDefault();
 
+    if (loading) return;
+
+    const newErrors = validateClient({
+      full_name: fullName,
+      email,
+      club_name: clubName,
+    });
+
+    if (Object.keys(newErrors).length > 0) {
+      setErrors(newErrors);
+      return;
+    }
+
+    setErrors({});
+    setLoading(true);
+
     const result = await actions.createClient({
       full_name: fullName,
-      email: email,
+      email,
       club_name: clubName,
     });
 
     if (!result?.ok) {
-      alert(result.message);
+      setErrors({ [result.code]: true });
+      setLoading(false);
       return;
     }
 
@@ -37,28 +61,74 @@ export const Clients = () => {
     setEmail("");
     setClubName("");
 
-    setFlashMessage({
+    setCreatedCredentials({
       email: credentials.email,
       password: credentials.temporary_password,
     });
 
     setTimeout(() => {
-      setFlashMessage(null);
-    }, 9000);
+      setCreatedCredentials(null);
+    }, 10000);
+
+    setLoading(false);
+  };
+
+  const copyToClipboard = async (text) => {
+    try {
+      await navigator.clipboard.writeText(text);
+      showToast("Copiado al portapapeles", "success");
+    } catch (err) {
+      showToast("No se pudo copiar", "error");
+    }
   };
 
   return (
     <Container>
-      {flashMessage && (
-        <div>
-          <strong>Client created successfully</strong>
+      {createdCredentials && (
+        <div className="card success-card">
+          <h3>✅ Cliente creado correctamente</h3>
 
-          <div>
-            <div>Email: {flashMessage.email}</div>
-            <div>
-              Temporary password:
-              <code>{flashMessage.password}</code>
+          <p className="text-muted">
+            Envía estas credenciales al cliente para que acceda al sistema
+          </p>
+
+          <div className="credentials-box">
+            <div className="credential-item">
+              <span>Email</span>
+              <div className="credential-value">
+                {createdCredentials.email}
+                <button
+                  onClick={() => copyToClipboard(createdCredentials.email)}
+                >
+                  Copiar
+                </button>
+              </div>
             </div>
+
+            <div className="credential-item">
+              <span>Password temporal</span>
+              <div className="credential-value">
+                <code>{createdCredentials.password}</code>
+                <button
+                  onClick={() => copyToClipboard(createdCredentials.password)}
+                >
+                  Copiar
+                </button>
+              </div>
+            </div>
+          </div>
+
+          {/* 🔥 AQUÍ VA */}
+          <div style={{ marginTop: "12px" }}>
+            <Button
+              onClick={() =>
+                copyToClipboard(
+                  `Email: ${createdCredentials.email}\nPassword: ${createdCredentials.password}`,
+                )
+              }
+            >
+              Copiar todo
+            </Button>
           </div>
         </div>
       )}
@@ -71,28 +141,80 @@ export const Clients = () => {
             <Input
               placeholder="Full name"
               value={fullName}
-              onChange={(e) => setFullName(e.target.value)}
+              className={errors.FULL_NAME_REQUIRED ? "input-error" : ""}
+              onChange={(e) => {
+                setFullName(e.target.value);
+                setErrors((prev) => ({
+                  ...prev,
+                  FULL_NAME_REQUIRED: false,
+                }));
+              }}
             />
+
+            {errors.FULL_NAME_REQUIRED && (
+              <p className="form-error">{errorMessages.FULL_NAME_REQUIRED}</p>
+            )}
           </div>
 
           <div>
             <Input
               placeholder="Email"
               value={email}
-              onChange={(e) => setEmail(e.target.value)}
+              className={
+                errors.CLIENT_ALREADY_EXISTS ||
+                errors.EMAIL_REQUIRED ||
+                errors.INVALID_EMAIL
+                  ? "input-error"
+                  : ""
+              }
+              onChange={(e) => {
+                setEmail(e.target.value);
+                setErrors((prev) => ({
+                  ...prev,
+                  CLIENT_ALREADY_EXISTS: false,
+                  EMAIL_REQUIRED: false,
+                  INVALID_EMAIL: false,
+                }));
+              }}
             />
+
+            {errors.EMAIL_REQUIRED && (
+              <p className="form-error">{errorMessages.EMAIL_REQUIRED}</p>
+            )}
+
+            {errors.CLIENT_ALREADY_EXISTS && (
+              <p className="form-error">
+                {errorMessages.CLIENT_ALREADY_EXISTS}
+              </p>
+            )}
+            {errors.INVALID_EMAIL && (
+              <p className="form-error">{errorMessages.INVALID_EMAIL}</p>
+            )}
           </div>
 
           <div>
             <Input
               placeholder="Club name"
               value={clubName}
-              onChange={(e) => setClubName(e.target.value)}
+              className={errors.CLUB_NAME_REQUIRED ? "input-error" : ""}
+              onChange={(e) => {
+                setClubName(e.target.value);
+                setErrors((prev) => ({
+                  ...prev,
+                  CLUB_NAME_REQUIRED: false,
+                }));
+              }}
             />
+
+            {errors.CLUB_NAME_REQUIRED && (
+              <p className="form-error">{errorMessages.CLUB_NAME_REQUIRED}</p>
+            )}
           </div>
         </div>
 
-        <Button>Create Client</Button>
+        <Button disabled={loading}>
+          {loading ? "Creating..." : "Create Client"}
+        </Button>
       </form>
 
       <table>

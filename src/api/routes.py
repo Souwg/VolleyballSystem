@@ -2,7 +2,7 @@
 This module takes care of starting the API Server, Loading the DB and Adding the endpoints
 """
 from flask import Flask, request, jsonify, url_for, Blueprint
-from src.api.models import db, User, Club, Player, Team, TokenBlockedList, RefreshToken
+from src.api.models import db, User, Club, Player, Team, Attendance, TrainingSession, TokenBlockedList, RefreshToken
 from flask_cors import CORS
 from src.api.extensions import bcrypt
 from src.api.utils import (
@@ -565,6 +565,10 @@ def club_dashboard():
         Player.status == "inactive"
     ).count()
 
+    total_trainings = TrainingSession.query.join(Team).filter(
+        Team.club_id == club.id
+    ).count()
+
     return jsonify({
         "club": club.serialize(),
         "stats": {
@@ -572,7 +576,8 @@ def club_dashboard():
             "total_players": total_players,
             "active_players": active_players,
             "injured_players": injured_players,
-            "inactive_players": inactive_players
+            "inactive_players": inactive_players,
+            "total_trainings": total_trainings
         }
     }), 200
 
@@ -780,7 +785,14 @@ def create_player():
 
     allowed_sex = ["male", "female"]
 
-    if sex and sex not in allowed_sex:
+    if not sex:
+        return error_response(
+            "El sexo es obligatorio",
+            "SEX_REQUIRED",
+            400
+        )
+
+    if sex not in allowed_sex:
         return error_response(
             "Sexo inválido",
             "INVALID_SEX",
@@ -1229,6 +1241,312 @@ def delete_player(player_id):
 
     return jsonify({
         "message": "Jugador eliminado correctamente"
+    }), 200
+
+########################################### ATTENDANCE #############################################
+@api.route("/trainings/<string:training_id>/attendance", methods=["POST"])
+@jwt_required()
+def save_attendance(training_id):
+
+    user = get_current_user()
+
+    if user.role not in ["club_owner", "coach"]:
+        return error_response(
+            "No tienes permisos para registrar asistencia",
+            "FORBIDDEN",
+            403
+        )
+
+    training = TrainingSession.query.get(training_id)
+
+    if not training:
+        return error_response(
+            "Entrenamiento no encontrado",
+            "TRAINING_NOT_FOUND",
+            404
+        )
+
+    team = Team.query.get(training.team_id)
+
+    if team.club_id != user.club_id:
+        return error_response(
+            "No tienes acceso a este entrenamiento",
+            "FORBIDDEN",
+            403
+        )
+
+    body = request.get_json() or {}
+    attendance_list = body.get("attendance")
+
+    if not attendance_list:
+        return error_response(
+            "Lista de asistencia requerida",
+            "ATTENDANCE_REQUIRED",
+            400
+        )
+
+    # borrar asistencia anterior
+    Attendance.query.filter_by(session_id=training.id).delete()
+
+    allowed_status = ["present", "late", "absent"]
+
+    for item in attendance_list:
+
+        player_id = item.get("player_id")
+        status = item.get("status", "present")
+
+        if status not in allowed_status:
+            return error_response(
+                "Estado de asistencia inválido",
+                "INVALID_ATTENDANCE_STATUS",
+                400
+            )
+
+        attendance = Attendance(
+            session_id=training.id,
+            player_id=player_id,
+            status=status
+        )
+
+        db.session.add(attendance)
+
+    db.session.commit()
+
+    return jsonify({
+        "message": "Asistencia guardada correctamente"
+    }), 200
+
+@api.route("/trainings/<string:training_id>/attendance", methods=["GET"])
+@jwt_required()
+def get_attendance(training_id):
+
+    user = get_current_user()
+
+    training = TrainingSession.query.get(training_id)
+
+    if not training:
+        return error_response(
+            "Entrenamiento no encontrado",
+            "TRAINING_NOT_FOUND",
+            404
+        )
+
+    team = Team.query.get(training.team_id)
+
+    if team.club_id != user.club_id:
+        return error_response(
+            "No tienes acceso",
+            "FORBIDDEN",
+            403
+        )
+
+    attendance = Attendance.query.filter_by(
+        session_id=training.id
+    ).all()
+
+    return jsonify({
+        "attendance": [a.serialize() for a in attendance]
+    }), 200
+
+@api.route("/players/<string:player_id>/attendance", methods=["GET"])
+@jwt_required()
+def get_player_attendance(player_id):
+
+    user = get_current_user()
+
+    player = Player.query.get(player_id)
+
+    if not player:
+        return error_response(
+            "Jugador no encontrado",
+            "PLAYER_NOT_FOUND",
+            404
+        )
+
+    team = Team.query.get(player.team_id)
+
+    if team.club_id != user.club_id:
+        return error_response(
+            "No tienes acceso",
+            "FORBIDDEN",
+            403
+        )
+
+    attendance_records = Attendance.query.join(TrainingSession).filter(
+        Attendance.player_id == player.id
+    ).order_by(TrainingSession.date.desc()).all()
+
+    history = []
+
+    present = 0
+    late = 0
+    absent = 0
+
+    for record in attendance_records:
+
+        if record.status == "present":
+            present += 1
+        elif record.status == "late":
+            late += 1
+        elif record.status == "absent":
+            absent += 1
+
+        history.append({
+            "training_id": record.session_id,
+            "date": record.session.date.isoformat(),
+            "location": record.session.location,
+            "status": record.status
+        })
+
+    total = present + late + absent
+
+    attendance_rate = 0
+    if total > 0:
+        attendance_rate = round((present / total) * 100)
+
+    return jsonify({
+        "player": player.serialize(),
+        "summary": {
+            "present": present,
+            "late": late,
+            "absent": absent,
+            "total_sessions": total,
+            "attendance_rate": attendance_rate
+        },
+        "history": history
+    }), 200
+############################################ TRAININGS ##############################################
+@api.route("/trainings", methods=["POST"])
+@jwt_required()
+def create_training():
+
+    user = get_current_user()
+
+    if user.role not in ["club_owner", "coach"]:
+        return error_response(
+            "No tienes permisos",
+            "FORBIDDEN",
+            403
+        )
+
+    body = request.get_json() or {}
+
+    team_id = body.get("team_id")
+    date = body.get("date")
+    start_time = body.get("start_time")
+    location = body.get("location")
+
+    team = Team.query.get(team_id)
+
+    if not team:
+        return error_response(
+            "Equipo no encontrado",
+            "TEAM_NOT_FOUND",
+            404
+        )
+
+    if team.club_id != user.club_id:
+        return error_response(
+            "No tienes acceso",
+            "FORBIDDEN",
+            403
+        )
+
+    training = TrainingSession(
+        team_id=team.id,
+        date=datetime.strptime(date, "%Y-%m-%d").date(),
+        location=location,
+        created_by=user.id
+    )
+
+    db.session.add(training)
+    db.session.commit()
+
+    return jsonify({
+        "message": "Entrenamiento creado",
+        "training": training.serialize()
+    }), 201
+
+@api.route("/teams/<string:team_id>/trainings", methods=["GET"])
+@jwt_required()
+def get_team_trainings(team_id):
+
+    user = get_current_user()
+
+    if not user.club_id:
+        return error_response(
+            "El usuario no pertenece a ningún club",
+            "CLUB_REQUIRED",
+            400
+        )
+
+    if user.role not in ["club_owner", "coach"]:
+        return error_response(
+            "No tienes permisos para ver entrenamientos",
+            "FORBIDDEN",
+            403
+        )
+
+    team = Team.query.get(team_id)
+
+    if not team:
+        return error_response(
+            "Equipo no encontrado",
+            "TEAM_NOT_FOUND",
+            404
+        )
+
+    # Seguridad multi-tenant
+    if team.club_id != user.club_id:
+        return error_response(
+            "No tienes acceso a este equipo",
+            "FORBIDDEN",
+            403
+        )
+
+    trainings = TrainingSession.query.filter_by(team_id=team.id)\
+        .order_by(TrainingSession.date.desc())\
+        .all()
+
+    return jsonify({
+        "team": team.serialize(),
+        "total_trainings": len(trainings),
+        "trainings": [t.serialize() for t in trainings]
+    }), 200
+
+@api.route("/trainings", methods=["GET"])
+@jwt_required()
+def get_all_trainings():
+
+    user = get_current_user()
+
+    if not user.club_id:
+        return error_response(
+            "El usuario no pertenece a ningún club",
+            "CLUB_REQUIRED",
+            400
+        )
+
+    if user.role not in ["club_owner", "coach"]:
+        return error_response(
+            "No tienes permisos para ver entrenamientos",
+            "FORBIDDEN",
+            403
+        )
+
+    trainings = TrainingSession.query.join(Team).filter(
+        Team.club_id == user.club_id
+    ).order_by(TrainingSession.date.desc()).all()
+
+    return jsonify({
+        "total_trainings": len(trainings),
+        "trainings": [
+        {
+            **t.serialize(),
+            "team_name": t.team.name
+        }
+        for t in trainings
+    ]
     }), 200
 ############################################ ONBOARDING #############################################
 @api.route("/onboarding/status", methods=["GET"])

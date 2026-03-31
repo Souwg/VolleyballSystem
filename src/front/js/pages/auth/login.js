@@ -4,9 +4,11 @@ import { useNavigate } from "react-router-dom";
 import { AuthLayout } from "../../component/authLayout";
 import { Button } from "../../component/ui/button";
 import { Input } from "../../component/ui/input";
-
+import { validateLogin } from "../../utils/validators";
+import { errorMessages } from "../../utils/errorMessages";
 export const Login = () => {
   const { actions } = useContext(Context);
+  const [errors, setErrors] = useState({});
   const navigate = useNavigate();
 
   const [email, setEmail] = useState("");
@@ -15,19 +17,28 @@ export const Login = () => {
   const handleLogin = async (e) => {
     e.preventDefault();
 
-    const result = await actions.loginUser(email, password);
+    const newErrors = validateLogin({ email, password });
 
-    if (!result.success) {
-      alert(result.message);
+    if (Object.keys(newErrors).length > 0) {
+      setErrors(newErrors);
       return;
     }
 
-    if (result.first_login === true) {
+    setErrors({});
+
+    const result = await actions.loginUser(email, password);
+
+    if (!result?.ok) {
+      setErrors({ [result.code]: true });
+      return;
+    }
+
+    if (result.data.first_login === true) {
       navigate("/set-password", { replace: true });
       return;
     }
 
-    const role = result.user.role;
+    const role = result.data.user.role;
 
     if (role === "system_admin") {
       navigate("/admin/clients", { replace: true });
@@ -36,23 +47,69 @@ export const Login = () => {
       navigate("/dashboard", { replace: true });
     }
   };
-
   return (
     <AuthLayout title="Welcome back" subtitle="Login to your club dashboard">
       <form onSubmit={handleLogin} className="auth-form">
-        <Input
-          type="email"
-          placeholder="Email"
-          value={email}
-          onChange={(e) => setEmail(e.target.value)}
-        />
+        <div>
+          <Input
+            type="email"
+            placeholder="Email"
+            value={email}
+            className={
+              errors.EMAIL_REQUIRED ||
+              errors.INVALID_EMAIL ||
+              errors.INVALID_CREDENTIALS
+                ? "input-error"
+                : ""
+            }
+            onChange={(e) => {
+              setEmail(e.target.value);
+              setErrors((prev) => ({
+                ...prev,
+                EMAIL_REQUIRED: false,
+                INVALID_EMAIL: false,
+                INVALID_CREDENTIALS: false,
+              }));
+            }}
+          />
 
-        <Input
-          type="password"
-          placeholder="Password"
-          value={password}
-          onChange={(e) => setPassword(e.target.value)}
-        />
+          {errors.EMAIL_REQUIRED && (
+            <p className="form-error">{errorMessages.EMAIL_REQUIRED}</p>
+          )}
+
+          {errors.INVALID_EMAIL && (
+            <p className="form-error">{errorMessages.INVALID_EMAIL}</p>
+          )}
+        </div>
+
+        <div>
+          <Input
+            type="password"
+            placeholder="Password"
+            value={password}
+            className={
+              errors.PASSWORD_REQUIRED || errors.INVALID_CREDENTIALS
+                ? "input-error"
+                : ""
+            }
+            onChange={(e) => {
+              setPassword(e.target.value);
+              setErrors((prev) => ({
+                ...prev,
+                PASSWORD_REQUIRED: false,
+                INVALID_CREDENTIALS: false,
+              }));
+            }}
+          />
+
+          {errors.PASSWORD_REQUIRED && (
+            <p className="form-error">{errorMessages.PASSWORD_REQUIRED}</p>
+          )}
+
+          {errors.INVALID_CREDENTIALS && (
+            <p className="form-error">{errorMessages.INVALID_CREDENTIALS}</p>
+          )}
+        </div>
 
         <Button type="submit">Login</Button>
       </form>

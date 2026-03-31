@@ -16,6 +16,7 @@ export const AppShell = () => {
     { name: "Dashboard", path: "/dashboard" },
     { name: "Teams", path: "/teams" },
     { name: "Players", path: "/players" },
+    { name: "Trainings", path: "/trainings" },
   ];
 
   const handleLogout = async () => {

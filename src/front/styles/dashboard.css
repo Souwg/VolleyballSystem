@@ -1,0 +1,63 @@
+/* ===== DASHBOARD ===== */
+
+.dashboard-cta {
+  background: linear-gradient(135deg, #2563eb, #1d4ed8);
+  color: white;
+  border: none;
+  padding: 20px;
+  margin-bottom: 20px;
+  border-radius: 14px;
+}
+
+.dashboard-cta h3 {
+  font-size: 18px;
+  margin-bottom: 6px;
+}
+
+.dashboard-cta p {
+  font-size: 14px;
+  opacity: 0.9;
+  margin-bottom: 14px;
+}
+
+.dashboard-cta .button {
+  background: white;
+  color: #2563eb;
+  width: 100%;
+  justify-content: center;
+}
+
+.dashboard-shortcuts {
+  margin-top: 16px;
+}
+
+.dashboard-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin-top: 12px;
+}
+.dashboard-actions .button {
+  width: 100%;
+  justify-content: center;
+}
+
+/* GRID */
+
+.dashboard-grid {
+  display: grid;
+  gap: 12px;
+  margin-top: 8px;
+}
+
+@media (min-width: 768px) {
+  .dashboard-grid {
+    grid-template-columns: 1fr 1fr;
+  }
+}
+
+@media (min-width: 1024px) {
+  .dashboard-grid {
+    grid-template-columns: 1fr 1fr 1fr;
+  }
+}

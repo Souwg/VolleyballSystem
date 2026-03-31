@@ -1,16 +1,22 @@
 import React, { useContext, useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { Context } from "../../store/appContext";
-import { Container } from "../../component/ui/container";
 import { PageHeader } from "../../component/ui/pageHeader";
 import { Input } from "../../component/ui/input";
 import { Button } from "../../component/ui/button";
 import { Card } from "../../component/ui/card";
+import { validateTeamName } from "../../utils/validators";
+import { errorMessages } from "../../utils/errorMessages";
+
+import "../../../styles/teams.css";
 
 export const Teams = () => {
   const { store, actions } = useContext(Context);
   const navigate = useNavigate();
   const [teamName, setTeamName] = useState("");
+  const [showForm, setShowForm] = useState(false);
+  const [errors, setErrors] = useState({});
+  const [loading, setLoading] = useState(false);
 
   useEffect(() => {
     if (!store.token) return;
@@ -21,74 +27,126 @@ export const Teams = () => {
   const handleCreateTeam = async (e) => {
     e.preventDefault();
 
-    const cleanName = teamName.trim();
+    if (loading) return;
 
-    if (!cleanName) {
-      alert("Debes escribir el nombre del equipo");
+    setErrors({});
+    setLoading(true);
+
+    const newErrors = validateTeamName(teamName);
+
+    if (Object.keys(newErrors).length > 0) {
+      setErrors(newErrors);
+      setLoading(false);
       return;
     }
+
+    const cleanName = teamName.trim();
 
     const result = await actions.createTeam(cleanName);
 
     if (!result?.ok) {
-      alert(result?.message || "No se pudo crear el equipo");
+      setErrors({ [result.code]: true });
+      setLoading(false);
       return;
     }
 
     setTeamName("");
+    setShowForm(false);
+    setLoading(false);
+
+    await actions.getTeams();
   };
 
   return (
-    <Container>
-      <PageHeader title="Teamssssssssssssss" />
+    <>
+      <PageHeader title="Equipos" subtitle="Gestiona los equipos de tu club" />
+      {!showForm && (
+        <Button
+          className="button-primary"
+          onClick={() => {
+            setShowForm(true);
+            setErrors({});
+          }}
+        >
+          + Crear equipo
+        </Button>
+      )}
+      {showForm && (
+        <Card>
+          <h4>Nuevo equipo</h4>
 
-      <form onSubmit={handleCreateTeam}>
-        <div>
-          <div>
+          <form onSubmit={handleCreateTeam} className="form">
             <Input
               type="text"
-              placeholder="Ej: Sub12, Juvenil, Adulto..."
+              placeholder="Ej: Sub12, Juvenil..."
               value={teamName}
-              onChange={(e) => setTeamName(e.target.value)}
+              className={
+                errors.TEAM_NAME_REQUIRED || errors.TEAM_ALREADY_EXISTS
+                  ? "input-error"
+                  : ""
+              }
+              onChange={(e) => {
+                setTeamName(e.target.value);
+                setErrors((prev) => ({
+                  ...prev,
+                  TEAM_NAME_REQUIRED: false,
+                  TEAM_ALREADY_EXISTS: false,
+                }));
+              }}
             />
-          </div>
 
-          <Button type="submit">Create Team</Button>
-        </div>
-      </form>
+            {errors.TEAM_NAME_REQUIRED && (
+              <p className="form-error">{errorMessages.TEAM_NAME_REQUIRED}</p>
+            )}
 
-      {store.teams.length === 0 ? (
-        <div>No hay equipos registrados todavía.</div>
-      ) : (
-        <div className="teams-grid">
-          {store.teams.map((team) => (
-            <Card key={team.id} onClick={() => navigate(`/teams/${team.id}`)}>
-              <div>
-                <div>
-                  <h5>{team.name}</h5>
-                  <p>Team ID: {team.id}</p>
-                </div>
+            {errors.TEAM_ALREADY_EXISTS && (
+              <p className="form-error">{errorMessages.TEAM_ALREADY_EXISTS}</p>
+            )}
 
-                <Button
-                  onClick={async (e) => {
-                    e.stopPropagation();
+            <div className="form-actions">
+              <Button
+                type="button"
+                className="button-secondary"
+                onClick={() => {
+                  setShowForm(false);
+                  setTeamName("");
+                }}
+              >
+                Cancelar
+              </Button>
 
-                    if (!confirm("¿Eliminar este equipo?")) return;
-
-                    const result = await actions.deleteTeam(team.id);
-
-                    if (!result?.ok) {
-                      alert(result.message);
-                    }
-                  }}
-                >
-                  Delete
-                </Button>
-              </div>
-            </Card>
-          ))}
-        </div>
+              <Button type="submit" disabled={loading}>
+                {loading ? "Creando..." : "Crear equipo"}
+              </Button>
+            </div>
+          </form>
+        </Card>
       )}
-    </Container>
+      {!showForm &&
+        (store.teams.length === 0 ? (
+          <Card>
+            <h4>Aún no tienes equipos</h4>
+            <p>Crea tu primer equipo para empezar</p>
+
+            <Button
+              className="button-primary"
+              onClick={() => {
+                setShowForm(true);
+                setErrors({});
+              }}
+            >
+              Crear equipo
+            </Button>
+          </Card>
+        ) : (
+          <div className="teams-grid">
+            {store.teams.map((team) => (
+              <Card key={team.id} onClick={() => navigate(`/teams/${team.id}`)}>
+                <h5>{team.name}</h5>
+              </Card>
+            ))}
+          </div>
+        ))}
+    </>
   );
 };

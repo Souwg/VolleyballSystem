@@ -1,14 +1,22 @@
 import React, { useEffect, useContext, useState } from "react";
+import { useNavigate } from "react-router-dom";
 import { Context } from "../../store/appContext";
+import { AuthLayout } from "../../component/authLayout";
+import {
+  validateClubLocation,
+  validateTeamName,
+  validatePlayer,
+} from "../../utils/validators";
+
+import { errorMessages } from "../../utils/errorMessages";
+
 import { StepIndicator } from "../../component/ui/stepIndicator";
-import { Container } from "../../component/ui/container";
-import { Card } from "../../component/ui/card";
 import { Input } from "../../component/ui/input";
 import { Button } from "../../component/ui/button";
-import { PageHeader } from "../../component/ui/pageHeader";
 
 export const Onboarding = () => {
   const { store, actions } = useContext(Context);
+  const navigate = useNavigate();
 
   const [location, setLocation] = useState("");
   const [firstName, setFirstName] = useState("");
@@ -17,6 +25,10 @@ export const Onboarding = () => {
   const [sex, setSex] = useState("");
   const [teamName, setTeamName] = useState("");
   const [selectedTeam, setSelectedTeam] = useState("");
+  const [errors, setErrors] = useState({});
+  const [savingClub, setSavingClub] = useState(false);
+  const [creatingTeam, setCreatingTeam] = useState(false);
+  const [creatingPlayer, setCreatingPlayer] = useState(false);
 
   useEffect(() => {
     actions.getOnboardingStatus();
@@ -27,164 +39,366 @@ export const Onboarding = () => {
 
   const handleSaveClub = async (e) => {
     e.preventDefault();
+    if (savingClub) return;
+    setErrors({});
 
-    const result = await actions.updateClub(location);
+    const newErrors = validateClubLocation(location);
 
-    if (!result.ok) {
-      alert(result.message);
+    if (Object.keys(newErrors).length > 0) {
+      setErrors(newErrors);
+      return;
     }
+
+    setSavingClub(true);
+
+    const result = await actions.updateClub(location.trim());
+
+    if (!result?.ok) {
+      setErrors({ [result.code]: true });
+    }
+
+    setSavingClub(false);
   };
 
   const handleCreateTeam = async (e) => {
     e.preventDefault();
+    if (creatingTeam) return;
+    setErrors({});
 
-    const result = await actions.createTeam(teamName);
+    const newErrors = validateTeamName(teamName);
 
-    if (!result.ok) {
-      alert(result.message);
-    }
-  };
-
-  const handleCreatePlayer = async (e) => {
-    e.preventDefault();
-
-    if (!selectedTeam) {
-      alert("Debes seleccionar un equipo");
+    if (Object.keys(newErrors).length > 0) {
+      setErrors(newErrors);
       return;
     }
 
-    const result = await actions.createPlayer({
+    setCreatingTeam(true);
+
+    const result = await actions.createTeam(teamName.trim());
+
+    if (!result?.ok) {
+      setErrors({ [result.code]: true });
+    }
+
+    setCreatingTeam(false);
+  };
+  const handleCreatePlayer = async (e) => {
+    e.preventDefault();
+    if (creatingPlayer) return;
+    setErrors({});
+
+    const newErrors = validatePlayer({
       first_name: firstName,
       last_name: lastName,
       player_number: number,
+      sex,
+      team_id: selectedTeam,
+    });
+
+    if (Object.keys(newErrors).length > 0) {
+      setErrors(newErrors);
+      return;
+    }
+
+    setCreatingPlayer(true);
+
+    const result = await actions.createPlayer({
+      first_name: firstName.trim(),
+      last_name: lastName.trim(),
+      player_number: Number(number),
       sex: sex,
       team_id: selectedTeam,
     });
 
-    if (!result.ok) {
-      alert(result.message);
+    if (!result?.ok) {
+      setErrors({ [result.code]: true });
     }
+
+    setCreatingPlayer(false);
   };
 
   useEffect(() => {
     if (step === 4) {
       setTimeout(() => {
         navigate("/dashboard");
-      }, 1500);
+      }, 2000);
     }
   }, [step]);
 
-  return (
-    <Container>
-      <Card>
-        <StepIndicator step={step} total={4} />
+  useEffect(() => {
+    if (store.club?.location) {
+      setLocation(store.club.location);
+    }
+  }, [store.club]);
 
-        {step === 1 && (
-          <>
-            <PageHeader
-              title="Initial setup"
-              subtitle="Let's configure your volleyball club"
-            />
+  useEffect(() => {
+    if (store.teams?.length === 1) {
+      setSelectedTeam(store.teams[0].id);
+    }
+  }, [store.teams]);
 
-            <form className="form" onSubmit={handleSaveClub}>
+  const getContent = () => {
+    switch (step) {
+      case 1:
+        return {
+          title: "Configuración de tu club",
+          subtitle: "Vamos a dejar todo listo para comenzar",
+          form: (
+            <form className="auth-form" onSubmit={handleSaveClub}>
+              <p className="onboarding-greeting">
+                Bienvenido a <strong>{store.club?.name || "tu club"}</strong> 👋
+              </p>
               <Input
                 type="text"
-                placeholder="Club location"
+                value={store.club?.name || ""}
+                disabled
+                className="input-readonly"
+              />
+              <Input
+                type="text"
+                placeholder="Ubicación del club"
                 value={location}
-                onChange={(e) => setLocation(e.target.value)}
+                className={errors.LOCATION_REQUIRED ? "input-error" : ""}
+                onChange={(e) => {
+                  setLocation(e.target.value);
+                  setErrors((prev) => ({
+                    ...prev,
+                    LOCATION_REQUIRED: false,
+                  }));
+                }}
               />
 
-              <Button type="submit">Save location</Button>
-            </form>
-          </>
-        )}
+              {errors.LOCATION_REQUIRED && (
+                <p className="form-error">{errorMessages.LOCATION_REQUIRED}</p>
+              )}
 
-        {step === 2 && (
-          <>
-            <PageHeader
-              title="Create your first team"
-              subtitle="You can create more teams later"
-            />
-            <form className="form" onSubmit={handleCreateTeam}>
+              <Button type="submit" disabled={savingClub}>
+                {savingClub ? "Guardando..." : "Continuar"}
+              </Button>
+            </form>
+          ),
+        };
+
+      case 2:
+        return {
+          title: "Crea tu primer equipo",
+          subtitle: "Aquí comienza la organización de tu club",
+          form: (
+            <form className="auth-form" onSubmit={handleCreateTeam}>
               <Input
                 type="text"
-                placeholder="Team name"
+                placeholder="Nombre del equipo"
                 value={teamName}
-                onChange={(e) => setTeamName(e.target.value)}
+                className={
+                  errors.TEAM_NAME_REQUIRED || errors.TEAM_ALREADY_EXISTS
+                    ? "input-error"
+                    : ""
+                }
+                onChange={(e) => {
+                  setTeamName(e.target.value);
+                  setErrors((prev) => ({
+                    ...prev,
+                    TEAM_NAME_REQUIRED: false,
+                    TEAM_ALREADY_EXISTS: false,
+                  }));
+                }}
               />
 
-              <Button type="submit">Create team</Button>
+              {errors.TEAM_NAME_REQUIRED && (
+                <p className="form-error">{errorMessages.TEAM_NAME_REQUIRED}</p>
+              )}
+
+              {errors.TEAM_ALREADY_EXISTS && (
+                <p className="form-error">
+                  {errorMessages.TEAM_ALREADY_EXISTS}
+                </p>
+              )}
+              <Button type="submit" disabled={creatingTeam}>
+                {creatingTeam ? "Creando..." : "Continuar"}
+              </Button>
             </form>
-          </>
-        )}
+          ),
+        };
 
-        {step === 3 && (
-          <>
-            <PageHeader
-              title="Register your first player"
-              subtitle="Add your first player to start managing your club"
-            />
-            <form className="form" onSubmit={handleCreatePlayer}>
-              <Input
-                type="text"
-                placeholder="First name"
-                value={firstName}
-                onChange={(e) => setFirstName(e.target.value)}
-              />
+      case 3:
+        return {
+          title: "Agrega tu primer jugador",
+          subtitle: "Empieza a construir tu equipo",
+          form: (
+            <form className="auth-form" onSubmit={handleCreatePlayer}>
+              <div>
+                <Input
+                  type="text"
+                  placeholder="Nombre"
+                  value={firstName}
+                  className={errors.FIRST_NAME_REQUIRED ? "input-error" : ""}
+                  onChange={(e) => {
+                    setFirstName(e.target.value);
+                    setErrors((prev) => ({
+                      ...prev,
+                      FIRST_NAME_REQUIRED: false,
+                    }));
+                  }}
+                />
 
-              <Input
-                type="text"
-                placeholder="Last name"
-                value={lastName}
-                onChange={(e) => setLastName(e.target.value)}
-              />
+                {errors.FIRST_NAME_REQUIRED && (
+                  <p className="form-error">
+                    {errorMessages.FIRST_NAME_REQUIRED}
+                  </p>
+                )}
+              </div>
+              <div>
+                <Input
+                  type="text"
+                  placeholder="Apellido"
+                  value={lastName}
+                  className={errors.LAST_NAME_REQUIRED ? "input-error" : ""}
+                  onChange={(e) => {
+                    setLastName(e.target.value);
+                    setErrors((prev) => ({
+                      ...prev,
+                      LAST_NAME_REQUIRED: false,
+                    }));
+                  }}
+                />
 
-              <Input
-                type="number"
-                placeholder="Player number"
-                value={number}
-                onChange={(e) => setNumber(e.target.value)}
-              />
+                {errors.LAST_NAME_REQUIRED && (
+                  <p className="form-error">
+                    {errorMessages.LAST_NAME_REQUIRED}
+                  </p>
+                )}
+              </div>
+              <div>
+                <Input
+                  type="number"
+                  placeholder="Número del jugador"
+                  value={number}
+                  className={
+                    errors.PLAYER_NUMBER_REQUIRED ||
+                    errors.INVALID_PLAYER_NUMBER ||
+                    errors.PLAYER_NUMBER_DUPLICATED
+                      ? "input-error"
+                      : ""
+                  }
+                  onChange={(e) => {
+                    setNumber(e.target.value);
+                    setErrors((prev) => ({
+                      ...prev,
+                      PLAYER_NUMBER_REQUIRED: false,
+                      INVALID_PLAYER_NUMBER: false,
+                      PLAYER_NUMBER_DUPLICATED: false,
+                    }));
+                  }}
+                />
+                {errors.PLAYER_NUMBER_REQUIRED && (
+                  <p className="form-error">
+                    {errorMessages.PLAYER_NUMBER_REQUIRED}
+                  </p>
+                )}
+                {errors.INVALID_PLAYER_NUMBER && (
+                  <p className="form-error">
+                    {errorMessages.INVALID_PLAYER_NUMBER}
+                  </p>
+                )}
 
-              <select
-                className="select"
-                value={sex}
-                onChange={(e) => setSex(e.target.value)}
-              >
-                <option value="">Sex</option>
-                <option value="male">Male</option>
-                <option value="female">Female</option>
-              </select>
+                {errors.PLAYER_NUMBER_DUPLICATED && (
+                  <p className="form-error">
+                    {errorMessages.PLAYER_NUMBER_DUPLICATED}
+                  </p>
+                )}
+              </div>
+              <div>
+                <select
+                  className={`select ${
+                    errors.INVALID_SEX || errors.SEX_REQUIRED
+                      ? "input-error"
+                      : ""
+                  }`}
+                  value={sex}
+                  onChange={(e) => {
+                    setSex(e.target.value);
+                    setErrors((prev) => ({
+                      ...prev,
+                      INVALID_SEX: false,
+                      SEX_REQUIRED: false,
+                    }));
+                  }}
+                >
+                  <option value="">Sexo</option>
+                  <option value="male">Masculino</option>
+                  <option value="female">Femenino</option>
+                </select>
+                {errors.SEX_REQUIRED && (
+                  <p className="form-error">{errorMessages.SEX_REQUIRED}</p>
+                )}
 
-              <select
-                className="select"
-                value={selectedTeam}
-                onChange={(e) => setSelectedTeam(e.target.value)}
-              >
-                <option value="">Select team</option>
-
-                {store.teams?.map((team) => (
-                  <option key={team.id} value={team.id}>
-                    {team.name}
-                  </option>
-                ))}
-              </select>
-
-              <Button type="submit">Create player</Button>
+                {errors.INVALID_SEX && (
+                  <p className="form-error">{errorMessages.INVALID_SEX}</p>
+                )}
+              </div>
+              <div>
+                <select
+                  className={`select ${
+                    errors.TEAM_ID_REQUIRED ? "input-error" : ""
+                  }`}
+                  value={selectedTeam}
+                  onChange={(e) => {
+                    setSelectedTeam(e.target.value);
+                    setErrors((prev) => ({
+                      ...prev,
+                      TEAM_ID_REQUIRED: false,
+                    }));
+                  }}
+                >
+                  <option value="">Selecciona un equipo</option>
+                  {store.teams?.map((team) => (
+                    <option key={team.id} value={team.id}>
+                      {team.name}
+                    </option>
+                  ))}
+                </select>
+                {errors.TEAM_ID_REQUIRED && (
+                  <p className="form-error">{errorMessages.TEAM_ID_REQUIRED}</p>
+                )}
+              </div>
+              <Button type="submit" disabled={creatingPlayer}>
+                {creatingPlayer ? "Creando..." : "Finalizar configuración"}
+              </Button>
             </form>
-          </>
-        )}
+          ),
+        };
 
-        {step === 4 && (
-          <>
-            <PageHeader
-              title="System ready"
-              subtitle="Your volleyball club system is ready"
-            />
-            <p>You will be redirected to the dashboard.</p>
-          </>
-        )}
-      </Card>
-    </Container>
+      case 4:
+        return {
+          title: "Todo listo 🚀",
+          subtitle: "Tu club ya está configurado",
+          form: (
+            <div className="onboarding-success">
+              <div className="onboarding-success-icon">🎉</div>
+              <h3>¡Listo para comenzar!</h3>
+              <p>Tu club está preparado para empezar a trabajar.</p>
+              <span>Redirigiendo al panel...</span>
+            </div>
+          ),
+        };
+
+      default:
+        return {};
+    }
+  };
+
+  const content = getContent();
+
+  return (
+    <AuthLayout title={content.title} subtitle={content.subtitle}>
+      <StepIndicator step={step} total={4} />
+      <p className="onboarding-progress-label">
+        {step === 1 && "Configurando tu club"}
+        {step === 2 && "Creando tu equipo"}
+        {step === 3 && "Agregando jugador"}
+        {step === 4 && "Todo listo"}
+      </p>
+      {content.form}
+    </AuthLayout>
   );
 };

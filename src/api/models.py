@@ -133,7 +133,91 @@ class Player(db.Model):
             "team_id": self.team_id,
             "created_at": self.created_at.isoformat()
         }
+    
+class TrainingSession(db.Model):
+    __tablename__ = "training_sessions"
 
+    id = db.Column(db.String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
+
+    team_id = db.Column(
+        db.String(36),
+        db.ForeignKey("teams.id"),
+        nullable=False
+    )
+
+    date = db.Column(db.Date, nullable=False)
+
+    start_time = db.Column(db.Time)
+
+    end_time = db.Column(db.Time)
+
+    location = db.Column(db.String(255))
+
+    created_by = db.Column(
+        db.String(36),
+        db.ForeignKey("users.id")
+    )
+
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+
+    team = db.relationship("Team", backref=db.backref("training_sessions", lazy=True))
+
+    def serialize(self):
+        return {
+            "id": self.id,
+            "team_id": self.team_id,
+            "date": self.date.isoformat() if self.date else None,
+            "start_time": self.start_time.isoformat() if self.start_time else None,
+            "end_time": self.end_time.isoformat() if self.end_time else None,
+            "location": self.location,
+            "created_by": self.created_by,
+            "created_at": self.created_at.isoformat()
+        }
+
+class Attendance(db.Model):
+    __tablename__ = "attendance"
+
+    id = db.Column(db.String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
+
+    session_id = db.Column(
+        db.String(36),
+        db.ForeignKey("training_sessions.id"),
+        nullable=False
+    )
+
+    player_id = db.Column(
+        db.String(36),
+        db.ForeignKey("players.id"),
+        nullable=False
+    )
+
+    status = db.Column(
+        db.String(20),
+        default="present"
+    )
+
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+
+    session = db.relationship(
+        "TrainingSession",
+        backref=db.backref("attendance", lazy=True)
+    )
+
+    player = db.relationship(
+        "Player",
+        backref=db.backref("attendance", lazy=True)
+    )
+
+    def serialize(self):
+        return {
+            "id": self.id,
+            "session_id": self.session_id,
+            "player_id": self.player_id,
+            "player_name": f"{self.player.first_name} {self.player.last_name}" if self.player else None,
+            "player_number": self.player.player_number if self.player else None,
+            "status": self.status,
+            "created_at": self.created_at.isoformat()
+        }
     
 class TokenBlockedList(db.Model):
     id = db.Column(db.Integer, primary_key=True)

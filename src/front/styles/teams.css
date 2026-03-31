@@ -1,0 +1,13 @@
+/******************* responsive *************************/
+
+@media (min-width: 768px) {
+  .teams-grid {
+    grid-template-columns: 1fr 1fr;
+  }
+}
+
+@media (min-width: 1024px) {
+  .teams-grid {
+    grid-template-columns: 1fr 1fr 1fr;
+  }
+}

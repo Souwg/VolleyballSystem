@@ -19,6 +19,11 @@ import { Onboarding } from "./pages/onboarding/onboarding";
 import { Teams } from "./pages/teams/teams";
 import { TeamDetail } from "./pages/teams/teamDetail";
 import { Players } from "./pages/players/players";
+import { PlayerDetail } from "./pages/players/playerDetail";
+import { Trainings } from "./pages/trainings/trainings";
+import { TeamTrainings } from "./pages/trainings/teamTrainings";
+import { TrainingDetail } from "./pages/trainings/trainingDetail";
+import { CreateTraining } from "./pages/trainings/createTraining";
 import injectContext from "./store/appContext";
 
 const Layout = () => {
@@ -78,7 +83,22 @@ const Layout = () => {
               <Route path="/dashboard" element={<Dashboard />} />
               <Route path="/teams" element={<Teams />} />
               <Route path="/teams/:team_id" element={<TeamDetail />} />
+              <Route path="/trainings" element={<Trainings />} />
+              <Route
+                path="/teams/:team_id/trainings"
+                element={<TeamTrainings />}
+              />
+              <Route
+                path="/trainings/:training_id"
+                element={<TrainingDetail />}
+              />
+              <Route path="/trainings/new" element={<CreateTraining />} />
+              <Route
+                path="/teams/:team_id/trainings/new"
+                element={<CreateTraining />}
+              />
               <Route path="/players" element={<Players />} />
+              <Route path="/players/:player_id" element={<PlayerDetail />} />
             </Route>
           </Route>
 
