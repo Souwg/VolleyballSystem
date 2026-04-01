@@ -34,13 +34,19 @@ export const validateLogin = ({ email, password }) => {
   return errors;
 };
 
-export const validatePassword = (password) => {
+export const validatePassword = (password, confirmPassword = "") => {
   const errors = {};
 
   if (!password.trim()) {
     errors.PASSWORD_REQUIRED = true;
   } else if (password.trim().length < 8) {
     errors.PASSWORD_TOO_SHORT = true;
+  }
+
+  if (!confirmPassword.trim()) {
+    errors.CONFIRM_PASSWORD_REQUIRED = true;
+  } else if (password !== confirmPassword) {
+    errors.PASSWORDS_NOT_MATCH = true;
   }
 
   return errors;
@@ -107,6 +113,7 @@ export const validatePlayer = ({
 
   return errors;
 };
+
 export const validateTraining = ({ team_id, date, location }) => {
   const errors = {};
 

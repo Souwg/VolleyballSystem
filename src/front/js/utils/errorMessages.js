@@ -8,6 +8,8 @@ export const errorMessages = {
   // LOGIN
   PASSWORD_REQUIRED: "La contraseña es obligatoria",
   PASSWORD_TOO_SHORT: "Debe tener al menos 8 caracteres",
+  CONFIRM_PASSWORD_REQUIRED: "Confirma tu contraseña",
+  PASSWORDS_NOT_MATCH: "Las contraseñas no coinciden",
   INVALID_CREDENTIALS: "Email o contraseña incorrectos",
   ACCOUNT_DISABLED: "Tu cuenta está desactivada. Contacta al administrador.",
 

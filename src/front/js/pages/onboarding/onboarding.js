@@ -181,13 +181,13 @@ export const Onboarding = () => {
 
       case 2:
         return {
-          title: "Crea tu primer equipo",
+          title: "Crea tu primera categoría",
           subtitle: "Aquí comienza la organización de tu club",
           form: (
             <form className="auth-form" onSubmit={handleCreateTeam}>
               <Input
                 type="text"
-                placeholder="Nombre del equipo"
+                placeholder="Nombre de la categoría"
                 value={teamName}
                 className={
                   errors.TEAM_NAME_REQUIRED || errors.TEAM_ALREADY_EXISTS
@@ -350,7 +350,7 @@ export const Onboarding = () => {
                     }));
                   }}
                 >
-                  <option value="">Selecciona un equipo</option>
+                  <option value="">Selecciona una categoría</option>
                   {store.teams?.map((team) => (
                     <option key={team.id} value={team.id}>
                       {team.name}
@@ -394,7 +394,7 @@ export const Onboarding = () => {
       <StepIndicator step={step} total={4} />
       <p className="onboarding-progress-label">
         {step === 1 && "Configurando tu club"}
-        {step === 2 && "Creando tu equipo"}
+        {step === 2 && "Creando tu primera categoría"}
         {step === 3 && "Agregando jugador"}
         {step === 4 && "Todo listo"}
       </p>

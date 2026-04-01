@@ -132,7 +132,12 @@
   color: var(--color-text-muted);
   cursor: not-allowed;
 }
-
+/* ERROR & SUCCESS MESSAGES */
+.form-success {
+  font-size: 14px;
+  margin-top: 6px;
+  color: var(--color-success);
+}
 @media (max-width: 900px) {
   .auth-page {
     grid-template-columns: 1fr;

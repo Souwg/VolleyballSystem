@@ -7,6 +7,7 @@ import { PageHeader } from "../../component/ui/pageHeader";
 import { Card } from "../../component/ui/card";
 import { Button } from "../../component/ui/button";
 import { AttendanceToggle } from "../../component/ui/attendanceToggle";
+import "../../../styles/trainingDetail.css";
 
 export const TrainingDetail = () => {
   const { store, actions } = useContext(Context);
@@ -14,6 +15,7 @@ export const TrainingDetail = () => {
 
   const [attendance, setAttendance] = useState({});
   const [loading, setLoading] = useState(true);
+  const [hasChanges, setHasChanges] = useState(false);
 
   useEffect(() => {
     const loadData = async () => {
@@ -48,17 +50,36 @@ export const TrainingDetail = () => {
   }, [training_id]);
 
   const saveAttendance = async () => {
-    const attendanceList = store.players.map((player) => ({
-      player_id: player.id,
-      status: attendance[player.id] || "absent",
-    }));
+    const attendanceList = store.players
+      .filter((player) => attendance[player.id])
+      .map((player) => ({
+        player_id: player.id,
+        status: attendance[player.id],
+      }));
 
     const result = await actions.saveAttendance(training_id, attendanceList);
 
-    if (!result?.ok) {
-      return;
-    }
+    if (!result?.ok) return;
+
+    setHasChanges(false);
   };
+
+  const presentCount = Object.values(attendance).filter(
+    (s) => s === "present",
+  ).length;
+
+  const lateCount = Object.values(attendance).filter(
+    (s) => s === "late",
+  ).length;
+
+  const absentCount = Object.values(attendance).filter(
+    (s) => s === "absent",
+  ).length;
+
+  const markedCount = Object.keys(attendance).length;
+  const totalPlayers = store.players.length;
+  const allMarked = markedCount === totalPlayers;
+
   if (loading) {
     return (
       <Container>
@@ -76,7 +97,7 @@ export const TrainingDetail = () => {
         ) : (
           <div className="attendance-list">
             {store.players.map((player) => {
-              const status = attendance[player.id] || "absent";
+              const status = attendance[player.id] || null;
 
               return (
                 <div key={player.id} className="attendance-row">
@@ -97,6 +118,7 @@ export const TrainingDetail = () => {
                         ...prev,
                         [player.id]: newStatus,
                       }));
+                      setHasChanges(true);
                     }}
                   />
                 </div>
@@ -105,10 +127,31 @@ export const TrainingDetail = () => {
           </div>
         )}
       </Card>
+      <div className="attendance-sticky-bar">
+        <div>
+          <div className="attendance-progress">
+            {markedCount} / {totalPlayers} jugadoras marcadas
+          </div>
 
-      <Button className="button-primary" onClick={saveAttendance}>
-        Guardar asistencia
-      </Button>
+          <div className="attendance-summary">
+            <span>{presentCount} presentes</span>
+            <span>{lateCount} tarde</span>
+            <span>{absentCount} ausente</span>
+          </div>
+        </div>
+
+        <Button
+          className="button-primary"
+          onClick={saveAttendance}
+          disabled={!hasChanges || !allMarked}
+        >
+          {!allMarked
+            ? `Faltan ${totalPlayers - markedCount}`
+            : hasChanges
+            ? "Guardar asistencia"
+            : "Sin cambios"}
+        </Button>
+      </div>
     </Container>
   );
 };

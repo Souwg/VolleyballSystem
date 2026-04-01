@@ -13,6 +13,7 @@ export const SetPassword = () => {
   const navigate = useNavigate();
 
   const [password, setPassword] = useState("");
+  const [confirmPassword, setConfirmPassword] = useState("");
   const [errors, setErrors] = useState({});
   const [loading, setLoading] = useState(false);
 
@@ -20,7 +21,7 @@ export const SetPassword = () => {
     e.preventDefault();
     if (loading) return;
 
-    const newErrors = validatePassword(password);
+    const newErrors = validatePassword(password, confirmPassword);
 
     if (Object.keys(newErrors).length > 0) {
       setErrors(newErrors);
@@ -39,7 +40,6 @@ export const SetPassword = () => {
     }
 
     await actions.getOnboardingStatus();
-
     navigate("/dashboard", { replace: true });
   };
 
@@ -75,6 +75,43 @@ export const SetPassword = () => {
         {errors.PASSWORD_TOO_SHORT && (
           <p className="form-error">{errorMessages.PASSWORD_TOO_SHORT}</p>
         )}
+        <Input
+          type="password"
+          placeholder="Confirm password"
+          value={confirmPassword}
+          className={
+            errors.CONFIRM_PASSWORD_REQUIRED || errors.PASSWORDS_NOT_MATCH
+              ? "input-error"
+              : ""
+          }
+          onChange={(e) => {
+            setConfirmPassword(e.target.value);
+            setErrors((prev) => ({
+              ...prev,
+              CONFIRM_PASSWORD_REQUIRED: false,
+              PASSWORDS_NOT_MATCH: false,
+            }));
+          }}
+        />
+        {errors.CONFIRM_PASSWORD_REQUIRED && (
+          <p className="form-error">
+            {errorMessages.CONFIRM_PASSWORD_REQUIRED}
+          </p>
+        )}
+
+        {errors.PASSWORDS_NOT_MATCH && (
+          <p className="form-error">{errorMessages.PASSWORDS_NOT_MATCH}</p>
+        )}
+        {confirmPassword && password === confirmPassword && (
+          <p className="form-success">✅ contraseñas coinciden</p>
+        )}
+
+        {confirmPassword &&
+          password &&
+          password !== confirmPassword &&
+          !errors.PASSWORDS_NOT_MATCH && (
+            <p className="form-error">❌ {errorMessages.PASSWORDS_NOT_MATCH}</p>
+          )}
         <Button variant="primary" type="submit" disabled={loading}>
           {loading ? "Saving..." : "Save password"}
         </Button>

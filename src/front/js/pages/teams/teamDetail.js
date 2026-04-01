@@ -157,7 +157,7 @@ export const TeamDetail = () => {
     <>
       <PageHeader
         title={team.name}
-        subtitle="Gestiona tu equipo"
+        subtitle="Aquí puedes gestionar los jugadores de esta categoría"
         actions={
           <>
             <Button
@@ -179,7 +179,7 @@ export const TeamDetail = () => {
               <Button
                 className="button-danger"
                 onClick={async () => {
-                  if (!confirm("¿Eliminar este equipo?")) return;
+                  if (!confirm("¿Eliminar esta categoría?")) return;
 
                   const result = await actions.deleteTeam(team_id);
 
@@ -191,7 +191,7 @@ export const TeamDetail = () => {
                   navigate("/teams");
                 }}
               >
-                Eliminar equipo
+                Eliminar categoría
               </Button>
             </div>
           </>
@@ -341,7 +341,7 @@ export const TeamDetail = () => {
         <h4>Jugadores</h4>
 
         {players.length === 0 ? (
-          <p>No hay jugadores registrados en este equipo.</p>
+          <p>No hay jugadores registrados en esta categoría.</p>
         ) : (
           <div className="players-list">
             {players.map((player) => (

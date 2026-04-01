@@ -21,24 +21,6 @@ const getState = ({ getStore, getActions, setStore }) => {
     },
 
     actions: {
-      getMessage: async () => {
-        try {
-          const resp = await authFetch("/api/hello");
-
-          const result = await parseResponse(resp);
-
-          if (!result.ok) {
-            console.warn(result.message);
-            return result;
-          }
-
-          setStore({ message: result.data.message });
-
-          return result.data;
-        } catch (error) {
-          console.log("Error loading message from backend", error);
-        }
-      },
       loginUser: async (email, password) => {
         try {
           const resp = await fetch(`${BACKEND_URL}/api/login`, {

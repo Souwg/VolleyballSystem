@@ -101,6 +101,8 @@ const FORM_ERRORS = [
   "PLAYER_NUMBER_DUPLICATED",
   "INVALID_SEX",
   "TEAM_ID_REQUIRED",
+  "CONFIRM_PASSWORD_REQUIRED",
+  "PASSWORDS_NOT_MATCH",
 ];
 
 export const parseResponse = async (resp) => {
