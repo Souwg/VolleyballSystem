@@ -1,4 +1,4 @@
-import { authFetch, setAuthActions, parseResponse } from "../utils/authFetch";
+import { authFetch, parseResponse } from "../utils/authFetch";
 
 const BACKEND_URL =
   process.env.REACT_APP_BACKEND_URL || "http://localhost:3001";

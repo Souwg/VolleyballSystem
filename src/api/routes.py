@@ -2,7 +2,18 @@
 This module takes care of starting the API Server, Loading the DB and Adding the endpoints
 """
 from flask import Flask, request, jsonify, url_for, Blueprint
-from src.api.models import db, User, Club, Player, Team, Attendance, TrainingSession, TokenBlockedList, RefreshToken
+from src.api.models import (
+    db,
+    User,
+    Club,
+    Player,
+    Team,
+    TeamPlayer,
+    Attendance,
+    TrainingSession,
+    TokenBlockedList,
+    RefreshToken
+)
 from flask_cors import CORS
 from src.api.extensions import bcrypt
 from src.api.utils import (
@@ -546,23 +557,23 @@ def club_dashboard():
 
     total_teams = Team.query.filter_by(club_id=club.id).count()
 
-    total_players = Player.query.join(Team).filter(
+    total_players = TeamPlayer.query.join(Team).filter(
         Team.club_id == club.id
     ).count()
 
-    active_players = Player.query.join(Team).filter(
+    active_players = TeamPlayer.query.join(Team).filter(
         Team.club_id == club.id,
-        Player.status == "active"
+        TeamPlayer.status == "active"
     ).count()
 
-    injured_players = Player.query.join(Team).filter(
+    injured_players = TeamPlayer.query.join(Team).filter(
         Team.club_id == club.id,
-        Player.status == "injured"
+        TeamPlayer.status == "injured"
     ).count()
 
-    inactive_players = Player.query.join(Team).filter(
+    inactive_players = TeamPlayer.query.join(Team).filter(
         Team.club_id == club.id,
-        Player.status == "inactive"
+        TeamPlayer.status == "inactive"
     ).count()
 
     total_trainings = TrainingSession.query.join(Team).filter(
@@ -690,7 +701,7 @@ def get_team_detail(team_id):
             403
         )
 
-    total_players = Player.query.filter_by(team_id=team.id).count()
+    total_players = TeamPlayer.query.filter_by(team_id=team.id).count()
 
     return jsonify({
         "team": team.serialize(),
@@ -736,7 +747,7 @@ def delete_team(team_id):
             403
         )
 
-    players_count = Player.query.filter_by(team_id=team.id).count()
+    players_count = TeamPlayer.query.filter_by(team_id=team.id).count()
 
     if players_count > 0:
         return error_response(
@@ -867,30 +878,25 @@ def create_player():
             403
         )
 
-    existing_player = Player.query.filter_by(
-        player_number=player_number,
-        team_id=team.id
+    existing_membership = TeamPlayer.query.filter_by(
+        team_id=team.id,
+        player_number=player_number
     ).first()
 
-    if existing_player:
+    if existing_membership:
         return error_response(
             "Ya existe un jugador con ese número en este equipo",
             "PLAYER_NUMBER_DUPLICATED",
             409
         )
-
+    
     parsed_birth_date = None
+
     if birth_date:
         try:
-            parsed_birth_date = datetime.strptime(birth_date, "%Y-%m-%d").date()
-
-            if parsed_birth_date > datetime.utcnow().date():
-                return error_response(
-                    "La fecha de nacimiento no puede ser futura",
-                    "INVALID_BIRTH_DATE",
-                    400
-                )
-        
+            parsed_birth_date = datetime.strptime(
+                birth_date, "%Y-%m-%d"
+            ).date()
         except ValueError:
             return error_response(
                 "Formato de fecha inválido. Usa YYYY-MM-DD",
@@ -901,25 +907,37 @@ def create_player():
     player = Player(
         first_name=first_name,
         last_name=last_name,
-        player_number=player_number,
         sex=sex,
         birth_date=parsed_birth_date,
-        status=status,
-        team_id=team.id
+        club_id=user.club_id
     )
 
     db.session.add(player)
+    db.session.flush()
+
+    membership = TeamPlayer(
+        team_id=team.id,
+        player_id=player.id,
+        player_number=player_number,
+        status=status
+    )
+
+    db.session.add(membership)
     db.session.commit()
 
     return jsonify({
         "message": "Jugador registrado correctamente",
-        "player": player.serialize()
+        "player": {
+            **player.serialize(),
+            "team_id": membership.team_id,
+            "player_number": membership.player_number,
+            "status": membership.status
+        }
     }), 201
 
 @api.route("/teams/<string:team_id>/players", methods=["GET"])
 @jwt_required()
 def get_team_players(team_id):
-
     user = get_current_user()
 
     if not user.club_id:
@@ -952,20 +970,33 @@ def get_team_players(team_id):
             403
         )
 
-    players = Player.query.filter_by(team_id=team.id)\
-        .order_by(Player.player_number)\
+    memberships = TeamPlayer.query.filter_by(team_id=team.id)\
+        .order_by(TeamPlayer.player_number)\
         .all()
+
+    players = [
+        {
+            "id": m.player.id,
+            "first_name": m.player.first_name,
+            "last_name": m.player.last_name,
+            "sex": m.player.sex,
+            "birth_date": m.player.birth_date.isoformat() if m.player.birth_date else None,
+            "team_id": m.team_id,
+            "player_number": m.player_number,
+            "status": m.status
+        }
+        for m in memberships
+    ]
 
     return jsonify({
         "team": team.serialize(),
         "total_players": len(players),
-        "players": [p.serialize() for p in players]
+        "players": players
     }), 200
 
 @api.route("/players", methods=["GET"])
 @jwt_required()
 def get_players():
-
     user = get_current_user()
 
     if not user.club_id:
@@ -975,21 +1006,27 @@ def get_players():
             400
         )
 
-    if user.role not in ["club_owner", "coach"]:
-        return error_response(
-            "No tienes permisos para ver jugadores",
-            "FORBIDDEN",
-            403
-        )
+    memberships = TeamPlayer.query.join(Team).filter(
+        Team.club_id == user.club_id
+    ).order_by(TeamPlayer.created_at.desc()).all()
 
-    players = Player.query.join(Team)\
-        .filter(Team.club_id == user.club_id)\
-        .order_by(Player.player_number)\
-        .all()
+    players = [
+        {
+            "id": m.player.id,
+            "first_name": m.player.first_name,
+            "last_name": m.player.last_name,
+            "sex": m.player.sex,
+            "birth_date": m.player.birth_date.isoformat() if m.player.birth_date else None,
+            "team_id": m.team_id,
+            "player_number": m.player_number,
+            "status": m.status
+        }
+        for m in memberships
+    ]
 
     return jsonify({
         "total_players": len(players),
-        "players": [p.serialize() for p in players]
+        "players": players
     }), 200
 
 @api.route("/players/<string:player_id>", methods=["PUT"])
@@ -1021,9 +1058,20 @@ def update_player(player_id):
             404
         )
 
-    team = Team.query.get(player.team_id)
+    membership = TeamPlayer.query.filter_by(
+        player_id=player.id
+    ).first()
 
-    if not team or team.club_id != user.club_id:
+    if not membership:
+        return error_response(
+            "El jugador no pertenece a ningún equipo",
+            "PLAYER_MEMBERSHIP_NOT_FOUND",
+            404
+        )
+
+    current_team = Team.query.get(membership.team_id)
+
+    if not current_team or current_team.club_id != user.club_id:
         return error_response(
             "No tienes permisos para modificar este jugador",
             "FORBIDDEN",
@@ -1038,7 +1086,6 @@ def update_player(player_id):
     sex = body.get("sex")
     birth_date = body.get("birth_date")
     team_id = body.get("team_id")
-
 
     if not first_name:
         return error_response(
@@ -1100,21 +1147,20 @@ def update_player(player_id):
             403
         )
 
-    existing_player = Player.query.filter(
-        Player.player_number == player_number,
-        Player.team_id == team_id,
-        Player.id != player.id
+    duplicated_number = TeamPlayer.query.filter(
+        TeamPlayer.team_id == team_id,
+        TeamPlayer.player_number == player_number,
+        TeamPlayer.player_id != player.id
     ).first()
 
-    if existing_player:
+    if duplicated_number:
         return error_response(
             "Ya existe un jugador con ese número en ese equipo",
             "PLAYER_NUMBER_DUPLICATED",
             409
         )
-    
-    parsed_birth_date = None
 
+    parsed_birth_date = None
     if birth_date:
         try:
             parsed_birth_date = datetime.strptime(
@@ -1126,18 +1172,27 @@ def update_player(player_id):
                 "INVALID_DATE_FORMAT",
                 400
             )
+
+    # update global player
     player.first_name = first_name
     player.last_name = last_name
-    player.player_number = player_number
     player.sex = sex
     player.birth_date = parsed_birth_date
-    player.team_id = team_id
+
+    # update membership
+    membership.team_id = team_id
+    membership.player_number = player_number
 
     db.session.commit()
 
     return jsonify({
         "message": "Jugador actualizado correctamente",
-        "player": player.serialize()
+        "player": {
+            **player.serialize(),
+            "team_id": membership.team_id,
+            "player_number": membership.player_number,
+            "status": membership.status
+        }
     }), 200
 
 @api.route("/players/<string:player_id>/status", methods=["PUT"])
@@ -1169,7 +1224,18 @@ def update_player_status(player_id):
             404
         )
 
-    team = Team.query.get(player.team_id)
+    membership = TeamPlayer.query.filter_by(
+        player_id=player.id
+    ).first()
+
+    if not membership:
+        return error_response(
+            "El jugador no pertenece a ningún equipo",
+            "PLAYER_MEMBERSHIP_NOT_FOUND",
+            404
+        )
+
+    team = Team.query.get(membership.team_id)
 
     if not team or team.club_id != user.club_id:
         return error_response(
@@ -1190,12 +1256,17 @@ def update_player_status(player_id):
             400
         )
 
-    player.status = status
+    membership.status = status
     db.session.commit()
 
     return jsonify({
         "message": "Estado del jugador actualizado correctamente",
-        "player": player.serialize()
+        "player": {
+            **player.serialize(),
+            "team_id": membership.team_id,
+            "player_number": membership.player_number,
+            "status": membership.status
+        }
     }), 200
 
 @api.route("/players/<string:player_id>", methods=["DELETE"])
@@ -1227,7 +1298,18 @@ def delete_player(player_id):
             404
         )
 
-    team = Team.query.get(player.team_id)
+    membership = TeamPlayer.query.filter_by(
+        player_id=player.id
+    ).first()
+
+    if not membership:
+        return error_response(
+            "El jugador no pertenece a ningún equipo",
+            "PLAYER_MEMBERSHIP_NOT_FOUND",
+            404
+        )
+
+    team = Team.query.get(membership.team_id)
 
     if not team or team.club_id != user.club_id:
         return error_response(
@@ -1236,6 +1318,7 @@ def delete_player(player_id):
             403
         )
 
+    db.session.delete(membership)
     db.session.delete(player)
     db.session.commit()
 
@@ -1363,9 +1446,20 @@ def get_player_attendance(player_id):
             404
         )
 
-    team = Team.query.get(player.team_id)
+    membership = TeamPlayer.query.filter_by(
+        player_id=player.id
+    ).first()
 
-    if team.club_id != user.club_id:
+    if not membership:
+        return error_response(
+            "El jugador no pertenece a ningún equipo",
+            "PLAYER_MEMBERSHIP_NOT_FOUND",
+            404
+        )
+
+    team = Team.query.get(membership.team_id)
+
+    if not team or team.club_id != user.club_id:
         return error_response(
             "No tienes acceso",
             "FORBIDDEN",
@@ -1377,13 +1471,11 @@ def get_player_attendance(player_id):
     ).order_by(TrainingSession.date.desc()).all()
 
     history = []
-
     present = 0
     late = 0
     absent = 0
 
     for record in attendance_records:
-
         if record.status == "present":
             present += 1
         elif record.status == "late":
@@ -1399,13 +1491,15 @@ def get_player_attendance(player_id):
         })
 
     total = present + late + absent
-
-    attendance_rate = 0
-    if total > 0:
-        attendance_rate = round((present / total) * 100)
+    attendance_rate = round((present / total) * 100) if total > 0 else 0
 
     return jsonify({
-        "player": player.serialize(),
+        "player": {
+            **player.serialize(),
+            "team_id": membership.team_id,
+            "player_number": membership.player_number,
+            "status": membership.status
+        },
         "summary": {
             "present": present,
             "late": late,
@@ -1415,6 +1509,7 @@ def get_player_attendance(player_id):
         },
         "history": history
     }), 200
+
 ############################################ TRAININGS ##############################################
 @api.route("/trainings", methods=["POST"])
 @jwt_required()
@@ -1590,7 +1685,7 @@ def onboarding_status():
         }), 200
 
     # STEP 3 — verificar jugadores
-    players_count = Player.query.join(Team).filter(
+    players_count = TeamPlayer.query.join(Team).filter(
         Team.club_id == club.id
     ).count()
 
@@ -1630,7 +1725,7 @@ def complete_onboarding():
             404
         )
 
-    players_count = Player.query.join(Team).filter(
+    players_count = TeamPlayer.query.join(Team).filter(
         Team.club_id == club.id
     ).count()
 

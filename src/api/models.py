@@ -101,37 +101,96 @@ class Team(db.Model):
 class Player(db.Model):
     __tablename__ = "players"
 
-    __table_args__ = (
-        db.UniqueConstraint("player_number", "team_id", name="unique_player_number_per_team"),
-    )
-    
     id = db.Column(db.String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
+
     first_name = db.Column(db.String(80), nullable=False)
     last_name = db.Column(db.String(80), nullable=False)
-    player_number = db.Column(db.Integer, nullable=False)
-    sex = db.Column(db.String(10))     
+    sex = db.Column(db.String(10))
     birth_date = db.Column(db.Date)
-    status = db.Column(db.String(20), default="active", nullable=False)
-    team_id = db.Column(db.String(36), db.ForeignKey("teams.id"), nullable=False)
+
+    club_id = db.Column(
+        db.String(36),
+        db.ForeignKey("clubs.id"),
+        nullable=False
+    )
+
     created_at = db.Column(db.DateTime(), default=datetime.utcnow)
 
-    # Relación ORM
-    team = db.relationship("Team", backref=db.backref("players", lazy=True))
-
-    def __repr__(self):
-        return f"<Player {self.first_name} {self.last_name}>"
+    club = db.relationship(
+        "Club",
+        backref=db.backref("players", lazy=True)
+    )
 
     def serialize(self):
         return {
             "id": self.id,
             "first_name": self.first_name,
             "last_name": self.last_name,
-            "player_number": self.player_number,
             "sex": self.sex,
             "birth_date": self.birth_date.isoformat() if self.birth_date else None,
-            "status": self.status,
-            "team_id": self.team_id,
+            "club_id": self.club_id,
             "created_at": self.created_at.isoformat()
+        }
+    
+class TeamPlayer(db.Model):
+    __tablename__ = "team_players"
+
+    __table_args__ = (
+        db.UniqueConstraint(
+            "team_id",
+            "player_id",
+            name="unique_player_per_team"
+        ),
+        db.UniqueConstraint(
+            "team_id",
+            "player_number",
+            name="unique_number_per_team"
+        ),
+    )
+
+    id = db.Column(db.String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
+
+    team_id = db.Column(
+        db.String(36),
+        db.ForeignKey("teams.id"),
+        nullable=False
+    )
+
+    player_id = db.Column(
+        db.String(36),
+        db.ForeignKey("players.id"),
+        nullable=False
+    )
+
+    player_number = db.Column(db.Integer, nullable=False)
+
+    status = db.Column(
+        db.String(20),
+        default="active",
+        nullable=False
+    )
+
+    created_at = db.Column(db.DateTime(), default=datetime.utcnow)
+
+    team = db.relationship(
+        "Team",
+        backref=db.backref("roster", lazy=True)
+    )
+
+    player = db.relationship(
+        "Player",
+        backref=db.backref("team_memberships", lazy=True)
+    )
+
+    def serialize(self):
+        return {
+            "id": self.id,
+            "team_id": self.team_id,
+            "player_id": self.player_id,
+            "player_number": self.player_number,
+            "status": self.status,
+            "created_at": self.created_at.isoformat(),
+            "player": self.player.serialize() if self.player else None
         }
     
 class TrainingSession(db.Model):
@@ -213,8 +272,6 @@ class Attendance(db.Model):
             "id": self.id,
             "session_id": self.session_id,
             "player_id": self.player_id,
-            "player_name": f"{self.player.first_name} {self.player.last_name}" if self.player else None,
-            "player_number": self.player.player_number if self.player else None,
             "status": self.status,
             "created_at": self.created_at.isoformat()
         }

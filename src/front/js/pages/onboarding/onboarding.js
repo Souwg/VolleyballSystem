@@ -21,6 +21,7 @@ export const Onboarding = () => {
   const [location, setLocation] = useState("");
   const [firstName, setFirstName] = useState("");
   const [lastName, setLastName] = useState("");
+  const [birthDate, setBirthDate] = useState("");
   const [number, setNumber] = useState("");
   const [sex, setSex] = useState("");
   const [teamName, setTeamName] = useState("");
@@ -93,6 +94,7 @@ export const Onboarding = () => {
       player_number: number,
       sex,
       team_id: selectedTeam,
+      birth_date: birthDate,
     });
 
     if (Object.keys(newErrors).length > 0) {
@@ -105,6 +107,7 @@ export const Onboarding = () => {
     const result = await actions.createPlayer({
       first_name: firstName.trim(),
       last_name: lastName.trim(),
+      birth_date: birthDate || null,
       player_number: Number(number),
       sex: sex,
       team_id: selectedTeam,
@@ -265,6 +268,26 @@ export const Onboarding = () => {
                 {errors.LAST_NAME_REQUIRED && (
                   <p className="form-error">
                     {errorMessages.LAST_NAME_REQUIRED}
+                  </p>
+                )}
+              </div>
+              <div>
+                <Input
+                  type="date"
+                  value={birthDate}
+                  className={errors.INVALID_BIRTH_DATE ? "input-error" : ""}
+                  onChange={(e) => {
+                    setBirthDate(e.target.value);
+                    setErrors((prev) => ({
+                      ...prev,
+                      INVALID_BIRTH_DATE: false,
+                    }));
+                  }}
+                />
+
+                {errors.INVALID_BIRTH_DATE && (
+                  <p className="form-error">
+                    {errorMessages.INVALID_BIRTH_DATE}
                   </p>
                 )}
               </div>

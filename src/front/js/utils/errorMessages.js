@@ -19,6 +19,7 @@ export const errorMessages = {
   TEAM_ALREADY_EXISTS: "Ya existe un equipo con ese nombre",
   FIRST_NAME_REQUIRED: "Ingresa el nombre",
   LAST_NAME_REQUIRED: "Ingresa el apellido",
+  INVALID_BIRTH_DATE: "La fecha de nacimiento no puede ser futura",
   PLAYER_NUMBER_REQUIRED: "Ingresa el número del jugador",
   INVALID_PLAYER_NUMBER: "El número debe estar entre 1 y 99",
   PLAYER_NUMBER_DUPLICATED: "Ya existe un jugador con ese número",

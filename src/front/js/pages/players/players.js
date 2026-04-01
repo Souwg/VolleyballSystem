@@ -70,7 +70,7 @@ export const Players = () => {
 
     if (!result?.ok) {
       setErrors({ [result.code]: true });
-      setLoading(false); // 🔥 TAMBIÉN AQUÍ
+      setLoading(false);
       return;
     }
 

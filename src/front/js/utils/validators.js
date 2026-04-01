@@ -78,6 +78,7 @@ export const validatePlayer = ({
   player_number,
   sex,
   team_id,
+  birth_date,
 }) => {
   const errors = {};
 
@@ -109,6 +110,15 @@ export const validatePlayer = ({
 
   if (!team_id) {
     errors.TEAM_ID_REQUIRED = true;
+  }
+
+  if (birth_date) {
+    const selectedDate = new Date(birth_date);
+    const today = new Date();
+
+    if (selectedDate > today) {
+      errors.INVALID_BIRTH_DATE = true;
+    }
   }
 
   return errors;

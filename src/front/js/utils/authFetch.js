@@ -103,6 +103,7 @@ const FORM_ERRORS = [
   "TEAM_ID_REQUIRED",
   "CONFIRM_PASSWORD_REQUIRED",
   "PASSWORDS_NOT_MATCH",
+  "INVALID_BIRTH_DATE",
 ];
 
 export const parseResponse = async (resp) => {
