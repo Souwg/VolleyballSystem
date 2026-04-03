@@ -22,15 +22,24 @@ export const TeamTrainings = () => {
   const navigate = useNavigate();
   const [loading, setLoading] = useState(true);
 
-  useEffect(() => {
-    loadTrainings();
-  }, [team_id]);
-
   const loadTrainings = async () => {
     setLoading(true);
     await actions.getTeamTrainings(team_id);
     setLoading(false);
   };
+
+  useEffect(() => {
+    loadTrainings();
+  }, [team_id]);
+
+  const handleCreateTraining = () => {
+    navigate(`/teams/${team_id}/trainings/new`);
+  };
+
+  const handleOpenTraining = (trainingId) => {
+    navigate(`/trainings/${trainingId}`);
+  };
+
   if (loading) {
     return (
       <Container>
@@ -44,10 +53,7 @@ export const TeamTrainings = () => {
         title="Entrenamientos del equipo"
         subtitle="Gestiona y crea entrenamientos para este equipo"
         actions={
-          <Button
-            className="button-primary"
-            onClick={() => navigate(`/teams/${team_id}/trainings/new`)}
-          >
+          <Button className="button-primary" onClick={handleCreateTraining}>
             + Crear entrenamiento
           </Button>
         }
@@ -57,10 +63,7 @@ export const TeamTrainings = () => {
           <div className="empty-state">
             <h4>No hay entrenamientos aún</h4>
             <p>Crea el primer entrenamiento para este equipo</p>
-            <Button
-              className="button-primary"
-              onClick={() => navigate(`/teams/${team_id}/trainings/new`)}
-            >
+            <Button className="button-primary" onClick={handleCreateTraining}>
               Crear entrenamiento
             </Button>
           </div>
@@ -69,7 +72,7 @@ export const TeamTrainings = () => {
             <Card
               key={training.id}
               className="training-card"
-              onClick={() => navigate(`/trainings/${training.id}`)}
+              onClick={() => handleOpenTraining(training.id)}
             >
               <p>{formatDate(training.date)}</p>
               <p>{training.location}</p>

@@ -17,39 +17,40 @@ export const TrainingDetail = () => {
   const [loading, setLoading] = useState(true);
   const [hasChanges, setHasChanges] = useState(false);
 
+  const loadTrainingData = async () => {
+    setLoading(true);
+
+    await actions.getTrainingPlayers(training_id);
+
+    const attendanceData = await actions.getTrainingAttendance(training_id);
+
+    if (attendanceData) {
+      const map = {};
+
+      attendanceData.forEach((a) => {
+        map[a.player_id] = a.status;
+      });
+
+      setAttendance(map);
+    }
+
+    setLoading(false);
+  };
+
   useEffect(() => {
-    const loadData = async () => {
-      setLoading(true);
-      const trainingsData = await actions.getAllTrainings();
-      const currentTraining = trainingsData?.trainings?.find(
-        (t) => t.id === training_id,
-      );
-
-      if (!currentTraining) {
-        setLoading(false);
-        return;
-      }
-
-      await actions.getTeamPlayers(currentTraining.team_id);
-
-      const attendanceData = await actions.getTrainingAttendance(training_id);
-
-      if (attendanceData) {
-        const map = {};
-
-        attendanceData.forEach((a) => {
-          map[a.player_id] = a.status;
-        });
-
-        setAttendance(map);
-      }
-      setLoading(false);
-    };
-
-    loadData();
+    loadTrainingData();
   }, [training_id]);
 
-  const saveAttendance = async () => {
+  const handleAttendanceChange = (playerId, newStatus) => {
+    setAttendance((prev) => ({
+      ...prev,
+      [playerId]: newStatus,
+    }));
+
+    setHasChanges(true);
+  };
+
+  const handleSaveAttendance = async () => {
     const attendanceList = store.players
       .filter((player) => attendance[player.id])
       .map((player) => ({
@@ -113,13 +114,9 @@ export const TrainingDetail = () => {
 
                   <AttendanceToggle
                     value={status}
-                    onChange={(newStatus) => {
-                      setAttendance((prev) => ({
-                        ...prev,
-                        [player.id]: newStatus,
-                      }));
-                      setHasChanges(true);
-                    }}
+                    onChange={(newStatus) =>
+                      handleAttendanceChange(player.id, newStatus)
+                    }
                   />
                 </div>
               );
@@ -142,7 +139,7 @@ export const TrainingDetail = () => {
 
         <Button
           className="button-primary"
-          onClick={saveAttendance}
+          onClick={handleSaveAttendance}
           disabled={!hasChanges || !allMarked}
         >
           {!allMarked

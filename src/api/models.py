@@ -232,6 +232,62 @@ class TrainingSession(db.Model):
             "created_by": self.created_by,
             "created_at": self.created_at.isoformat()
         }
+    
+class TrainingPlayer(db.Model):
+    __tablename__ = "training_players"
+
+    __table_args__ = (
+        db.UniqueConstraint(
+            "training_id",
+            "player_id",
+            name="unique_player_per_training"
+        ),
+    )
+
+    id = db.Column(
+        db.String(36),
+        primary_key=True,
+        default=lambda: str(uuid.uuid4())
+    )
+
+    training_id = db.Column(
+        db.String(36),
+        db.ForeignKey("training_sessions.id"),
+        nullable=False
+    )
+
+    player_id = db.Column(
+        db.String(36),
+        db.ForeignKey("players.id"),
+        nullable=False
+    )
+
+    player_number = db.Column(db.Integer, nullable=False)
+
+    created_at = db.Column(
+        db.DateTime,
+        default=datetime.utcnow
+    )
+
+    training = db.relationship(
+        "TrainingSession",
+        backref=db.backref("roster_snapshot", lazy=True)
+    )
+
+    player = db.relationship(
+        "Player",
+        backref=db.backref("training_snapshots", lazy=True)
+    )
+
+    def serialize(self):
+        return {
+            "id": self.id,
+            "training_id": self.training_id,
+            "player_id": self.player_id,
+            "player_number": self.player_number,
+            "player": self.player.serialize() if self.player else None,
+            "created_at": self.created_at.isoformat()
+        }
 
 class Attendance(db.Model):
     __tablename__ = "attendance"

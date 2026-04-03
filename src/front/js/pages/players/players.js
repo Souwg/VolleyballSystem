@@ -19,9 +19,12 @@ export const Players = () => {
   const [sex, setSex] = useState("");
   const [searchTerm, setSearchTerm] = useState("");
   const [teamFilter, setTeamFilter] = useState("");
-  const [statusFilter, setStatusFilter] = useState("active");
+  const [statusFilter, setStatusFilter] = useState("all");
   const [errors, setErrors] = useState({});
   const [loading, setLoading] = useState(false);
+  const [assigningPlayer, setAssigningPlayer] = useState(null);
+  const [selectedTeam, setSelectedTeam] = useState("");
+  const [newNumber, setNewNumber] = useState("");
 
   useEffect(() => {
     if (!store.token) return;
@@ -83,16 +86,124 @@ export const Players = () => {
     return team ? team.name : "Unknown";
   };
 
-  const filteredPlayers = store.players.filter((player) => {
-    const fullName = `${player.first_name} ${player.last_name}`.toLowerCase();
-    const matchesSearch = fullName.includes(searchTerm.toLowerCase());
-    const matchesTeam = teamFilter === "" || player.team_id === teamFilter;
-    const matchesStatus =
-      statusFilter === "all" || player.status === statusFilter;
+  const filteredPlayers = store.players
+    .filter((player) => {
+      const fullName = `${player.first_name} ${player.last_name}`.toLowerCase();
 
-    return matchesSearch && matchesTeam && matchesStatus;
-  });
+      const matchesSearch = fullName.includes(searchTerm.toLowerCase());
 
+      const matchesTeam =
+        teamFilter === ""
+          ? true
+          : teamFilter === "unassigned"
+          ? !player.team_id
+          : player.team_id === teamFilter;
+
+      const matchesStatus =
+        statusFilter === "all" || player.status === statusFilter;
+
+      return matchesSearch && matchesTeam && matchesStatus;
+    })
+    .sort((a, b) => {
+      const numA = Number(a.player_number) || 999;
+      const numB = Number(b.player_number) || 999;
+
+      return numA - numB;
+    });
+
+  const handleStatusFilter = (status) => {
+    setStatusFilter(status);
+  };
+
+  const handleTeamFilter = (teamId) => {
+    setTeamFilter(teamId);
+  };
+
+  const clearFilters = () => {
+    setTeamFilter("");
+    setStatusFilter("all");
+    setSearchTerm("");
+  };
+
+  const closeAssignTeam = () => {
+    setAssigningPlayer(null);
+    setSelectedTeam("");
+    setNewNumber("");
+    setErrors({});
+  };
+
+  const openAssignTeam = (e, player) => {
+    e.stopPropagation();
+    setAssigningPlayer(player);
+    setSelectedTeam("");
+    setNewNumber("");
+    setErrors({});
+  };
+
+  const validateAssignTeam = () => {
+    if (!selectedTeam) {
+      setErrors({ TEAM_ID_REQUIRED: true });
+      return false;
+    }
+
+    if (!newNumber) {
+      setErrors({ PLAYER_NUMBER_REQUIRED: true });
+      return false;
+    }
+
+    return true;
+  };
+
+  const handleAssignPlayer = async (player) => {
+    if (!validateAssignTeam()) return;
+
+    const result = await actions.addExistingPlayerToTeam(selectedTeam, {
+      player_id: player.id,
+      player_number: Number(newNumber),
+    });
+
+    if (!result?.ok) {
+      setErrors({ [result.code]: true });
+      return;
+    }
+
+    await actions.getPlayers();
+    closeAssignTeam();
+  };
+
+  const handleStatusChange = async (e, player, newStatus) => {
+    e.stopPropagation();
+
+    const actionText = newStatus === "inactive" ? "desactivar" : "activar";
+
+    const confirmed = window.confirm(
+      `¿Seguro que deseas ${actionText} a ${player.first_name}?`,
+    );
+
+    if (!confirmed) return;
+
+    const result = await actions.updatePlayerStatus(player.id, newStatus);
+
+    if (!result?.ok) {
+      setErrors({ GENERIC_ERROR: true });
+      return;
+    }
+
+    setStatusFilter(newStatus);
+  };
+
+  const handleStartEdit = (e, player) => {
+    e.stopPropagation();
+    startEdit(player);
+  };
+
+  const activeCount = store.players.filter((p) => p.status === "active").length;
+
+  const inactiveCount = store.players.filter(
+    (p) => p.status === "inactive",
+  ).length;
+
+  const unassignedCount = store.players.filter((p) => !p.team_id).length;
   return (
     <>
       <PageHeader title="Players" />
@@ -110,41 +221,48 @@ export const Players = () => {
           <div className="filter-chips">
             <button
               className={statusFilter === "active" ? "chip active" : "chip"}
-              onClick={() => setStatusFilter("active")}
+              onClick={() => handleStatusFilter("active")}
             >
-              Activos
+              Activos ({activeCount})
             </button>
 
             <button
               className={statusFilter === "inactive" ? "chip active" : "chip"}
-              onClick={() => setStatusFilter("inactive")}
+              onClick={() => handleStatusFilter("inactive")}
             >
-              Inactivos
+              Inactivos ({inactiveCount})
             </button>
 
             <button
               className={statusFilter === "all" ? "chip active" : "chip"}
-              onClick={() => setStatusFilter("all")}
+              onClick={() => handleStatusFilter("all")}
             >
-              Todos
+              Todos ({store.players.length})
             </button>
           </div>
 
           {/* 🏐 TEAM FILTER */}
-          <p className="filter-label">Equipo</p>
+          <p className="filter-label">Categoría</p>
           <div className="filter-chips">
             <button
               className={teamFilter === "" ? "chip active" : "chip"}
-              onClick={() => setTeamFilter("")}
+              onClick={() => handleTeamFilter("")}
             >
-              Todos
+              Todos ({store.players.length})
+            </button>
+
+            <button
+              className={teamFilter === "unassigned" ? "chip active" : "chip"}
+              onClick={() => handleTeamFilter("unassigned")}
+            >
+              Sin categoría ({unassignedCount})
             </button>
 
             {store.teams.map((team) => (
               <button
                 key={team.id}
                 className={teamFilter === team.id ? "chip active" : "chip"}
-                onClick={() => setTeamFilter(team.id)}
+                onClick={() => handleTeamFilter(team.id)}
               >
                 {team.name}
               </button>
@@ -164,8 +282,8 @@ export const Players = () => {
               </>
             ) : (
               <>
-                <p>No hay jugadores en este equipo 😕</p>
-                <Button onClick={() => setTeamFilter("")}>Ver todos</Button>
+                <p>No hay jugadores que coincidan con los filtros</p>
+                <Button onClick={clearFilters}>Limpiar filtros</Button>
               </>
             )}
           </div>
@@ -342,8 +460,14 @@ export const Players = () => {
                           {player.first_name} {player.last_name}
                         </p>
                         <p className="player-meta">
-                          #{player.player_number} ·{" "}
-                          {getTeamName(player.team_id)}
+                          {player.team_id ? (
+                            <>
+                              #{player.player_number} ·{" "}
+                              {getTeamName(player.team_id)}
+                            </>
+                          ) : (
+                            "Sin categoría"
+                          )}
                         </p>
                       </div>
 
@@ -351,8 +475,6 @@ export const Players = () => {
                         className={`status-badge ${
                           player.status === "active"
                             ? "status-active"
-                            : player.status === "injured"
-                            ? "status-injured"
                             : "status-inactive"
                         }`}
                       >
@@ -363,55 +485,117 @@ export const Players = () => {
                     <div className="player-actions">
                       <Button
                         className="button-secondary"
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          startEdit(player);
-                        }}
+                        onClick={(e) => handleStartEdit(e, player)}
                       >
                         Editar
                       </Button>
-                      {player.status === "inactive" ? (
+
+                      {!player.team_id ? (
+                        <Button
+                          className="button-primary"
+                          onClick={(e) => openAssignTeam(e, player)}
+                        >
+                          Asignar categoría
+                        </Button>
+                      ) : player.status === "inactive" ? (
                         <Button
                           className="button-success"
-                          onClick={async (e) => {
-                            e.stopPropagation();
-                            const result = await actions.updatePlayerStatus(
-                              player.id,
-                              "active",
-                            );
-
-                            if (!result?.ok) {
-                              setErrors({ GENERIC_ERROR: true });
-                              return;
-                            }
-
-                            setStatusFilter("active");
-                          }}
+                          onClick={(e) =>
+                            handleStatusChange(e, player, "active")
+                          }
                         >
                           Activar
                         </Button>
                       ) : (
                         <Button
                           className="button-danger"
-                          onClick={async (e) => {
-                            e.stopPropagation();
-                            const result = await actions.updatePlayerStatus(
-                              player.id,
-                              "inactive",
-                            );
-
-                            if (!result?.ok) {
-                              setErrors({ GENERIC_ERROR: true });
-                              return;
-                            }
-
-                            setStatusFilter("inactive");
-                          }}
+                          onClick={(e) =>
+                            handleStatusChange(e, player, "inactive")
+                          }
                         >
                           Desactivar
                         </Button>
                       )}
                     </div>
+
+                    {assigningPlayer?.id === player.id && (
+                      <Card className="assign-team-inline">
+                        <h4>Asignar categoría</h4>
+
+                        <select
+                          value={selectedTeam}
+                          onChange={(e) => {
+                            setSelectedTeam(e.target.value);
+                            setErrors((prev) => ({
+                              ...prev,
+                              TEAM_ID_REQUIRED: false,
+                            }));
+                          }}
+                          className={
+                            errors.TEAM_ID_REQUIRED ? "input-error" : ""
+                          }
+                        >
+                          <option value="">Selecciona categoría</option>
+                          {store.teams.map((team) => (
+                            <option key={team.id} value={team.id}>
+                              {team.name}
+                            </option>
+                          ))}
+                        </select>
+                        {errors.TEAM_ID_REQUIRED && (
+                          <p className="form-error">
+                            {errorMessages.TEAM_ID_REQUIRED}
+                          </p>
+                        )}
+
+                        <Input
+                          type="number"
+                          placeholder="Número"
+                          value={newNumber}
+                          onChange={(e) => {
+                            setNewNumber(e.target.value);
+                            setErrors((prev) => ({
+                              ...prev,
+                              PLAYER_NUMBER_REQUIRED: false,
+                              PLAYER_NUMBER_DUPLICATED: false,
+                            }));
+                          }}
+                          className={
+                            errors.PLAYER_NUMBER_REQUIRED ||
+                            errors.PLAYER_NUMBER_DUPLICATED
+                              ? "input-error"
+                              : ""
+                          }
+                        />
+                        {errors.PLAYER_NUMBER_REQUIRED && (
+                          <p className="form-error">
+                            {errorMessages.PLAYER_NUMBER_REQUIRED}
+                          </p>
+                        )}
+
+                        {errors.PLAYER_NUMBER_DUPLICATED && (
+                          <p className="form-error">
+                            {errorMessages.PLAYER_NUMBER_DUPLICATED}
+                          </p>
+                        )}
+
+                        <div className="form-actions">
+                          <Button
+                            className="button-secondary"
+                            onClick={closeAssignTeam}
+                          >
+                            Cancelar
+                          </Button>
+
+                          <Button
+                            className="button-primary"
+                            onClick={() => handleAssignPlayer(player)}
+                          >
+                            Guardar
+                          </Button>
+                        </div>
+                      </Card>
+                    )}
                   </>
                 )}
               </Card>

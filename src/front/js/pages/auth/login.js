@@ -6,9 +6,11 @@ import { Button } from "../../component/ui/button";
 import { Input } from "../../component/ui/input";
 import { validateLogin } from "../../utils/validators";
 import { errorMessages } from "../../utils/errorMessages";
+
 export const Login = () => {
   const { actions } = useContext(Context);
   const [errors, setErrors] = useState({});
+  const [loading, setLoading] = useState(false);
   const navigate = useNavigate();
 
   const [email, setEmail] = useState("");
@@ -16,6 +18,7 @@ export const Login = () => {
 
   const handleLogin = async (e) => {
     e.preventDefault();
+    if (loading) return;
 
     const newErrors = validateLogin({ email, password });
 
@@ -26,13 +29,15 @@ export const Login = () => {
 
     setErrors({});
 
-    const result = await actions.loginUser(email, password);
+    setLoading(true);
+
+    const result = await actions.loginUser(email.trim(), password);
 
     if (!result?.ok) {
       setErrors({ [result.code]: true });
+      setLoading(false);
       return;
     }
-
     if (result.data.first_login === true) {
       navigate("/set-password", { replace: true });
       return;
@@ -58,7 +63,8 @@ export const Login = () => {
             className={
               errors.EMAIL_REQUIRED ||
               errors.INVALID_EMAIL ||
-              errors.INVALID_CREDENTIALS
+              errors.INVALID_CREDENTIALS ||
+              errors.ACCOUNT_DISABLED
                 ? "input-error"
                 : ""
             }
@@ -69,6 +75,7 @@ export const Login = () => {
                 EMAIL_REQUIRED: false,
                 INVALID_EMAIL: false,
                 INVALID_CREDENTIALS: false,
+                ACCOUNT_DISABLED: false,
               }));
             }}
           />
@@ -88,7 +95,9 @@ export const Login = () => {
             placeholder="Password"
             value={password}
             className={
-              errors.PASSWORD_REQUIRED || errors.INVALID_CREDENTIALS
+              errors.PASSWORD_REQUIRED ||
+              errors.INVALID_CREDENTIALS ||
+              errors.ACCOUNT_DISABLED
                 ? "input-error"
                 : ""
             }
@@ -98,6 +107,7 @@ export const Login = () => {
                 ...prev,
                 PASSWORD_REQUIRED: false,
                 INVALID_CREDENTIALS: false,
+                ACCOUNT_DISABLED: false,
               }));
             }}
           />
@@ -109,9 +119,14 @@ export const Login = () => {
           {errors.INVALID_CREDENTIALS && (
             <p className="form-error">{errorMessages.INVALID_CREDENTIALS}</p>
           )}
+          {errors.ACCOUNT_DISABLED && (
+            <p className="form-error">{errorMessages.ACCOUNT_DISABLED}</p>
+          )}
         </div>
 
-        <Button type="submit">Login</Button>
+        <Button type="submit" disabled={loading}>
+          {loading ? "Ingresando..." : "Login"}
+        </Button>
       </form>
     </AuthLayout>
   );

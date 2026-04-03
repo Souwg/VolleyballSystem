@@ -11,6 +11,42 @@ export const Dashboard = () => {
   const navigate = useNavigate();
   const stats = store.dashboardStats;
 
+  const getDashboardCTA = () => {
+    if (stats.total_teams === 0) {
+      return {
+        title: "Crea tu primer equipo 🏐",
+        message: "Los equipos son la base de tu club",
+        action: "go_to_teams",
+        buttonText: "Crear equipo",
+      };
+    }
+
+    if (stats.total_players === 0) {
+      return {
+        title: "Añade tu primer jugador 👤",
+        message: "Empieza a construir tu equipo",
+        action: "go_to_players",
+        buttonText: "Añadir jugador",
+      };
+    }
+
+    if (stats.total_trainings === 0) {
+      return {
+        title: "Crea tu primer entrenamiento 🏐",
+        message: "Organiza sesiones para tu equipo",
+        action: "create_training",
+        buttonText: "Crear entrenamiento",
+      };
+    }
+
+    return {
+      title: "Gestiona tus entrenamientos 📅",
+      message: "Consulta sesiones o registra asistencia",
+      action: "go_to_trainings",
+      buttonText: "Ver entrenamientos",
+    };
+  };
+
   useEffect(() => {
     if (!store.token) return;
     actions.getDashboard();
@@ -20,29 +56,23 @@ export const Dashboard = () => {
     return <p>Loading dashboard...</p>;
   }
 
-  let ctaTitle = "";
-  let ctaMessage = "";
-  let ctaAction = null;
+  const cta = getDashboardCTA();
 
-  // 🧠 UX FLOW REAL
+  const handleCTAAction = () => {
+    const routes = {
+      go_to_teams: "/teams",
+      go_to_players: "/players",
+      create_training: "/trainings",
+      go_to_trainings: "/trainings",
+    };
 
-  if (stats.total_teams === 0) {
-    ctaTitle = "Crea tu primer equipo 🏐";
-    ctaMessage = "Los equipos son la base de tu club";
-    ctaAction = "go_to_teams";
-  } else if (stats.total_players === 0) {
-    ctaTitle = "Añade tu primer jugador 👤";
-    ctaMessage = "Empieza a construir tu equipo";
-    ctaAction = "go_to_players";
-  } else if (stats.total_trainings === 0) {
-    ctaTitle = "Crea tu primer entrenamiento 🏐";
-    ctaMessage = "Organiza sesiones para tu equipo";
-    ctaAction = "create_training";
-  } else {
-    ctaTitle = "Gestiona tus entrenamientos 📅";
-    ctaMessage = "Consulta sesiones o registra asistencia";
-    ctaAction = "go_to_trainings";
-  }
+    navigate(routes[cta.action]);
+  };
+
+  const goToTeams = () => navigate("/teams");
+  const goToPlayers = () => navigate("/players");
+  const goToTrainings = () => navigate("/trainings");
+
   return (
     <>
       <PageHeader
@@ -50,42 +80,25 @@ export const Dashboard = () => {
         subtitle="Aquí puedes ver el resumen de tu club"
       />
       <Card className="dashboard-cta">
-        <h3>{ctaTitle}</h3>
-        <p>{ctaMessage}</p>
+        <h3>{cta.title}</h3>
+        <p>{cta.message}</p>
 
-        {ctaAction === "go_to_teams" && (
-          <Button onClick={() => navigate("/teams")}>Crear equipo</Button>
-        )}
-
-        {ctaAction === "go_to_players" && (
-          <Button onClick={() => navigate("/players")}>Añadir jugador</Button>
-        )}
-
-        {ctaAction === "go_to_trainings" && (
-          <Button onClick={() => navigate("/trainings")}>
-            Ver entrenamientos
-          </Button>
-        )}
-        {ctaAction === "create_training" && (
-          <Button onClick={() => navigate("/trainings")}>
-            Crear entrenamiento
-          </Button>
-        )}
+        <Button onClick={handleCTAAction}>{cta.buttonText}</Button>
       </Card>
       <div className="dashboard-grid">
         <Card>
           <p className="card-label">Equipos</p>
-          <h2>{store.dashboardStats.total_teams}</h2>
+          <h2>{stats.total_teams}</h2>
         </Card>
 
         <Card>
           <p className="card-label">Jugadores</p>
-          <h2>{store.dashboardStats.total_players}</h2>
+          <h2>{stats.total_players}</h2>
         </Card>
 
         <Card>
           <p className="card-label"> Jugadores Activos</p>
-          <h2>{store.dashboardStats.active_players}</h2>
+          <h2>{stats.active_players}</h2>
         </Card>
       </div>
 
@@ -93,13 +106,13 @@ export const Dashboard = () => {
         <h4>Accesos rápidos</h4>
 
         <div className="dashboard-actions">
-          <Button onClick={() => navigate("/teams")}>Ver equipos</Button>
+          <Button onClick={goToTeams}>Ver equipos</Button>
 
-          <Button variant="secondary" onClick={() => navigate("/players")}>
+          <Button variant="secondary" onClick={goToPlayers}>
             Ver jugadores
           </Button>
 
-          <Button variant="secondary" onClick={() => navigate("/trainings")}>
+          <Button variant="secondary" onClick={goToTrainings}>
             Ver entrenamientos
           </Button>
         </div>

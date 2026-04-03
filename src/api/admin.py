@@ -3,7 +3,7 @@ from flask import redirect, request
 from flask_admin import Admin
 from flask_admin.contrib.sqla import ModelView
 from flask_jwt_extended import verify_jwt_in_request, get_jwt_identity
-from .models import db, User, Club, Team, Player, TeamPlayer, Attendance, TrainingSession, TokenBlockedList, RefreshToken
+from .models import db, User, Club, Team, Player, TeamPlayer, Attendance, TrainingSession, TrainingPlayer, TokenBlockedList, RefreshToken
 import os
 ENV = os.getenv("APP_ENV")
 
@@ -43,6 +43,7 @@ def setup_admin(app):
     admin.add_view(SecureModelView(Player, db.session))
     admin.add_view(SecureModelView(TeamPlayer, db.session))
     admin.add_view(SecureModelView(TrainingSession, db.session))
+    admin.add_view(SecureModelView(TrainingPlayer, db.session))
     admin.add_view(SecureModelView(Attendance, db.session))
     admin.add_view(SecureModelView(TokenBlockedList, db.session))
     admin.add_view(SecureModelView(RefreshToken, db.session))

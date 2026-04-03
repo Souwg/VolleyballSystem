@@ -183,6 +183,30 @@ const getState = ({ getStore, getActions, setStore }) => {
           console.error("Error loading players:", error);
         }
       },
+
+      addExistingPlayerToTeam: async (teamId, playerData) => {
+        try {
+          const resp = await authFetch(
+            `/api/teams/${teamId}/players/existing`,
+            {
+              method: "POST",
+              headers: {
+                "Content-Type": "application/json",
+              },
+              body: JSON.stringify(playerData),
+            },
+          );
+
+          const result = await parseResponse(resp);
+
+          if (!result.ok) return result;
+
+          return result;
+        } catch (error) {
+          console.error("Error adding existing player:", error);
+        }
+      },
+
       getAdminClients: async () => {
         try {
           const resp = await authFetch("/api/admin/clients");
@@ -282,6 +306,24 @@ const getState = ({ getStore, getActions, setStore }) => {
           return result.data;
         } catch (error) {
           console.error("Error loading team players:", error);
+        }
+      },
+
+      getTrainingPlayers: async (trainingId) => {
+        try {
+          const resp = await authFetch(`/api/trainings/${trainingId}/players`);
+
+          const result = await parseResponse(resp);
+
+          if (!result.ok) return result;
+
+          setStore({
+            players: result.data.players,
+          });
+
+          return result.data;
+        } catch (error) {
+          console.error("Error loading training snapshot:", error);
         }
       },
 
@@ -420,6 +462,29 @@ const getState = ({ getStore, getActions, setStore }) => {
           return result;
         } catch (error) {
           console.error("Error creating player:", error);
+        }
+      },
+      removePlayerFromTeam: async (teamId, playerId) => {
+        try {
+          const resp = await authFetch(
+            `/api/teams/${teamId}/players/${playerId}`,
+            {
+              method: "DELETE",
+            },
+          );
+
+          const result = await parseResponse(resp);
+
+          if (!result.ok) return result;
+
+          return result;
+        } catch (error) {
+          console.error("Error removing player from team:", error);
+          return {
+            ok: false,
+            code: "NETWORK_ERROR",
+            message: "Error de conexión",
+          };
         }
       },
 

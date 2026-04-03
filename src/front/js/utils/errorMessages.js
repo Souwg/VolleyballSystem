@@ -30,4 +30,15 @@ export const errorMessages = {
   // TRAININGS
   TRAINING_DATE_REQUIRED: "Selecciona una fecha",
   TRAINING_LOCATION_REQUIRED: "La ubicación es obligatoria",
+  TEAM_HAS_TRAININGS:
+    "No puedes eliminar esta categoría porque tiene entrenamientos históricos.",
+
+  // TEAMS
+  TEAM_HAS_PLAYERS: "No puedes eliminar esta categoría porque tiene jugadores.",
+
+  PLAYER_ALREADY_IN_TEAM: "Este jugador ya pertenece a la categoría.",
+
+  PLAYER_MEMBERSHIP_NOT_FOUND: "El jugador no pertenece a esta categoría.",
+
+  ATTENDANCE_REQUIRED: "Debes marcar al menos una asistencia.",
 };

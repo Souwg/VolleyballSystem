@@ -121,16 +121,18 @@ export const Onboarding = () => {
   };
 
   useEffect(() => {
-    if (step === 4) {
-      setTimeout(() => {
-        navigate("/dashboard");
-      }, 2000);
-    }
-  }, [step]);
+    if (step !== 4) return;
+
+    const timeout = setTimeout(() => {
+      navigate("/dashboard");
+    }, 2000);
+
+    return () => clearTimeout(timeout);
+  }, [step, navigate]);
 
   useEffect(() => {
     if (store.club?.location) {
-      setLocation(store.club.location);
+      setLocation(store.club.location?.trim() || "");
     }
   }, [store.club]);
 

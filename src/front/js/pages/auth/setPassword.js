@@ -31,7 +31,9 @@ export const SetPassword = () => {
     setErrors({});
     setLoading(true);
 
-    const result = await actions.setPassword(password);
+    const cleanPassword = password.trim();
+
+    const result = await actions.setPassword(cleanPassword);
 
     if (!result?.ok) {
       setErrors({ [result.code]: true });
@@ -106,12 +108,9 @@ export const SetPassword = () => {
           <p className="form-success">✅ contraseñas coinciden</p>
         )}
 
-        {confirmPassword &&
-          password &&
-          password !== confirmPassword &&
-          !errors.PASSWORDS_NOT_MATCH && (
-            <p className="form-error">❌ {errorMessages.PASSWORDS_NOT_MATCH}</p>
-          )}
+        {confirmPassword && password && (
+          <p className="form-error">❌ {errorMessages.PASSWORDS_NOT_MATCH}</p>
+        )}
         <Button variant="primary" type="submit" disabled={loading}>
           {loading ? "Saving..." : "Save password"}
         </Button>

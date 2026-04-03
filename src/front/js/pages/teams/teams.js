@@ -17,11 +17,18 @@ export const Teams = () => {
   const [showForm, setShowForm] = useState(false);
   const [errors, setErrors] = useState({});
   const [loading, setLoading] = useState(false);
+  const [loadingTeams, setLoadingTeams] = useState(true);
 
   useEffect(() => {
-    if (!store.token) return;
+    const loadTeams = async () => {
+      if (!store.token) return;
 
-    actions.getTeams();
+      setLoadingTeams(true);
+      await actions.getTeams();
+      setLoadingTeams(false);
+    };
+
+    loadTeams();
   }, [store.token]);
 
   const handleCreateTeam = async (e) => {
@@ -50,24 +57,32 @@ export const Teams = () => {
       return;
     }
 
-    setTeamName("");
-    setShowForm(false);
+    closeCreateForm();
     setLoading(false);
 
     await actions.getTeams();
   };
 
+  const openCreateForm = () => {
+    setShowForm(true);
+    setErrors({});
+  };
+
+  const closeCreateForm = () => {
+    setShowForm(false);
+    setTeamName("");
+    setErrors({});
+  };
+
+  if (loadingTeams) {
+    return <p>Cargando categorías...</p>;
+  }
+
   return (
     <>
       <PageHeader title="Equipos" subtitle="Gestiona los equipos de tu club" />
       {!showForm && (
-        <Button
-          className="button-primary"
-          onClick={() => {
-            setShowForm(true);
-            setErrors({});
-          }}
-        >
+        <Button className="button-primary" onClick={openCreateForm}>
           + Crear equipo
         </Button>
       )}
@@ -107,10 +122,7 @@ export const Teams = () => {
               <Button
                 type="button"
                 className="button-secondary"
-                onClick={() => {
-                  setShowForm(false);
-                  setTeamName("");
-                }}
+                onClick={closeCreateForm}
               >
                 Cancelar
               </Button>
@@ -128,13 +140,7 @@ export const Teams = () => {
             <h4>Aún no tienes equipos</h4>
             <p>Crea tu primer equipo para empezar</p>
 
-            <Button
-              className="button-primary"
-              onClick={() => {
-                setShowForm(true);
-                setErrors({});
-              }}
-            >
+            <Button className="button-primary" onClick={openCreateForm}>
               Crear equipo
             </Button>
           </Card>

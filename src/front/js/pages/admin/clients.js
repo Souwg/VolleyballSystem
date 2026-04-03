@@ -1,6 +1,7 @@
 import React, { useEffect, useContext, useState } from "react";
 import { Context } from "../../store/appContext";
 import { Input } from "../../component/ui/input";
+import { Card } from "../../component/ui/card";
 import { Button } from "../../component/ui/button";
 import { PageHeader } from "../../component/ui/pageHeader";
 import { Container } from "../../component/ui/container";
@@ -44,9 +45,9 @@ export const Clients = () => {
     setLoading(true);
 
     const result = await actions.createClient({
-      full_name: fullName,
-      email,
-      club_name: clubName,
+      full_name: fullName.trim(),
+      email: email.trim(),
+      club_name: clubName.trim(),
     });
 
     if (!result?.ok) {
@@ -80,6 +81,16 @@ export const Clients = () => {
     } catch (err) {
       showToast("No se pudo copiar", "error");
     }
+  };
+
+  const handleDeactivate = async (client) => {
+    const confirmed = window.confirm(
+      `¿Seguro que deseas desactivar a ${client.full_name}?`,
+    );
+
+    if (!confirmed) return;
+
+    await actions.toggleClientStatus(client.id, "deactivate");
   };
 
   return (
@@ -118,7 +129,6 @@ export const Clients = () => {
             </div>
           </div>
 
-          {/* 🔥 AQUÍ VA */}
           <div style={{ marginTop: "12px" }}>
             <Button
               onClick={() =>
@@ -217,50 +227,29 @@ export const Clients = () => {
         </Button>
       </form>
 
-      <table>
-        <thead>
-          <tr>
-            <th>Name</th>
-            <th>Email</th>
-            <th>Status</th>
-            <th>Action</th>
-          </tr>
-        </thead>
+      <div className="clients-grid">
+        {store.adminClients.map((client) => (
+          <Card key={client.id}>
+            <h5>{client.full_name}</h5>
+            <p>{client.email}</p>
+            <p>{client.is_active ? "🟢 Active" : "🔴 Inactive"}</p>
 
-        <tbody>
-          {store.adminClients.map((client) => {
-            return (
-              <tr key={client.id}>
-                <td>{client.full_name}</td>
-
-                <td>{client.email}</td>
-
-                <td>{client.is_active ? "Active" : "Inactive"}</td>
-
-                <td>
-                  {client.is_active ? (
-                    <Button
-                      onClick={() =>
-                        actions.toggleClientStatus(client.id, "deactivate")
-                      }
-                    >
-                      Deactivate
-                    </Button>
-                  ) : (
-                    <Button
-                      onClick={() =>
-                        actions.toggleClientStatus(client.id, "activate")
-                      }
-                    >
-                      Activate
-                    </Button>
-                  )}
-                </td>
-              </tr>
-            );
-          })}
-        </tbody>
-      </table>
+            {client.is_active ? (
+              <Button onClick={() => handleDeactivate(client)}>
+                Deactivate
+              </Button>
+            ) : (
+              <Button
+                onClick={() =>
+                  actions.toggleClientStatus(client.id, "activate")
+                }
+              >
+                Activate
+              </Button>
+            )}
+          </Card>
+        ))}
+      </div>
     </Container>
   );
 };

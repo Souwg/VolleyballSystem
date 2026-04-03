@@ -4,6 +4,7 @@ import { Context } from "../../store/appContext";
 import { useParams } from "react-router-dom";
 import { validatePlayer } from "../../utils/validators";
 import { errorMessages } from "../../utils/errorMessages";
+import { useToast } from "../../../../context/toastContext";
 
 import { Container } from "../../component/ui/container";
 import { PageHeader } from "../../component/ui/pageHeader";
@@ -13,6 +14,7 @@ import { Card } from "../../component/ui/card";
 
 export const TeamDetail = () => {
   const { actions } = useContext(Context);
+  const { showToast } = useToast();
   const { team_id } = useParams();
   const navigate = useNavigate();
 
@@ -28,6 +30,10 @@ export const TeamDetail = () => {
   const [errors, setErrors] = useState({});
   const [loadingSubmit, setLoadingSubmit] = useState(false);
   const [showForm, setShowForm] = useState(false);
+  const [showAddOptions, setShowAddOptions] = useState(false);
+  const [selectedExistingPlayer, setSelectedExistingPlayer] = useState(null);
+  const [availablePlayers, setAvailablePlayers] = useState([]);
+  const [existingPlayerNumber, setExistingPlayerNumber] = useState("");
   const [editingPlayerId, setEditingPlayerId] = useState(null);
   const [editData, setEditData] = useState({
     first_name: "",
@@ -86,15 +92,10 @@ export const TeamDetail = () => {
     try {
       const result = await actions.getTeamPlayers(team_id);
 
-      if (!result) {
-        alert("No se pudieron cargar los jugadores");
-        return;
-      }
+      if (!result) return;
 
       setTeam(result.team);
       setPlayers(result.players);
-    } catch (error) {
-      console.error("Error loading team players:", error);
     } finally {
       setLoading(false);
     }
@@ -145,6 +146,71 @@ export const TeamDetail = () => {
     setShowForm(false);
   };
 
+  const handleDeleteTeam = async () => {
+    const confirmed = window.confirm(
+      `¿Seguro que deseas eliminar la categoría ${team.name}?`,
+    );
+
+    if (!confirmed) return;
+
+    const result = await actions.deleteTeam(team_id);
+
+    if (!result?.ok) {
+      showToast("No se pudo eliminar la categoría", "error");
+      return;
+    }
+
+    navigate("/teams");
+  };
+
+  const handleRemovePlayer = async (e, player) => {
+    e.stopPropagation();
+
+    const confirmed = window.confirm(
+      `¿Quitar a ${player.first_name} de ${team.name}?`,
+    );
+
+    if (!confirmed) return;
+
+    const result = await actions.removePlayerFromTeam(team_id, player.id);
+
+    if (!result?.ok) {
+      showToast("No se pudo quitar la jugadora", "error");
+      return;
+    }
+
+    await loadTeamPlayers();
+
+    await actions.getPlayers();
+
+    showToast(
+      `${player.first_name} ahora está disponible para otra categoría`,
+      "success",
+    );
+  };
+
+  const handleLoadExistingPlayers = async () => {
+    const result = await actions.getPlayers();
+
+    if (!result?.players?.length) {
+      showToast("No hay jugadores existentes en el club", "info");
+      return;
+    }
+
+    const filteredPlayers = result.players.filter(
+      (p) => !players.some((tp) => tp.id === p.id),
+    );
+
+    if (!filteredPlayers.length) {
+      showToast("Todos los jugadores ya están en este equipo", "info");
+      return;
+    }
+
+    setAvailablePlayers(filteredPlayers);
+    setShowAddOptions(false);
+    setShowForm(false);
+  };
+
   useEffect(() => {
     loadTeamPlayers();
   }, [team_id]);
@@ -163,7 +229,7 @@ export const TeamDetail = () => {
             <Button
               className="button-primary"
               onClick={() => {
-                setShowForm(true);
+                setShowAddOptions(true);
                 setErrors({});
               }}
             >
@@ -176,28 +242,165 @@ export const TeamDetail = () => {
               Trainings
             </Button>
             <div className="team-actions">
-              <Button
-                className="button-danger"
-                onClick={async () => {
-                  if (!confirm("¿Eliminar esta categoría?")) return;
-
-                  const result = await actions.deleteTeam(team_id);
-
-                  if (!result?.ok) {
-                    alert(result.message);
-                    return;
-                  }
-
-                  navigate("/teams");
-                }}
-              >
+              <Button className="button-danger" onClick={handleDeleteTeam}>
                 Eliminar categoría
               </Button>
             </div>
           </>
         }
       />
+      {showAddOptions && (
+        <Card className="add-player-options">
+          <h4>Añadir jugador</h4>
 
+          <Button
+            className="button-secondary"
+            onClick={() => {
+              setShowAddOptions(false);
+              setAvailablePlayers([]);
+              setSelectedExistingPlayer(null);
+              setExistingPlayerNumber("");
+              setShowForm(true);
+            }}
+          >
+            Crear jugador nuevo
+          </Button>
+
+          <Button
+            className="button-primary"
+            onClick={handleLoadExistingPlayers}
+          >
+            Agregar existente
+          </Button>
+
+          <Button
+            className="button-secondary"
+            onClick={() => setShowAddOptions(false)}
+          >
+            Cancelar
+          </Button>
+        </Card>
+      )}
+      {availablePlayers.length > 0 && (
+        <Card>
+          <h4>Selecciona jugadora</h4>
+
+          <div className="players-list">
+            {availablePlayers.map((player) => (
+              <Card
+                key={player.id}
+                className="player-card selectable-player"
+                onClick={() => {
+                  setSelectedExistingPlayer(player);
+                  setAvailablePlayers([]);
+                }}
+              >
+                <p className="player-name">
+                  {player.first_name} {player.last_name}
+                </p>
+
+                {player.teams?.length > 0 && (
+                  <p className="player-meta">
+                    Actualmente en:{" "}
+                    {player.teams.map((team) => team.name).join(" · ")}
+                  </p>
+                )}
+              </Card>
+            ))}
+          </div>
+
+          <Button
+            className="button-secondary"
+            onClick={() => setAvailablePlayers([])}
+          >
+            Cancelar
+          </Button>
+        </Card>
+      )}
+      {selectedExistingPlayer && (
+        <Card>
+          <h4>
+            Añadir a {selectedExistingPlayer.first_name}{" "}
+            {selectedExistingPlayer.last_name}
+          </h4>
+          {selectedExistingPlayer.teams?.length > 0 && (
+            <div className="player-team-history">
+              <p className="helper-label">Actualmente juega en:</p>
+
+              {selectedExistingPlayer.teams.map((team) => (
+                <div key={team.id} className="team-pill">
+                  {team.name} · #{team.player_number}
+                </div>
+              ))}
+            </div>
+          )}
+          <Input
+            type="number"
+            placeholder="Número en este equipo"
+            value={existingPlayerNumber}
+            onChange={(e) => {
+              const value = e.target.value;
+
+              if (value === "") {
+                setExistingPlayerNumber("");
+                return;
+              }
+
+              if (value.length > 2) return;
+              if (Number(value) <= 0) return;
+
+              setExistingPlayerNumber(value);
+            }}
+          />
+          {errors.PLAYER_NUMBER_REQUIRED && (
+            <p className="form-error">{errorMessages.PLAYER_NUMBER_REQUIRED}</p>
+          )}
+
+          {errors.PLAYER_NUMBER_DUPLICATED && (
+            <p className="form-error">
+              {errorMessages.PLAYER_NUMBER_DUPLICATED}
+            </p>
+          )}
+
+          <div className="form-actions">
+            <Button
+              className="button-secondary"
+              onClick={() => {
+                setSelectedExistingPlayer(null);
+                setExistingPlayerNumber("");
+              }}
+            >
+              Cancelar
+            </Button>
+
+            <Button
+              className="button-primary"
+              onClick={async () => {
+                if (!existingPlayerNumber) {
+                  setErrors({ PLAYER_NUMBER_REQUIRED: true });
+                  return;
+                }
+
+                const result = await actions.addExistingPlayerToTeam(team_id, {
+                  player_id: selectedExistingPlayer.id,
+                  player_number: Number(existingPlayerNumber),
+                });
+
+                if (!result?.ok) {
+                  setErrors({ [result.code]: true });
+                  return;
+                }
+
+                setSelectedExistingPlayer(null);
+                setExistingPlayerNumber("");
+                await loadTeamPlayers();
+              }}
+            >
+              Guardar
+            </Button>
+          </div>
+        </Card>
+      )}
       {showForm && (
         <Card>
           <h4>Nuevo jugador</h4>
@@ -496,6 +699,12 @@ export const TeamDetail = () => {
                         </div>
 
                         <div className="player-status">{player.status}</div>
+                        <Button
+                          className="button-danger button-small"
+                          onClick={(e) => handleRemovePlayer(e, player)}
+                        >
+                          Quitar
+                        </Button>
                       </div>
                     </>
                   )}

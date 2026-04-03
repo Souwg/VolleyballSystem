@@ -1,4 +1,10 @@
-import React, { createContext, useContext, useState, useEffect } from "react";
+import React, {
+  createContext,
+  useContext,
+  useState,
+  useEffect,
+  useRef,
+} from "react";
 import { setAuthActions } from "../front/js/utils/authFetch";
 
 const ToastContext = createContext();
@@ -7,14 +13,19 @@ export const useToast = () => useContext(ToastContext);
 
 export const ToastProvider = ({ children }) => {
   const [toasts, setToasts] = useState([]);
+  const timeoutRef = useRef(null);
 
   const showToast = (message, type = "info") => {
-    const id = Date.now();
+    const id = crypto.randomUUID();
 
-    setToasts((prev) => [...prev, { id, message, type }]);
+    if (timeoutRef.current) {
+      clearTimeout(timeoutRef.current);
+    }
 
-    setTimeout(() => {
-      setToasts((prev) => prev.filter((t) => t.id !== id));
+    setToasts([{ id, message, type }]);
+
+    timeoutRef.current = setTimeout(() => {
+      setToasts([]);
     }, 3000);
   };
 

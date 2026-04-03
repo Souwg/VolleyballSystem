@@ -25,16 +25,20 @@ export const Trainings = () => {
     setLoading(false);
   };
 
+  const handleCreateTraining = () => {
+    navigate("/trainings/new");
+  };
+
+  const handleOpenTraining = (trainingId) => {
+    navigate(`/trainings/${trainingId}`);
+  };
+
   useEffect(() => {
     loadTrainings();
   }, []);
 
   if (loading) {
-    return (
-      <Container>
-        <p>Cargando entrenamientos...</p>
-      </Container>
-    );
+    return <p>Cargando entrenamientos...</p>;
   }
   return (
     <>
@@ -42,10 +46,7 @@ export const Trainings = () => {
         title="Entrenamientos"
         subtitle="Gestiona todos los entrenamientos del club"
         actions={
-          <Button
-            className="button-primary"
-            onClick={() => navigate("/trainings/new")}
-          >
+          <Button className="button-primary" onClick={handleCreateTraining}>
             + Crear entrenamiento
           </Button>
         }
@@ -56,10 +57,7 @@ export const Trainings = () => {
           <h4>No hay entrenamientos aún</h4>
           <p>Crea tu primer entrenamiento para empezar</p>
 
-          <Button
-            className="button-primary"
-            onClick={() => navigate("/trainings/new")}
-          >
+          <Button className="button-primary" onClick={handleCreateTraining}>
             Crear entrenamiento
           </Button>
         </Card>
@@ -81,7 +79,7 @@ export const Trainings = () => {
               {store.trainings.map((training) => (
                 <tr
                   key={training.id}
-                  onClick={() => navigate(`/trainings/${training.id}`)}
+                  onClick={() => handleOpenTraining(training.id)}
                   style={{ cursor: "pointer" }}
                 >
                   <td>{training.team_name}</td>

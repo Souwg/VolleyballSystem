@@ -21,11 +21,18 @@ export const CreateTraining = () => {
   const [loading, setLoading] = useState(false);
   const [errors, setErrors] = useState({});
 
+  const loadTeams = async () => {
+    if (team_id) return;
+    await actions.getTeams();
+  };
+
   useEffect(() => {
-    if (!team_id) {
-      actions.getTeams();
-    }
+    loadTeams();
   }, [team_id]);
+
+  const handleGoBack = () => {
+    navigate(-1);
+  };
 
   const handleCreateTraining = async (e) => {
     e.preventDefault();
@@ -69,7 +76,7 @@ export const CreateTraining = () => {
         title="Crear entrenamiento"
         subtitle="Registra un nuevo entrenamiento"
         actions={
-          <Button className="button-secondary" onClick={() => navigate(-1)}>
+          <Button className="button-secondary" onClick={handleGoBack}>
             ← Volver
           </Button>
         }
