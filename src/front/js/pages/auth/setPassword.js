@@ -108,7 +108,7 @@ export const SetPassword = () => {
           <p className="form-success">✅ contraseñas coinciden</p>
         )}
 
-        {confirmPassword && password && (
+        {confirmPassword && password && password !== confirmPassword && (
           <p className="form-error">❌ {errorMessages.PASSWORDS_NOT_MATCH}</p>
         )}
         <Button variant="primary" type="submit" disabled={loading}>

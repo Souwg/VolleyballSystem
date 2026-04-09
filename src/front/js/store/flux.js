@@ -3,6 +3,21 @@ import { authFetch, parseResponse } from "../utils/authFetch";
 const BACKEND_URL =
   process.env.REACT_APP_BACKEND_URL || "http://localhost:3001";
 
+const networkError = (label, error) => {
+  console.error(label, error);
+
+  return {
+    ok: false,
+    code: "NETWORK_ERROR",
+    message: "Error de conexión",
+  };
+};
+
+const successResponse = (data = null) => ({
+  ok: true,
+  data,
+});
+
 const getState = ({ getStore, getActions, setStore }) => {
   const state = {
     store: {
@@ -18,6 +33,7 @@ const getState = ({ getStore, getActions, setStore }) => {
       teams: [],
       players: [],
       trainings: [],
+      matches: [],
     },
 
     actions: {
@@ -47,21 +63,9 @@ const getState = ({ getStore, getActions, setStore }) => {
           localStorage.setItem("refresh", data.refresh);
           localStorage.setItem("user", JSON.stringify(data.user));
 
-          return {
-            ok: true,
-            data: {
-              first_login: data.first_login,
-              user: data.user,
-            },
-          };
+          return successResponse(result.data);
         } catch (error) {
-          console.error("Error login:", error);
-
-          return {
-            success: false,
-            message: "Error de conexión",
-            code: "NETWORK_ERROR",
-          };
+          return networkError("Error login:", error);
         }
       },
 
@@ -115,18 +119,12 @@ const getState = ({ getStore, getActions, setStore }) => {
           setStore({ user: updatedUser });
           localStorage.setItem("user", JSON.stringify(updatedUser));
 
-          return {
-            ok: true,
-          };
+          return successResponse(result.data);
         } catch (error) {
-          console.error("Error setting password:", error);
-
-          return {
-            success: false,
-            message: "Error de conexión",
-          };
+          return networkError("Error setting password:", error);
         }
       },
+
       getOnboardingStatus: async () => {
         try {
           const resp = await authFetch("/api/onboarding/status");
@@ -145,11 +143,12 @@ const getState = ({ getStore, getActions, setStore }) => {
             club: data.club,
           });
 
-          return data;
+          return successResponse(data);
         } catch (error) {
-          console.error("Error loading onboarding status:", error);
+          return networkError("Error loading onboarding status:", error);
         }
       },
+
       getTeams: async () => {
         try {
           const resp = await authFetch("/api/teams");
@@ -160,9 +159,9 @@ const getState = ({ getStore, getActions, setStore }) => {
 
           setStore({ teams: result.data.teams });
 
-          return result.data;
+          return successResponse(result.data);
         } catch (error) {
-          console.error("Error loading teams:", error);
+          return networkError("Error loading teams:", error);
         }
       },
 
@@ -178,9 +177,9 @@ const getState = ({ getStore, getActions, setStore }) => {
             players: result.data.players,
           });
 
-          return result.data;
+          return successResponse(result.data);
         } catch (error) {
-          console.error("Error loading players:", error);
+          return networkError("Error loading players:", error);
         }
       },
 
@@ -201,9 +200,9 @@ const getState = ({ getStore, getActions, setStore }) => {
 
           if (!result.ok) return result;
 
-          return result;
+          return successResponse(result.data);
         } catch (error) {
-          console.error("Error adding existing player:", error);
+          return networkError("Error adding existing player:", error);
         }
       },
 
@@ -219,11 +218,12 @@ const getState = ({ getStore, getActions, setStore }) => {
             adminClients: result.data.clients,
           });
 
-          return result.data;
+          return successResponse(result.data);
         } catch (error) {
-          console.error("Error loading clients:", error);
+          return networkError("Error loading clients:", error);
         }
       },
+
       createClient: async (clientData) => {
         try {
           const resp = await authFetch("/api/admin/create-client", {
@@ -241,11 +241,12 @@ const getState = ({ getStore, getActions, setStore }) => {
           const actions = getActions();
           await actions.getAdminClients();
 
-          return result;
+          return successResponse(result.data);
         } catch (error) {
-          console.error("Error creating client:", error);
+          return networkError("Error creating client:", error);
         }
       },
+
       toggleClientStatus: async (clientId, actionType) => {
         try {
           const endpoint =
@@ -264,11 +265,12 @@ const getState = ({ getStore, getActions, setStore }) => {
           const actions = getActions();
           await actions.getAdminClients();
 
-          return result;
+          return successResponse(result.data);
         } catch (error) {
-          console.error("Error updating client status:", error);
+          return networkError("Error updating client status:", error);
         }
       },
+
       updatePlayer: async (playerId, playerData) => {
         try {
           const resp = await authFetch(`/api/players/${playerId}`, {
@@ -286,11 +288,12 @@ const getState = ({ getStore, getActions, setStore }) => {
           const actions = getActions();
           await actions.getPlayers();
 
-          return result;
+          return successResponse(result.data);
         } catch (error) {
-          console.error("Error updating player:", error);
+          return networkError("Error updating player:", error);
         }
       },
+
       getTeamPlayers: async (teamId) => {
         try {
           const resp = await authFetch(`/api/teams/${teamId}/players`);
@@ -303,9 +306,9 @@ const getState = ({ getStore, getActions, setStore }) => {
             players: result.data.players,
           });
 
-          return result.data;
+          return successResponse(result.data);
         } catch (error) {
-          console.error("Error loading team players:", error);
+          return networkError("Error loading team players:", error);
         }
       },
 
@@ -321,9 +324,9 @@ const getState = ({ getStore, getActions, setStore }) => {
             players: result.data.players,
           });
 
-          return result.data;
+          return successResponse(result.data);
         } catch (error) {
-          console.error("Error loading training snapshot:", error);
+          return networkError("Error loading training snapshot:", error);
         }
       },
 
@@ -344,11 +347,12 @@ const getState = ({ getStore, getActions, setStore }) => {
           const actions = getActions();
           await actions.getPlayers();
 
-          return result;
+          return successResponse(result.data);
         } catch (error) {
-          console.error("Error updating player status:", error);
+          return networkError("Error updating player status:", error);
         }
       },
+
       getDashboard: async () => {
         try {
           const resp = await authFetch("/api/club/dashboard");
@@ -364,11 +368,12 @@ const getState = ({ getStore, getActions, setStore }) => {
             dashboardStats: data.stats,
           });
 
-          return data;
+          return successResponse(data);
         } catch (error) {
-          console.error("Error loading dashboard:", error);
+          return networkError("Error loading dashboard:", error);
         }
       },
+
       updateClub: async (location) => {
         try {
           const resp = await authFetch("/api/club", {
@@ -389,22 +394,20 @@ const getState = ({ getStore, getActions, setStore }) => {
 
           await actions.getOnboardingStatus();
 
-          return result;
+          return successResponse(result.data);
         } catch (error) {
-          console.error("Error updating club:", error);
+          return networkError("Error updating club:", error);
         }
       },
 
-      createTeam: async (teamName) => {
+      createTeam: async (teamData) => {
         try {
           const resp = await authFetch("/api/teams", {
             method: "POST",
             headers: {
               "Content-Type": "application/json",
             },
-            body: JSON.stringify({
-              name: teamName,
-            }),
+            body: JSON.stringify(teamData),
           });
 
           const result = await parseResponse(resp);
@@ -416,11 +419,12 @@ const getState = ({ getStore, getActions, setStore }) => {
           await actions.getTeams();
           await actions.getOnboardingStatus();
 
-          return result;
+          return successResponse(result.data);
         } catch (error) {
-          console.error("Error creating team:", error);
+          return networkError("Error creating team:", error);
         }
       },
+
       deleteTeam: async (teamId) => {
         try {
           const resp = await authFetch(`/api/teams/${teamId}`, {
@@ -435,11 +439,12 @@ const getState = ({ getStore, getActions, setStore }) => {
 
           await actions.getTeams();
 
-          return result;
+          return successResponse(result.data);
         } catch (error) {
-          console.error("Error deleting team:", error);
+          return networkError("Error deleting team:", error);
         }
       },
+
       createPlayer: async (playerData) => {
         try {
           const resp = await authFetch("/api/players", {
@@ -459,11 +464,12 @@ const getState = ({ getStore, getActions, setStore }) => {
           await actions.getPlayers();
           await actions.getOnboardingStatus();
 
-          return result;
+          return successResponse(result.data);
         } catch (error) {
-          console.error("Error creating player:", error);
+          return networkError("Error creating player:", error);
         }
       },
+
       removePlayerFromTeam: async (teamId, playerId) => {
         try {
           const resp = await authFetch(
@@ -477,14 +483,9 @@ const getState = ({ getStore, getActions, setStore }) => {
 
           if (!result.ok) return result;
 
-          return result;
+          return successResponse(result.data);
         } catch (error) {
-          console.error("Error removing player from team:", error);
-          return {
-            ok: false,
-            code: "NETWORK_ERROR",
-            message: "Error de conexión",
-          };
+          return networkError("Error removing player from team:", error);
         }
       },
 
@@ -500,11 +501,12 @@ const getState = ({ getStore, getActions, setStore }) => {
             trainings: result.data.trainings,
           });
 
-          return result.data;
+          return successResponse(result.data);
         } catch (error) {
-          console.error("Error loading trainings:", error);
+          return networkError("Error loading trainings:", error);
         }
       },
+
       createTraining: async (trainingData) => {
         try {
           const resp = await authFetch("/api/trainings", {
@@ -519,9 +521,9 @@ const getState = ({ getStore, getActions, setStore }) => {
 
           if (!result.ok) return result;
 
-          return result;
+          return successResponse(result.data);
         } catch (error) {
-          console.error("Error creating training:", error);
+          return networkError("Error creating training:", error);
         }
       },
 
@@ -542,9 +544,11 @@ const getState = ({ getStore, getActions, setStore }) => {
 
           const result = await parseResponse(resp);
 
-          return result;
+          if (!result.ok) return result;
+
+          return successResponse(result.data);
         } catch (error) {
-          console.error("Error saving attendance:", error);
+          return networkError("Error saving attendance:", error);
         }
       },
 
@@ -558,11 +562,12 @@ const getState = ({ getStore, getActions, setStore }) => {
 
           if (!result.ok) return result;
 
-          return result.data.attendance;
+          return successResponse(result.data.attendance);
         } catch (error) {
-          console.error("Error loading attendance:", error);
+          return networkError("Error loading attendance:", error);
         }
       },
+
       getPlayerAttendance: async (playerId) => {
         try {
           const resp = await authFetch(`/api/players/${playerId}/attendance`);
@@ -571,16 +576,12 @@ const getState = ({ getStore, getActions, setStore }) => {
 
           if (!result.ok) return result;
 
-          return result.data;
+          return successResponse(result.data);
         } catch (err) {
-          console.error(err);
-          return {
-            ok: false,
-            message: "Error de conexión",
-            code: "NETWORK_ERROR",
-          };
+          return networkError("Error loading player attendance:", err);
         }
       },
+
       getAllTrainings: async () => {
         try {
           const resp = await authFetch("/api/trainings");
@@ -593,17 +594,208 @@ const getState = ({ getStore, getActions, setStore }) => {
             trainings: result.data.trainings,
           });
 
-          return result.data;
+          return successResponse(result.data);
         } catch (error) {
-          console.error("Error loading all trainings:", error);
+          return networkError("Error loading all trainings:", error);
         }
       },
+
+      getTeamMatches: async (teamId) => {
+        try {
+          const resp = await authFetch(`/api/teams/${teamId}/matches`);
+
+          const result = await parseResponse(resp);
+
+          if (!result.ok) return result;
+
+          setStore({
+            matches: result.data.matches || result.data,
+          });
+
+          return successResponse(result.data);
+        } catch (error) {
+          return networkError("Error loading matches:", error);
+        }
+      },
+
+      createMatch: async (matchData) => {
+        try {
+          const resp = await authFetch("/api/matches", {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+            },
+            body: JSON.stringify(matchData),
+          });
+
+          const result = await parseResponse(resp);
+
+          if (!result.ok) return result;
+
+          return successResponse(result.data);
+        } catch (error) {
+          return networkError("Error creating match:", error);
+        }
+      },
+
+      getMatchDetail: async (matchId) => {
+        try {
+          const resp = await authFetch(`/api/matches/${matchId}`);
+
+          const result = await parseResponse(resp);
+
+          if (!result.ok) return result;
+
+          return successResponse(result.data);
+        } catch (error) {
+          return networkError("Error loading match detail:", error);
+        }
+      },
+
+      saveMatchRoster: async (matchId, players) => {
+        try {
+          const resp = await authFetch(`/api/matches/${matchId}/roster`, {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+            },
+            body: JSON.stringify({ players }),
+          });
+
+          const result = await parseResponse(resp);
+
+          if (!result.ok) return result;
+
+          return successResponse(result.data);
+        } catch (error) {
+          return networkError("Error saving roster:", error);
+        }
+      },
+
+      saveMatchStatus: async (matchId, players) => {
+        try {
+          const resp = await authFetch(
+            `/api/matches/${matchId}/roster/status`,
+            {
+              method: "PUT",
+              headers: {
+                "Content-Type": "application/json",
+              },
+              body: JSON.stringify({ players }),
+            },
+          );
+
+          const result = await parseResponse(resp);
+
+          if (!result.ok) return result;
+
+          return successResponse(result.data);
+        } catch (error) {
+          return networkError("Error saving match status:", error);
+        }
+      },
+
+      saveMatchParticipation: async (matchId, players) => {
+        try {
+          const resp = await authFetch(
+            `/api/matches/${matchId}/roster/participation`,
+            {
+              method: "PUT",
+              headers: {
+                "Content-Type": "application/json",
+              },
+              body: JSON.stringify({ players }),
+            },
+          );
+
+          const result = await parseResponse(resp);
+
+          if (!result.ok) return result;
+
+          return successResponse(result.data);
+        } catch (error) {
+          return networkError("Error saving participation:", error);
+        }
+      },
+
+      savePlayerMatchStats: async (matchPlayerId, statsData) => {
+        try {
+          const resp = await authFetch(
+            `/api/match-players/${matchPlayerId}/stats`,
+            {
+              method: "POST",
+              headers: {
+                "Content-Type": "application/json",
+              },
+              body: JSON.stringify(statsData),
+            },
+          );
+
+          const result = await parseResponse(resp);
+
+          if (!result.ok) return result;
+
+          return successResponse(result.data);
+        } catch (error) {
+          return networkError("Error saving stats:", error);
+        }
+      },
+
+      getPlayerMatchStats: async (matchPlayerId) => {
+        try {
+          const resp = await authFetch(
+            `/api/match-players/${matchPlayerId}/stats`,
+          );
+
+          const result = await parseResponse(resp);
+
+          if (!result.ok) return result;
+
+          return successResponse(result.data.stats || {});
+        } catch (error) {
+          return networkError("Error loading player stats:", error);
+        }
+      },
+
+      getTeamPlayersOnly: async (teamId) => {
+        try {
+          const resp = await authFetch(`/api/teams/${teamId}/players`);
+
+          const result = await parseResponse(resp);
+
+          if (!result.ok) return result;
+
+          return successResponse(result.data.players);
+        } catch (error) {
+          return networkError("Error loading team players:", error);
+        }
+      },
+
+      getMatchRoster: async (matchId) => {
+        try {
+          const resp = await authFetch(`/api/matches/${matchId}/roster`);
+
+          const result = await parseResponse(resp);
+
+          if (!result.ok) return result;
+
+          return successResponse(result.data.players);
+        } catch (error) {
+          return networkError("Error loading match roster:", error);
+        }
+      },
+
       restoreSession: async () => {
         const refresh = localStorage.getItem("refresh");
 
         if (!refresh) {
           setStore({ user: null, token: null });
-          return false;
+
+          return {
+            ok: false,
+            code: "NO_REFRESH",
+            message: "No hay sesión activa",
+          };
         }
 
         try {
@@ -629,7 +821,11 @@ const getState = ({ getStore, getActions, setStore }) => {
 
           setStore({ user, token: data.token });
 
-          return true;
+          return successResponse({
+            restored: true,
+            user,
+            token: data.token,
+          });
         } catch (err) {
           localStorage.removeItem("token");
           localStorage.removeItem("refresh");
@@ -637,7 +833,7 @@ const getState = ({ getStore, getActions, setStore }) => {
 
           setStore({ user: null, token: null });
 
-          return false;
+          return networkError("Error restoring session:", err);
         }
       },
     },

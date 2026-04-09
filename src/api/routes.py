@@ -13,6 +13,9 @@ from src.api.models import (
     TrainingSession,
     TrainingPlayer,
     TokenBlockedList,
+    MatchSession,
+    MatchPlayer,
+    PlayerMatchStat,
     RefreshToken
 )
 from flask_cors import CORS
@@ -638,6 +641,7 @@ def create_team():
             "FORBIDDEN",
             403
         )
+
     if not user.club_id:
         return error_response(
             "El usuario no pertenece a ningún club",
@@ -648,6 +652,7 @@ def create_team():
     body = request.get_json() or {}
 
     name = body.get("name")
+    gender = body.get("gender")
 
     if name:
         name = name.strip()
@@ -659,20 +664,31 @@ def create_team():
             400
         )
 
+    allowed_gender = ["female", "male", "mixed"]
+
+    if gender not in allowed_gender:
+        return error_response(
+            "La rama es inválida",
+            "INVALID_TEAM_GENDER",
+            400
+        )
+
     existing_team = Team.query.filter_by(
         name=name,
+        gender=gender,
         club_id=user.club_id
     ).first()
 
     if existing_team:
         return error_response(
-            "Ya existe una categoría con ese nombre en el club",
+            "Ya existe esta categoría en esa rama",
             "TEAM_ALREADY_EXISTS",
             409
         )
 
     team = Team(
         name=name,
+        gender=gender,
         club_id=user.club_id
     )
 
@@ -680,7 +696,7 @@ def create_team():
     db.session.commit()
 
     return jsonify({
-        "message": "Equipo creado correctamente",
+        "message": "Categoría creada correctamente",
         "team": team.serialize()
     }), 201
 
@@ -918,6 +934,13 @@ def create_player():
             "FORBIDDEN",
             403
         )
+    
+    if team.gender != "mixed" and team.gender != sex:
+        return error_response(
+            "El sexo del jugador no coincide con la rama de la categoría",
+            "PLAYER_GENDER_MISMATCH",
+            400
+        )
 
     existing_membership = TeamPlayer.query.filter_by(
         team_id=team.id,
@@ -1060,7 +1083,7 @@ def get_players():
             **player.serialize(),
             "team_id": membership.team_id if membership else None,
             "player_number": membership.player_number if membership else None,
-            "status": membership.status if membership else "inactive",
+            "status": membership.status if membership else "active",
             "teams": [
                 {
                     "id": m.team.id,
@@ -1131,6 +1154,13 @@ def add_existing_player_to_team(team_id):
             "Jugador no encontrado",
             "PLAYER_NOT_FOUND",
             404
+        )
+    
+    if team.gender != "mixed" and team.gender != player.sex:
+        return error_response(
+            "El jugador no coincide con la rama de la categoría",
+            "PLAYER_GENDER_MISMATCH",
+            400
         )
 
     existing = TeamPlayer.query.filter_by(
@@ -1233,6 +1263,29 @@ def update_player(player_id):
     player_number = body.get("player_number")
 
     if membership and team_id and player_number is not None:
+        new_team = Team.query.get(team_id)
+
+        if not new_team:
+            return error_response(
+                "Categoría no encontrada",
+                "TEAM_NOT_FOUND",
+                404
+            )
+
+        if new_team.club_id != user.club_id:
+            return error_response(
+                "No tienes acceso a esta categoría",
+                "FORBIDDEN",
+                403
+            )
+
+        if new_team.gender != "mixed" and new_team.gender != sex:
+            return error_response(
+                "El jugador no coincide con la rama",
+                "PLAYER_GENDER_MISMATCH",
+                400
+            )
+
         duplicated_number = TeamPlayer.query.filter(
             TeamPlayer.team_id == team_id,
             TeamPlayer.player_number == player_number,
@@ -1765,6 +1818,7 @@ def get_all_trainings():
 @api.route("/onboarding/status", methods=["GET"])
 @jwt_required()
 def onboarding_status():
+    print("ONBOARDING STATUS HIT")
 
     user = get_current_user()
 
@@ -1862,3 +1916,428 @@ def complete_onboarding():
     }), 200
 
 
+############################################# MATCHES #############################################
+
+@api.route("/matches", methods=["POST"])
+@jwt_required()
+def create_match():
+    user = get_current_user()
+
+    if user.role not in ["club_owner", "coach"]:
+        return error_response(
+            "No tienes permisos para crear partidos",
+            "FORBIDDEN",
+            403
+        )
+
+    body = request.get_json() or {}
+
+    team_id = body.get("team_id")
+    date = body.get("date")
+    opponent_name = body.get("opponent_name")
+    match_type = body.get("match_type", "official")
+    location = body.get("location")
+    notes = body.get("notes")
+
+    if not team_id:
+        return error_response(
+            "La categoría es obligatoria",
+            "TEAM_ID_REQUIRED",
+            400
+        )
+
+    if not date:
+        return error_response(
+            "La fecha es obligatoria",
+            "MATCH_DATE_REQUIRED",
+            400
+        )
+
+    team = Team.query.get(team_id)
+
+    if not team:
+        return error_response(
+            "Equipo no encontrado",
+            "TEAM_NOT_FOUND",
+            404
+        )
+
+    if team.club_id != user.club_id:
+        return error_response(
+            "No tienes acceso a esta categoría",
+            "FORBIDDEN",
+            403
+        )
+
+    match = MatchSession(
+        team_id=team.id,
+        date=datetime.strptime(date, "%Y-%m-%d").date(),
+        opponent_name=opponent_name,
+        match_type=match_type,
+        location=location,
+        notes=notes,
+        created_by=user.id
+    )
+
+    db.session.add(match)
+    db.session.commit()
+
+    return jsonify({
+        "message": "Partido creado correctamente",
+        "match": match.serialize()
+    }), 201
+
+@api.route("/teams/<string:team_id>/matches", methods=["GET"])
+@jwt_required()
+def get_team_matches(team_id):
+    user = get_current_user()
+
+    team = Team.query.get(team_id)
+
+    if not team:
+        return error_response(
+            "Equipo no encontrado",
+            "TEAM_NOT_FOUND",
+            404
+        )
+
+    if team.club_id != user.club_id:
+        return error_response(
+            "No tienes acceso a esta categoría",
+            "FORBIDDEN",
+            403
+        )
+
+    matches = MatchSession.query.filter_by(team_id=team.id)\
+        .order_by(MatchSession.date.desc())\
+        .all()
+
+    return jsonify({
+        "team": team.serialize(),
+        "total_matches": len(matches),
+        "matches": [m.serialize() for m in matches]
+    }), 200
+
+@api.route("/matches/<string:match_id>/roster", methods=["POST"])
+@jwt_required()
+def save_match_roster(match_id):
+    user = get_current_user()
+
+    match = MatchSession.query.get(match_id)
+
+    if not match:
+        return error_response(
+            "Partido no encontrado",
+            "MATCH_NOT_FOUND",
+            404
+        )
+
+    if match.team.club_id != user.club_id:
+        return error_response(
+            "No tienes acceso a este partido",
+            "FORBIDDEN",
+            403
+        )
+
+    body = request.get_json() or {}
+    players = body.get("players")
+
+    if not players:
+        return error_response(
+            "Debes seleccionar al menos una jugadora",
+            "MATCH_ROSTER_REQUIRED",
+            400
+        )
+
+    MatchPlayer.query.filter_by(match_id=match.id).delete()
+
+    for item in players:
+        player_id = item.get("player_id")
+        player_number = item.get("player_number")
+
+        if not player_id:
+            continue
+
+        row = MatchPlayer(
+            match_id=match.id,
+            player_id=player_id,
+            player_number=player_number
+        )
+        db.session.add(row)
+
+    db.session.commit()
+
+    return jsonify({
+        "message": "Convocatoria guardada correctamente"
+    }), 200
+
+@api.route("/matches/<string:match_id>/roster/status", methods=["PUT"])
+@jwt_required()
+def update_match_status(match_id):
+    user = get_current_user()
+
+    match = MatchSession.query.get(match_id)
+
+    if not match:
+        return error_response(
+            "Partido no encontrado",
+            "MATCH_NOT_FOUND",
+            404
+        )
+
+    if match.team.club_id != user.club_id:
+        return error_response(
+            "No tienes acceso",
+            "FORBIDDEN",
+            403
+        )
+
+    body = request.get_json() or {}
+    players = body.get("players")
+
+    if not players:
+        return error_response(
+            "Lista requerida",
+            "MATCH_STATUS_REQUIRED",
+            400
+        )
+
+    allowed_status = ["present", "absent", "injured", "late"]
+
+    for item in players:
+        row = MatchPlayer.query.get(item.get("match_player_id"))
+        if not row:
+            continue
+
+        status = item.get("attendance_status")
+
+        if status not in allowed_status:
+            return error_response(
+                "Estado inválido",
+                "INVALID_MATCH_STATUS",
+                400
+            )
+
+        row.attendance_status = status
+
+        if status != "present":
+            row.did_play = False
+
+    db.session.commit()
+
+    return jsonify({
+        "message": "Estado del día actualizado"
+    }), 200
+
+@api.route("/matches/<string:match_id>", methods=["GET"])
+@jwt_required()
+def get_match_detail(match_id):
+    user = get_current_user()
+
+    match = MatchSession.query.get(match_id)
+
+    if not match:
+        return error_response(
+            "Partido no encontrado",
+            "MATCH_NOT_FOUND",
+            404
+        )
+
+    if match.team.club_id != user.club_id:
+        return error_response(
+            "No tienes acceso",
+            "FORBIDDEN",
+            403
+        )
+
+    return jsonify({
+        "match": match.serialize()
+    }), 200
+
+@api.route("/matches/<string:match_id>/roster", methods=["GET"])
+@jwt_required()
+def get_match_roster(match_id):
+    user = get_current_user()
+
+    match = MatchSession.query.get(match_id)
+
+    if not match:
+        return error_response(
+            "Partido no encontrado",
+            "MATCH_NOT_FOUND",
+            404
+        )
+
+    if match.team.club_id != user.club_id:
+        return error_response(
+            "No tienes acceso",
+            "FORBIDDEN",
+            403
+        )
+
+    roster = MatchPlayer.query.filter_by(
+        match_id=match.id
+    ).order_by(MatchPlayer.player_number).all()
+
+    players = []
+
+    for row in roster:
+        if not row.player:
+            continue
+
+        players.append({
+            "match_player_id": row.id,
+            "player_id": row.player.id,
+            "first_name": row.player.first_name,
+            "last_name": row.player.last_name,
+            "player_number": row.player_number,
+            "attendance_status": row.attendance_status,
+            "did_play": row.did_play
+        })
+
+    return jsonify({
+        "players": players
+    }), 200
+
+@api.route("/matches/<string:match_id>/roster/participation", methods=["PUT"])
+@jwt_required()
+def update_match_participation(match_id):
+    user = get_current_user()
+
+    match = MatchSession.query.get(match_id)
+
+    if not match:
+        return error_response(
+            "Partido no encontrado",
+            "MATCH_NOT_FOUND",
+            404
+        )
+
+    if match.team.club_id != user.club_id:
+        return error_response(
+            "No tienes acceso",
+            "FORBIDDEN",
+            403
+        )
+
+    body = request.get_json() or {}
+    players = body.get("players")
+
+    if not players:
+        return error_response(
+            "Lista requerida",
+            "MATCH_PARTICIPATION_REQUIRED",
+            400
+        )
+
+    for item in players:
+        row = MatchPlayer.query.get(item.get("match_player_id"))
+        if not row:
+            continue
+
+        if row.attendance_status != "present":
+            row.did_play = False
+            continue
+
+        row.did_play = item.get("did_play", False)
+
+    db.session.commit()
+
+    return jsonify({
+        "message": "Participación guardada"
+    }), 200
+
+@api.route("/match-players/<string:match_player_id>/stats", methods=["POST"])
+@jwt_required()
+def save_match_stats(match_player_id):
+    user = get_current_user()
+
+    row = MatchPlayer.query.get(match_player_id)
+
+    if not row:
+        return error_response(
+            "Registro del partido no encontrado",
+            "MATCH_PLAYER_NOT_FOUND",
+            404
+        )
+
+    if row.match.team.club_id != user.club_id:
+        return error_response(
+            "No tienes acceso",
+            "FORBIDDEN",
+            403
+        )
+
+    if row.attendance_status != "present" or not row.did_play:
+        return error_response(
+            "La jugadora no puede registrar stats",
+            "PLAYER_NOT_ELIGIBLE_FOR_STATS",
+            400
+        )
+
+    body = request.get_json() or {}
+
+    stat = PlayerMatchStat.query.filter_by(
+        match_player_id=row.id
+    ).first()
+
+    if not stat:
+        stat = PlayerMatchStat(match_player_id=row.id)
+        db.session.add(stat)
+
+    stat.position = body.get("position")
+    stat.attacks_total = body.get("attacks_total", 0)
+    stat.attacks_positive = body.get("attacks_positive", 0)
+    stat.attacks_errors = body.get("attacks_errors", 0)
+
+    stat.receptions_total = body.get("receptions_total", 0)
+    stat.receptions_positive = body.get("receptions_positive", 0)
+    stat.receptions_negative = body.get("receptions_negative", 0)
+
+    stat.serves_total = body.get("serves_total", 0)
+    stat.serves_aces = body.get("serves_aces", 0)
+    stat.serves_errors = body.get("serves_errors", 0)
+
+    stat.blocks_total = body.get("blocks_total", 0)
+    stat.blocks_points = body.get("blocks_points", 0)
+
+    db.session.commit()
+
+    return jsonify({
+        "message": "Stats guardadas correctamente",
+        "stats": stat.serialize()
+    }), 200
+
+@api.route("/match-players/<string:match_player_id>/stats", methods=["GET"])
+@jwt_required()
+def get_match_stats(match_player_id):
+    user = get_current_user()
+
+    row = MatchPlayer.query.get(match_player_id)
+
+    if not row:
+        return error_response(
+            "Registro del partido no encontrado",
+            "MATCH_PLAYER_NOT_FOUND",
+            404
+        )
+
+    if row.match.team.club_id != user.club_id:
+        return error_response(
+            "No tienes acceso",
+            "FORBIDDEN",
+            403
+        )
+
+    stats = PlayerMatchStat.query.filter_by(
+        match_player_id=row.id
+    ).first()
+
+    if not stats:
+        return jsonify({
+            "stats": None
+        }), 200
+
+    return jsonify({
+        "stats": stats.serialize()
+    }), 200

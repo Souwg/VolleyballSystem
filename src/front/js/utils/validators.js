@@ -62,11 +62,15 @@ export const validateClubLocation = (location) => {
   return errors;
 };
 
-export const validateTeamName = (teamName) => {
+export const validateTeam = ({ name, gender }) => {
   const errors = {};
 
-  if (!teamName.trim()) {
+  if (!name.trim()) {
     errors.TEAM_NAME_REQUIRED = true;
+  }
+
+  if (!gender) {
+    errors.INVALID_TEAM_GENDER = true;
   }
 
   return errors;

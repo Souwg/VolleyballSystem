@@ -4,7 +4,7 @@ import { Context } from "../../store/appContext";
 import { AuthLayout } from "../../component/authLayout";
 import {
   validateClubLocation,
-  validateTeamName,
+  validateTeam,
   validatePlayer,
 } from "../../utils/validators";
 
@@ -25,6 +25,7 @@ export const Onboarding = () => {
   const [number, setNumber] = useState("");
   const [sex, setSex] = useState("");
   const [teamName, setTeamName] = useState("");
+  const [teamGender, setTeamGender] = useState("");
   const [selectedTeam, setSelectedTeam] = useState("");
   const [errors, setErrors] = useState({});
   const [savingClub, setSavingClub] = useState(false);
@@ -61,12 +62,17 @@ export const Onboarding = () => {
     setSavingClub(false);
   };
 
+  const selectedTeamData = store.teams?.find((t) => t.id === selectedTeam);
+
   const handleCreateTeam = async (e) => {
     e.preventDefault();
     if (creatingTeam) return;
     setErrors({});
 
-    const newErrors = validateTeamName(teamName);
+    const newErrors = validateTeam({
+      name: teamName,
+      gender: teamGender,
+    });
 
     if (Object.keys(newErrors).length > 0) {
       setErrors(newErrors);
@@ -75,7 +81,10 @@ export const Onboarding = () => {
 
     setCreatingTeam(true);
 
-    const result = await actions.createTeam(teamName.trim());
+    const result = await actions.createTeam({
+      name: teamName.trim(),
+      gender: teamGender,
+    });
 
     if (!result?.ok) {
       setErrors({ [result.code]: true });
@@ -141,6 +150,22 @@ export const Onboarding = () => {
       setSelectedTeam(store.teams[0].id);
     }
   }, [store.teams]);
+
+  useEffect(() => {
+    if (!selectedTeamData) return;
+
+    if (selectedTeamData.gender === "female") {
+      setSex("female");
+    }
+
+    if (selectedTeamData.gender === "male") {
+      setSex("male");
+    }
+
+    if (selectedTeamData.gender === "mixed") {
+      setSex("");
+    }
+  }, [selectedTeamData]);
 
   const getContent = () => {
     switch (step) {
@@ -216,6 +241,31 @@ export const Onboarding = () => {
               {errors.TEAM_ALREADY_EXISTS && (
                 <p className="form-error">
                   {errorMessages.TEAM_ALREADY_EXISTS}
+                </p>
+              )}
+
+              <select
+                className={`select ${
+                  errors.INVALID_TEAM_GENDER ? "input-error" : ""
+                }`}
+                value={teamGender}
+                onChange={(e) => {
+                  setTeamGender(e.target.value);
+                  setErrors((prev) => ({
+                    ...prev,
+                    INVALID_TEAM_GENDER: false,
+                  }));
+                }}
+              >
+                <option value="">Selecciona la rama</option>
+                <option value="female">Femenino</option>
+                <option value="male">Masculino</option>
+                <option value="mixed">Mixto</option>
+              </select>
+
+              {errors.INVALID_TEAM_GENDER && (
+                <p className="form-error">
+                  {errorMessages.INVALID_TEAM_GENDER}
                 </p>
               )}
               <Button type="submit" disabled={creatingTeam}>
@@ -332,33 +382,38 @@ export const Onboarding = () => {
                   </p>
                 )}
               </div>
-              <div>
-                <select
-                  className={`select ${
-                    errors.INVALID_SEX || errors.SEX_REQUIRED
-                      ? "input-error"
-                      : ""
-                  }`}
-                  value={sex}
-                  onChange={(e) => {
-                    setSex(e.target.value);
-                    setErrors((prev) => ({
-                      ...prev,
-                      INVALID_SEX: false,
-                      SEX_REQUIRED: false,
-                    }));
-                  }}
-                >
-                  <option value="">Sexo</option>
-                  <option value="male">Masculino</option>
-                  <option value="female">Femenino</option>
-                </select>
-                {errors.SEX_REQUIRED && (
-                  <p className="form-error">{errorMessages.SEX_REQUIRED}</p>
-                )}
 
-                {errors.INVALID_SEX && (
-                  <p className="form-error">{errorMessages.INVALID_SEX}</p>
+              <div>
+                {selectedTeamData?.gender === "mixed" && (
+                  <>
+                    <select
+                      className={`select ${
+                        errors.INVALID_SEX || errors.SEX_REQUIRED
+                          ? "input-error"
+                          : ""
+                      }`}
+                      value={sex}
+                      onChange={(e) => {
+                        setSex(e.target.value);
+                        setErrors((prev) => ({
+                          ...prev,
+                          INVALID_SEX: false,
+                          SEX_REQUIRED: false,
+                        }));
+                      }}
+                    >
+                      <option value="">Sexo</option>
+                      <option value="male">Masculino</option>
+                      <option value="female">Femenino</option>
+                    </select>
+                    {errors.SEX_REQUIRED && (
+                      <p className="form-error">{errorMessages.SEX_REQUIRED}</p>
+                    )}
+
+                    {errors.INVALID_SEX && (
+                      <p className="form-error">{errorMessages.INVALID_SEX}</p>
+                    )}
+                  </>
                 )}
               </div>
               <div>

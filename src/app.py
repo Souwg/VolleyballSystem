@@ -1,10 +1,13 @@
 import os
+from dotenv import load_dotenv
 from datetime import timedelta
 from flask import Flask, request, jsonify, send_from_directory
 from flask_migrate import Migrate
 from flask_jwt_extended import JWTManager, get_jwt
 from flask_cors import CORS
 from src.api.extensions import bcrypt
+
+load_dotenv()
 
 
 
@@ -33,7 +36,11 @@ CORS(app, resources={r"/api/*": {"origins": "*"}}, supports_credentials=True)
 # -------------------------------------------------------------------
 # JWT CONFIG
 # -------------------------------------------------------------------
-app.config["JWT_SECRET_KEY"] = os.getenv("TOKEN_SECRET")  
+app.config["JWT_SECRET_KEY"] = (
+    os.getenv("TOKEN_SECRET")
+    or os.getenv("FLASK_APP_KEY")
+    or "dev-secret-local"
+)
 # Access corto (seguro)
 app.config["JWT_ACCESS_TOKEN_EXPIRES"] = timedelta(minutes=15)
 

@@ -5,7 +5,7 @@ import { PageHeader } from "../../component/ui/pageHeader";
 import { Input } from "../../component/ui/input";
 import { Button } from "../../component/ui/button";
 import { Card } from "../../component/ui/card";
-import { validateTeamName } from "../../utils/validators";
+import { validateTeam } from "../../utils/validators";
 import { errorMessages } from "../../utils/errorMessages";
 
 import "../../../styles/teams.css";
@@ -18,6 +18,7 @@ export const Teams = () => {
   const [errors, setErrors] = useState({});
   const [loading, setLoading] = useState(false);
   const [loadingTeams, setLoadingTeams] = useState(true);
+  const [teamGender, setTeamGender] = useState("");
 
   useEffect(() => {
     const loadTeams = async () => {
@@ -39,7 +40,10 @@ export const Teams = () => {
     setErrors({});
     setLoading(true);
 
-    const newErrors = validateTeamName(teamName);
+    const newErrors = validateTeam({
+      name: teamName,
+      gender: teamGender,
+    });
 
     if (Object.keys(newErrors).length > 0) {
       setErrors(newErrors);
@@ -49,18 +53,21 @@ export const Teams = () => {
 
     const cleanName = teamName.trim();
 
-    const result = await actions.createTeam(cleanName);
+    const result = await actions.createTeam({
+      name: cleanName,
+      gender: teamGender,
+    });
 
-    if (!result?.ok) {
-      setErrors({ [result.code]: true });
-      setLoading(false);
-      return;
-    }
-
-    closeCreateForm();
     setLoading(false);
 
-    await actions.getTeams();
+    if (!result.ok) {
+      setErrors({ [result.code]: true });
+      return;
+    }
+    setTeamName("");
+    setTeamGender("");
+    setShowForm(false);
+    setErrors({});
   };
 
   const openCreateForm = () => {
@@ -118,6 +125,25 @@ export const Teams = () => {
               <p className="form-error">{errorMessages.TEAM_ALREADY_EXISTS}</p>
             )}
 
+            <select
+              className={`select ${
+                errors.INVALID_TEAM_GENDER ? "input-error" : ""
+              }`}
+              value={teamGender}
+              onChange={(e) => {
+                setTeamGender(e.target.value);
+                setErrors((prev) => ({
+                  ...prev,
+                  INVALID_TEAM_GENDER: false,
+                }));
+              }}
+            >
+              <option value="">Selecciona la rama</option>
+              <option value="female">Femenino</option>
+              <option value="male">Masculino</option>
+              <option value="mixed">Mixto</option>
+            </select>
+
             <div className="form-actions">
               <Button
                 type="button"
@@ -149,6 +175,13 @@ export const Teams = () => {
             {store.teams.map((team) => (
               <Card key={team.id} onClick={() => navigate(`/teams/${team.id}`)}>
                 <h5>{team.name}</h5>
+                <p className="team-meta">
+                  {team.gender === "female"
+                    ? "Femenina"
+                    : team.gender === "male"
+                    ? "Masculina"
+                    : "Mixta"}
+                </p>
               </Card>
             ))}
           </div>

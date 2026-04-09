@@ -48,7 +48,7 @@ export const TeamDetail = () => {
       first_name: player.first_name,
       last_name: player.last_name,
       player_number: player.player_number,
-      sex: player.sex,
+      sex: team?.gender === "mixed" ? player.sex : team.gender,
     });
   };
 
@@ -74,7 +74,7 @@ export const TeamDetail = () => {
       team_id: team_id,
     });
 
-    if (!result?.ok) {
+    if (!result.ok) {
       setErrors({ [result.code]: true });
       setLoadingSubmit(false);
       return;
@@ -92,14 +92,30 @@ export const TeamDetail = () => {
     try {
       const result = await actions.getTeamPlayers(team_id);
 
-      if (!result) return;
+      if (!result.ok) return;
 
-      setTeam(result.team);
-      setPlayers(result.players);
+      setTeam(result.data.team);
+      setPlayers(result.data.players);
     } finally {
       setLoading(false);
     }
   };
+
+  useEffect(() => {
+    if (!team) return;
+
+    if (team.gender === "female") {
+      setSex("female");
+    }
+
+    if (team.gender === "male") {
+      setSex("male");
+    }
+
+    if (team.gender === "mixed") {
+      setSex("");
+    }
+  }, [team]);
 
   const registerPlayer = async (e) => {
     e.preventDefault();
@@ -129,7 +145,7 @@ export const TeamDetail = () => {
       team_id,
     });
 
-    if (!result?.ok) {
+    if (!result.ok) {
       setErrors({ [result.code]: true });
       setLoadingSubmit(false);
       return;
@@ -138,7 +154,7 @@ export const TeamDetail = () => {
     setFirstName("");
     setLastName("");
     setPlayerNumber("");
-    setSex("");
+    setSex(team?.gender === "mixed" ? "" : team.gender);
 
     await loadTeamPlayers();
 
@@ -155,7 +171,7 @@ export const TeamDetail = () => {
 
     const result = await actions.deleteTeam(team_id);
 
-    if (!result?.ok) {
+    if (!result.ok) {
       showToast("No se pudo eliminar la categoría", "error");
       return;
     }
@@ -174,7 +190,7 @@ export const TeamDetail = () => {
 
     const result = await actions.removePlayerFromTeam(team_id, player.id);
 
-    if (!result?.ok) {
+    if (!result.ok) {
       showToast("No se pudo quitar la jugadora", "error");
       return;
     }
@@ -182,24 +198,23 @@ export const TeamDetail = () => {
     await loadTeamPlayers();
 
     await actions.getPlayers();
-
-    showToast(
-      `${player.first_name} ahora está disponible para otra categoría`,
-      "success",
-    );
   };
 
   const handleLoadExistingPlayers = async () => {
     const result = await actions.getPlayers();
 
-    if (!result?.players?.length) {
+    if (!result.ok || !result.data.players.length) {
       showToast("No hay jugadores existentes en el club", "info");
       return;
     }
 
-    const filteredPlayers = result.players.filter(
-      (p) => !players.some((tp) => tp.id === p.id),
-    );
+    const filteredPlayers = result.data.players.filter((p) => {
+      const alreadyInTeam = players.some((tp) => tp.id === p.id);
+
+      const validGender = team.gender === "mixed" || p.sex === team.gender;
+
+      return !alreadyInTeam && validGender;
+    });
 
     if (!filteredPlayers.length) {
       showToast("Todos los jugadores ya están en este equipo", "info");
@@ -223,7 +238,13 @@ export const TeamDetail = () => {
     <>
       <PageHeader
         title={team.name}
-        subtitle="Aquí puedes gestionar los jugadores de esta categoría"
+        subtitle={`Categoría ${
+          team.gender === "female"
+            ? "Femenina"
+            : team.gender === "male"
+            ? "Masculina"
+            : "Mixta"
+        }`}
         actions={
           <>
             <Button
@@ -240,6 +261,12 @@ export const TeamDetail = () => {
               onClick={() => navigate(`/teams/${team_id}/trainings`)}
             >
               Trainings
+            </Button>
+            <Button
+              variant="secondary"
+              onClick={() => navigate(`/teams/${team.id}/matches`)}
+            >
+              Match Sessions
             </Button>
             <div className="team-actions">
               <Button className="button-danger" onClick={handleDeleteTeam}>
@@ -283,7 +310,7 @@ export const TeamDetail = () => {
       )}
       {availablePlayers.length > 0 && (
         <Card>
-          <h4>Selecciona jugadora</h4>
+          <h4>Selecciona jugador</h4>
 
           <div className="players-list">
             {availablePlayers.map((player) => (
@@ -386,7 +413,7 @@ export const TeamDetail = () => {
                   player_number: Number(existingPlayerNumber),
                 });
 
-                if (!result?.ok) {
+                if (!result.ok) {
                   setErrors({ [result.code]: true });
                   return;
                 }
@@ -494,24 +521,26 @@ export const TeamDetail = () => {
                 {errorMessages.PLAYER_NUMBER_DUPLICATED}
               </p>
             )}
-            <select
-              className={`select ${
-                errors.SEX_REQUIRED || errors.INVALID_SEX ? "input-error" : ""
-              }`}
-              value={sex}
-              onChange={(e) => {
-                setSex(e.target.value);
-                setErrors((prev) => ({
-                  ...prev,
-                  SEX_REQUIRED: false,
-                  INVALID_SEX: false,
-                }));
-              }}
-            >
-              <option value="">Selecciona sexo</option>
-              <option value="male">Masculino</option>
-              <option value="female">Femenino</option>
-            </select>
+            {team?.gender === "mixed" && (
+              <select
+                className={`select ${
+                  errors.SEX_REQUIRED || errors.INVALID_SEX ? "input-error" : ""
+                }`}
+                value={sex}
+                onChange={(e) => {
+                  setSex(e.target.value);
+                  setErrors((prev) => ({
+                    ...prev,
+                    SEX_REQUIRED: false,
+                    INVALID_SEX: false,
+                  }));
+                }}
+              >
+                <option value="">Selecciona sexo</option>
+                <option value="male">Masculino</option>
+                <option value="female">Femenino</option>
+              </select>
+            )}
             {errors.SEX_REQUIRED && (
               <p className="form-error">{errorMessages.SEX_REQUIRED}</p>
             )}
@@ -649,20 +678,22 @@ export const TeamDetail = () => {
                           {errorMessages.INVALID_PLAYER_NUMBER}
                         </p>
                       )}
-                      <select
-                        value={editData.sex}
-                        className={errors.SEX_REQUIRED ? "input-error" : ""}
-                        onChange={(e) => {
-                          setEditData({ ...editData, sex: e.target.value });
-                          setErrors((prev) => ({
-                            ...prev,
-                            SEX_REQUIRED: false,
-                          }));
-                        }}
-                      >
-                        <option value="male">Masculino</option>
-                        <option value="female">Femenino</option>
-                      </select>
+                      {team?.gender === "mixed" && (
+                        <select
+                          value={editData.sex}
+                          className={errors.SEX_REQUIRED ? "input-error" : ""}
+                          onChange={(e) => {
+                            setEditData({ ...editData, sex: e.target.value });
+                            setErrors((prev) => ({
+                              ...prev,
+                              SEX_REQUIRED: false,
+                            }));
+                          }}
+                        >
+                          <option value="male">Masculino</option>
+                          <option value="female">Femenino</option>
+                        </select>
+                      )}
                       {errors.SEX_REQUIRED && (
                         <p className="form-error">
                           {errorMessages.SEX_REQUIRED}
@@ -694,7 +725,8 @@ export const TeamDetail = () => {
                             {player.first_name} {player.last_name}
                           </p>
                           <p className="player-meta">
-                            #{player.player_number} · {player.sex}
+                            #{player.player_number} ·{" "}
+                            {player.sex === "female" ? "Femenino" : "Masculino"}
                           </p>
                         </div>
 

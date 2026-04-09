@@ -13,22 +13,28 @@ export const PlayerDetail = () => {
   const [player, setPlayer] = useState(null);
   const [summary, setSummary] = useState(null);
   const [history, setHistory] = useState([]);
+  const [loading, setLoading] = useState(true);
 
   const loadPlayerData = async () => {
-    const data = await actions.getPlayerAttendance(player_id);
+    setLoading(true);
 
-    if (!data) return;
+    const result = await actions.getPlayerAttendance(player_id);
 
-    setPlayer(data.player);
-    setSummary(data.summary);
-    setHistory(data.history);
+    if (result.ok) {
+      const data = result.data;
+      setPlayer(data.player);
+      setSummary(data.summary);
+      setHistory(data.history);
+    }
+
+    setLoading(false);
   };
 
   useEffect(() => {
     loadPlayerData();
   }, [player_id]);
 
-  if (!player) {
+  if (loading) {
     return (
       <Container>
         <p>Cargando perfil...</p>

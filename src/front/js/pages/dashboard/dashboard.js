@@ -53,7 +53,7 @@ export const Dashboard = () => {
   }, [store.token]);
 
   if (!store.dashboardStats) {
-    return <p>Loading dashboard...</p>;
+    return <p>Cargando resumen del club...</p>;
   }
 
   const cta = getDashboardCTA();

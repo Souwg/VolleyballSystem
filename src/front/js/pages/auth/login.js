@@ -54,7 +54,7 @@ export const Login = () => {
   };
   return (
     <AuthLayout title="Welcome back" subtitle="Login to your club dashboard">
-      <form onSubmit={handleLogin} className="auth-form">
+      <form onSubmit={handleLogin} className="auth-form" noValidate>
         <div>
           <Input
             type="email"

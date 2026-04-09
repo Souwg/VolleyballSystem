@@ -60,7 +60,7 @@ export const CreateTraining = () => {
       location: location.trim(),
     });
 
-    if (!result?.ok) {
+    if (!result.ok) {
       setErrors({ [result.code]: true });
       setLoading(false);
       return;

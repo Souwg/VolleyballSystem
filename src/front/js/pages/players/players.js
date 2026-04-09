@@ -22,16 +22,88 @@ export const Players = () => {
   const [statusFilter, setStatusFilter] = useState("all");
   const [errors, setErrors] = useState({});
   const [loading, setLoading] = useState(false);
+  const [loadingPlayers, setLoadingPlayers] = useState(true);
   const [assigningPlayer, setAssigningPlayer] = useState(null);
   const [selectedTeam, setSelectedTeam] = useState("");
   const [newNumber, setNewNumber] = useState("");
+  const [showCreateForm, setShowCreateForm] = useState(false);
+  const [createFirstName, setCreateFirstName] = useState("");
+  const [createLastName, setCreateLastName] = useState("");
+  const [createPlayerNumber, setCreatePlayerNumber] = useState("");
+  const [createSex, setCreateSex] = useState("");
+  const [createTeamId, setCreateTeamId] = useState("");
+  const [createLoading, setCreateLoading] = useState(false);
 
   useEffect(() => {
-    if (!store.token) return;
+    const loadPlayers = async () => {
+      if (!store.token) return;
 
-    actions.getPlayers();
-    actions.getTeams();
+      setLoadingPlayers(true);
+
+      await Promise.all([actions.getPlayers(), actions.getTeams()]);
+
+      setLoadingPlayers(false);
+    };
+
+    loadPlayers();
   }, [store.token]);
+
+  const openCreateForm = () => {
+    setShowCreateForm(true);
+    setErrors({});
+  };
+
+  const closeCreateForm = () => {
+    setShowCreateForm(false);
+    setCreateFirstName("");
+    setCreateLastName("");
+    setCreatePlayerNumber("");
+    setCreateSex("");
+    setCreateTeamId("");
+    setErrors({});
+  };
+
+  const handleCreatePlayer = async (e) => {
+    e.preventDefault();
+
+    if (createLoading) return;
+
+    setErrors({});
+
+    const newErrors = validatePlayer({
+      first_name: createFirstName,
+      last_name: createLastName,
+      player_number: createPlayerNumber,
+      sex: createSex,
+      team_id: createTeamId,
+    });
+
+    if (Object.keys(newErrors).length > 0) {
+      setErrors(newErrors);
+      return;
+    }
+
+    setCreateLoading(true);
+
+    const result = await actions.createPlayer({
+      first_name: createFirstName.trim(),
+      last_name: createLastName.trim(),
+      player_number: Number(createPlayerNumber),
+      sex: createSex,
+      team_id: createTeamId,
+    });
+
+    if (!result.ok) {
+      setErrors({ [result.code]: true });
+      setCreateLoading(false);
+      return;
+    }
+
+    await Promise.all([actions.getPlayers(), actions.getTeams()]);
+
+    closeCreateForm();
+    setCreateLoading(false);
+  };
 
   const startEdit = (player) => {
     setErrors({});
@@ -71,14 +143,15 @@ export const Players = () => {
       team_id: editingPlayer.team_id,
     });
 
-    if (!result?.ok) {
+    if (!result.ok) {
       setErrors({ [result.code]: true });
       setLoading(false);
       return;
     }
 
-    setLoading(false);
+    setErrors({});
     setEditingPlayer(null);
+    setLoading(false);
   };
 
   const getTeamName = (teamId) => {
@@ -162,7 +235,7 @@ export const Players = () => {
       player_number: Number(newNumber),
     });
 
-    if (!result?.ok) {
+    if (!result.ok) {
       setErrors({ [result.code]: true });
       return;
     }
@@ -184,7 +257,7 @@ export const Players = () => {
 
     const result = await actions.updatePlayerStatus(player.id, newStatus);
 
-    if (!result?.ok) {
+    if (!result.ok) {
       setErrors({ GENERIC_ERROR: true });
       return;
     }
@@ -204,10 +277,181 @@ export const Players = () => {
   ).length;
 
   const unassignedCount = store.players.filter((p) => !p.team_id).length;
+
+  if (loadingPlayers) {
+    return <p>Cargando jugadoras...</p>;
+  }
   return (
     <>
       <PageHeader title="Players" />
 
+      <div className="players-top-actions">
+        {!showCreateForm && (
+          <Button className="button-primary" onClick={openCreateForm}>
+            + Añadir jugadora
+          </Button>
+        )}
+      </div>
+      {showCreateForm && (
+        <Card className="player-create-card">
+          <h4>Nueva jugadora</h4>
+
+          <form onSubmit={handleCreatePlayer} className="form">
+            <Input
+              value={createFirstName}
+              placeholder="Nombre"
+              className={errors.FIRST_NAME_REQUIRED ? "input-error" : ""}
+              onChange={(e) => {
+                setCreateFirstName(e.target.value);
+                setErrors((prev) => ({
+                  ...prev,
+                  FIRST_NAME_REQUIRED: false,
+                }));
+              }}
+            />
+            {errors.FIRST_NAME_REQUIRED && (
+              <p className="form-error">{errorMessages.FIRST_NAME_REQUIRED}</p>
+            )}
+
+            <Input
+              value={createLastName}
+              placeholder="Apellido"
+              className={errors.LAST_NAME_REQUIRED ? "input-error" : ""}
+              onChange={(e) => {
+                setCreateLastName(e.target.value);
+                setErrors((prev) => ({
+                  ...prev,
+                  LAST_NAME_REQUIRED: false,
+                }));
+              }}
+            />
+            {errors.LAST_NAME_REQUIRED && (
+              <p className="form-error">{errorMessages.LAST_NAME_REQUIRED}</p>
+            )}
+
+            <Input
+              type="number"
+              min="1"
+              max="99"
+              value={createPlayerNumber}
+              placeholder="Número"
+              className={
+                errors.PLAYER_NUMBER_REQUIRED ||
+                errors.INVALID_PLAYER_NUMBER ||
+                errors.PLAYER_NUMBER_DUPLICATED
+                  ? "input-error"
+                  : ""
+              }
+              onChange={(e) => {
+                const value = e.target.value;
+
+                if (value === "") {
+                  setCreatePlayerNumber("");
+                  setErrors((prev) => ({
+                    ...prev,
+                    PLAYER_NUMBER_REQUIRED: false,
+                    INVALID_PLAYER_NUMBER: false,
+                    PLAYER_NUMBER_DUPLICATED: false,
+                  }));
+                  return;
+                }
+
+                if (value.length > 2) return;
+                if (Number(value) <= 0) return;
+
+                setCreatePlayerNumber(value);
+
+                setErrors((prev) => ({
+                  ...prev,
+                  PLAYER_NUMBER_REQUIRED: false,
+                  INVALID_PLAYER_NUMBER: false,
+                  PLAYER_NUMBER_DUPLICATED: false,
+                }));
+              }}
+            />
+            {errors.PLAYER_NUMBER_REQUIRED && (
+              <p className="form-error">
+                {errorMessages.PLAYER_NUMBER_REQUIRED}
+              </p>
+            )}
+            {errors.INVALID_PLAYER_NUMBER && (
+              <p className="form-error">
+                {errorMessages.INVALID_PLAYER_NUMBER}
+              </p>
+            )}
+            {errors.PLAYER_NUMBER_DUPLICATED && (
+              <p className="form-error">
+                {errorMessages.PLAYER_NUMBER_DUPLICATED}
+              </p>
+            )}
+
+            <select
+              value={createSex}
+              className={
+                errors.SEX_REQUIRED || errors.INVALID_SEX ? "input-error" : ""
+              }
+              onChange={(e) => {
+                setCreateSex(e.target.value);
+                setErrors((prev) => ({
+                  ...prev,
+                  SEX_REQUIRED: false,
+                  INVALID_SEX: false,
+                }));
+              }}
+            >
+              <option value="">Selecciona sexo</option>
+              <option value="male">Masculino</option>
+              <option value="female">Femenino</option>
+            </select>
+            {errors.SEX_REQUIRED && (
+              <p className="form-error">{errorMessages.SEX_REQUIRED}</p>
+            )}
+            {errors.INVALID_SEX && (
+              <p className="form-error">{errorMessages.INVALID_SEX}</p>
+            )}
+
+            <select
+              value={createTeamId}
+              className={errors.TEAM_ID_REQUIRED ? "input-error" : ""}
+              onChange={(e) => {
+                setCreateTeamId(e.target.value);
+                setErrors((prev) => ({
+                  ...prev,
+                  TEAM_ID_REQUIRED: false,
+                }));
+              }}
+            >
+              <option value="">Selecciona categoría</option>
+              {store.teams.map((team) => (
+                <option key={team.id} value={team.id}>
+                  {team.name}
+                </option>
+              ))}
+            </select>
+            {errors.TEAM_ID_REQUIRED && (
+              <p className="form-error">{errorMessages.TEAM_ID_REQUIRED}</p>
+            )}
+
+            <div className="form-actions">
+              <Button
+                type="button"
+                className="button-secondary"
+                onClick={closeCreateForm}
+              >
+                Cancelar
+              </Button>
+
+              <Button
+                type="submit"
+                className="button-primary"
+                disabled={createLoading}
+              >
+                {createLoading ? "Guardando..." : "Guardar"}
+              </Button>
+            </div>
+          </form>
+        </Card>
+      )}
       <div>
         <div>
           <Input

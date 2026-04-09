@@ -22,9 +22,11 @@ export const TrainingDetail = () => {
 
     await actions.getTrainingPlayers(training_id);
 
-    const attendanceData = await actions.getTrainingAttendance(training_id);
+    const result = await actions.getTrainingAttendance(training_id);
 
-    if (attendanceData) {
+    if (result.ok) {
+      const attendanceData = result.data;
+
       const map = {};
 
       attendanceData.forEach((a) => {
@@ -60,7 +62,7 @@ export const TrainingDetail = () => {
 
     const result = await actions.saveAttendance(training_id, attendanceList);
 
-    if (!result?.ok) return;
+    if (!result.ok) return;
 
     setHasChanges(false);
   };

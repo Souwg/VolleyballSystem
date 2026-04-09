@@ -24,6 +24,10 @@ import { Trainings } from "./pages/trainings/trainings";
 import { TeamTrainings } from "./pages/trainings/teamTrainings";
 import { TrainingDetail } from "./pages/trainings/trainingDetail";
 import { CreateTraining } from "./pages/trainings/createTraining";
+import { MatchSessions } from "./pages/matches/matchSessions";
+import { CreateMatch } from "./pages/matches/createMatch";
+import { MatchDetail } from "./pages/matches/matchDetail";
+import { PlayerMatchStats } from "./pages/matches/playerMatchStats";
 import injectContext from "./store/appContext";
 
 const Layout = () => {
@@ -38,7 +42,7 @@ const Layout = () => {
       try {
         const restored = await actions.restoreSession();
 
-        if (restored) {
+        if (restored?.ok) {
           const user = JSON.parse(localStorage.getItem("user"));
 
           if (user?.role !== "system_admin") {
@@ -96,6 +100,20 @@ const Layout = () => {
               <Route
                 path="/teams/:team_id/trainings/new"
                 element={<CreateTraining />}
+              />
+              <Route
+                path="/teams/:team_id/matches"
+                element={<MatchSessions />}
+              />
+              <Route
+                path="/teams/:team_id/matches/new"
+                element={<CreateMatch />}
+              />
+
+              <Route path="/matches/:match_id" element={<MatchDetail />} />
+              <Route
+                path="/match-players/:match_player_id/stats"
+                element={<PlayerMatchStats />}
               />
               <Route path="/players" element={<Players />} />
               <Route path="/players/:player_id" element={<PlayerDetail />} />
