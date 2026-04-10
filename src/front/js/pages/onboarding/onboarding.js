@@ -5,7 +5,8 @@ import { AuthLayout } from "../../component/authLayout";
 import {
   validateClubLocation,
   validateTeam,
-  validatePlayer,
+  validatePlayerProfile,
+  validatePlayerAssignment,
 } from "../../utils/validators";
 
 import { errorMessages } from "../../utils/errorMessages";
@@ -95,16 +96,25 @@ export const Onboarding = () => {
   const handleCreatePlayer = async (e) => {
     e.preventDefault();
     if (creatingPlayer) return;
+
     setErrors({});
 
-    const newErrors = validatePlayer({
+    const profileErrors = validatePlayerProfile({
       first_name: firstName,
       last_name: lastName,
-      player_number: number,
       sex,
-      team_id: selectedTeam,
       birth_date: birthDate,
     });
+
+    const assignmentErrors = validatePlayerAssignment({
+      team_id: selectedTeam,
+      player_number: number,
+    });
+
+    const newErrors = {
+      ...profileErrors,
+      ...assignmentErrors,
+    };
 
     if (Object.keys(newErrors).length > 0) {
       setErrors(newErrors);
@@ -117,9 +127,9 @@ export const Onboarding = () => {
       first_name: firstName.trim(),
       last_name: lastName.trim(),
       birth_date: birthDate || null,
-      player_number: Number(number),
-      sex: sex,
+      sex,
       team_id: selectedTeam,
+      player_number: Number(number),
     });
 
     if (!result?.ok) {

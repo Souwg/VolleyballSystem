@@ -890,69 +890,66 @@ def create_player():
             400
         )
 
-    if player_number is None:
-        return error_response(
-            "El número del jugador es obligatorio",
-            "PLAYER_NUMBER_REQUIRED",
-            400
-        )
+    team = None
 
-    try:
-        player_number = int(player_number)
-    except (TypeError, ValueError):
-        return error_response(
-            "El número del jugador debe ser numérico",
-            "INVALID_PLAYER_NUMBER",
-            400
-        )
+    if team_id:
+        if player_number is None:
+            return error_response(
+                "El número del jugador es obligatorio",
+                "PLAYER_NUMBER_REQUIRED",
+                400
+            )
 
-    if player_number <= 0:
-        return error_response(
-            "El número del jugador debe ser mayor que cero",
-            "INVALID_PLAYER_NUMBER",
-            400
-        )
+        try:
+            player_number = int(player_number)
+        except (TypeError, ValueError):
+            return error_response(
+                "El número del jugador debe ser numérico",
+                "INVALID_PLAYER_NUMBER",
+                400
+            )
 
-    if not team_id:
-        return error_response(
-            "La categoría es obligatoria",
-            "TEAM_ID_REQUIRED",
-            400
-        )
+        if player_number <= 0:
+            return error_response(
+                "El número del jugador debe ser mayor que cero",
+                "INVALID_PLAYER_NUMBER",
+                400
+            )
 
-    team = Team.query.get(team_id)
+        team = Team.query.get(team_id)
 
-    if not team:
-        return error_response(
-            "Categoría no encontrada",
-            "TEAM_NOT_FOUND",
-            404
-        )
-    if team.club_id != user.club_id:
-        return error_response(
-            "No tienes permisos para registrar jugadores en esta categoría",
-            "FORBIDDEN",
-            403
-        )
-    
-    if team.gender != "mixed" and team.gender != sex:
-        return error_response(
-            "El sexo del jugador no coincide con la rama de la categoría",
-            "PLAYER_GENDER_MISMATCH",
-            400
-        )
+        if not team:
+            return error_response(
+                "Categoría no encontrada",
+                "TEAM_NOT_FOUND",
+                404
+            )
 
-    existing_membership = TeamPlayer.query.filter_by(
-        team_id=team.id,
-        player_number=player_number
-    ).first()
+        if team.club_id != user.club_id:
+            return error_response(
+                "No tienes permisos para registrar jugadores en esta categoría",
+                "FORBIDDEN",
+                403
+            )
 
-    if existing_membership:
-        return error_response(
-            "Ya existe un jugador con ese número en esta categoría",
-            "PLAYER_NUMBER_DUPLICATED",
-            409
-        )
+        if team.gender != "mixed" and team.gender != sex:
+            return error_response(
+                "El sexo del jugador no coincide con la rama de la categoría",
+                "PLAYER_GENDER_MISMATCH",
+                400
+            )
+
+        existing_membership = TeamPlayer.query.filter_by(
+            team_id=team.id,
+            player_number=player_number
+        ).first()
+
+        if existing_membership:
+            return error_response(
+                "Ya existe un jugador con ese número en esta categoría",
+                "PLAYER_NUMBER_DUPLICATED",
+                409
+            )
     
     parsed_birth_date = None
 
@@ -979,23 +976,25 @@ def create_player():
     db.session.add(player)
     db.session.flush()
 
-    membership = TeamPlayer(
-        team_id=team.id,
-        player_id=player.id,
-        player_number=player_number,
-        status=status
-    )
+    membership = None
 
-    db.session.add(membership)
+    if team:
+        membership = TeamPlayer(
+            team_id=team.id,
+            player_id=player.id,
+            player_number=player_number,
+            status=status
+        )
+        db.session.add(membership)
     db.session.commit()
 
     return jsonify({
         "message": "Jugador registrado correctamente",
         "player": {
             **player.serialize(),
-            "team_id": membership.team_id,
-            "player_number": membership.player_number,
-            "status": membership.status
+            "team_id": membership.team_id if membership else None,
+            "player_number": membership.player_number if membership else None,
+            "status": membership.status if membership else "active"
         }
     }), 201
 
@@ -1236,6 +1235,8 @@ def update_player(player_id):
     last_name = body.get("last_name")
     sex = body.get("sex")
     birth_date = body.get("birth_date")
+    team_id = body.get("team_id")
+    player_number = body.get("player_number")
 
     if not first_name:
         return error_response(
@@ -1251,39 +1252,63 @@ def update_player(player_id):
             400
         )
 
-    # ✅ actualizar perfil global SIEMPRE
+    allowed_sex = ["male", "female"]
+
+    if sex not in allowed_sex:
+        return error_response(
+            "Sexo inválido",
+            "INVALID_SEX",
+            400
+        )
+
+    # ✅ validar cambio global de sexo contra TODAS sus categorías
+    memberships = TeamPlayer.query.filter_by(
+        player_id=player.id
+    ).all()
+
+    for membership in memberships:
+        team = Team.query.get(membership.team_id)
+
+        if not team:
+            continue
+
+        if team.gender != "mixed" and team.gender != sex:
+            return error_response(
+                "No puedes cambiar el sexo porque la jugadora pertenece a categorías incompatibles",
+                "PLAYER_GENDER_MISMATCH",
+                409
+            )
+
+    # ✅ actualizar perfil global
     player.first_name = first_name
     player.last_name = last_name
     player.sex = sex
 
-    # 👇 membership opcional
-    membership = TeamPlayer.query.filter_by(player_id=player.id).first()
-
-    team_id = body.get("team_id")
-    player_number = body.get("player_number")
-
-    if membership and team_id and player_number is not None:
-        new_team = Team.query.get(team_id)
-
-        if not new_team:
+    # ✅ fecha opcional
+    if birth_date:
+        try:
+            player.birth_date = datetime.strptime(
+                birth_date, "%Y-%m-%d"
+            ).date()
+        except ValueError:
             return error_response(
-                "Categoría no encontrada",
-                "TEAM_NOT_FOUND",
-                404
-            )
-
-        if new_team.club_id != user.club_id:
-            return error_response(
-                "No tienes acceso a esta categoría",
-                "FORBIDDEN",
-                403
-            )
-
-        if new_team.gender != "mixed" and new_team.gender != sex:
-            return error_response(
-                "El jugador no coincide con la rama",
-                "PLAYER_GENDER_MISMATCH",
+                "Formato de fecha inválido",
+                "INVALID_DATE_FORMAT",
                 400
+            )
+
+    # ✅ actualizar número SOLO en membership específica
+    if team_id and player_number is not None:
+        membership = TeamPlayer.query.filter_by(
+            player_id=player.id,
+            team_id=team_id
+        ).first()
+
+        if not membership:
+            return error_response(
+                "El jugador no pertenece a esta categoría",
+                "PLAYER_MEMBERSHIP_NOT_FOUND",
+                404
             )
 
         duplicated_number = TeamPlayer.query.filter(
@@ -1299,7 +1324,6 @@ def update_player(player_id):
                 409
             )
 
-        membership.team_id = team_id
         membership.player_number = int(player_number)
 
     db.session.commit()
@@ -1331,35 +1355,23 @@ def update_player_status(player_id):
 
     player = Player.query.get(player_id)
 
-    if not player:
+    if not player or player.club_id != user.club_id:
         return error_response(
             "Jugador no encontrado",
             "PLAYER_NOT_FOUND",
             404
         )
 
-    membership = TeamPlayer.query.filter_by(
-        player_id=player.id
-    ).first()
-
-    if not membership:
-        return error_response(
-            "El jugador no pertenece a ningún equipo",
-            "PLAYER_MEMBERSHIP_NOT_FOUND",
-            404
-        )
-
-    team = Team.query.get(membership.team_id)
-
-    if not team or team.club_id != user.club_id:
-        return error_response(
-            "No tienes permisos para modificar este jugador",
-            "FORBIDDEN",
-            403
-        )
-
     body = request.get_json() or {}
     status = body.get("status")
+    team_id = body.get("team_id")
+
+    if not team_id:
+        return error_response(
+            "La categoría es obligatoria",
+            "TEAM_ID_REQUIRED",
+            400
+        )
 
     allowed_status = ["active", "injured", "inactive"]
 
@@ -1368,6 +1380,27 @@ def update_player_status(player_id):
             "Estado del jugador inválido",
             "INVALID_PLAYER_STATUS",
             400
+        )
+
+    membership = TeamPlayer.query.filter_by(
+        player_id=player.id,
+        team_id=team_id
+    ).first()
+
+    if not membership:
+        return error_response(
+            "El jugador no pertenece a esta categoría",
+            "PLAYER_MEMBERSHIP_NOT_FOUND",
+            404
+        )
+
+    team = Team.query.get(team_id)
+
+    if not team or team.club_id != user.club_id:
+        return error_response(
+            "No tienes permisos para modificar este jugador",
+            "FORBIDDEN",
+            403
         )
 
     membership.status = status
@@ -1405,34 +1438,36 @@ def delete_player(player_id):
 
     player = Player.query.get(player_id)
 
-    if not player:
+    if not player or player.club_id != user.club_id:
         return error_response(
             "Jugador no encontrado",
             "PLAYER_NOT_FOUND",
             404
         )
 
-    membership = TeamPlayer.query.filter_by(
+    memberships = TeamPlayer.query.filter_by(
+        player_id=player.id
+    ).all()
+
+    # 🚨 protección histórica
+    attendance_exists = Attendance.query.filter_by(
         player_id=player.id
     ).first()
 
-    if not membership:
+    match_exists = MatchPlayer.query.filter_by(
+        player_id=player.id
+    ).first()
+
+    if attendance_exists or match_exists:
         return error_response(
-            "El jugador no pertenece a ningún equipo",
-            "PLAYER_MEMBERSHIP_NOT_FOUND",
-            404
+            "No puedes eliminar una jugadora con historial registrado",
+            "PLAYER_HAS_HISTORY",
+            409
         )
 
-    team = Team.query.get(membership.team_id)
+    for membership in memberships:
+        db.session.delete(membership)
 
-    if not team or team.club_id != user.club_id:
-        return error_response(
-            "No tienes permisos para eliminar este jugador",
-            "FORBIDDEN",
-            403
-        )
-
-    db.session.delete(membership)
     db.session.delete(player)
     db.session.commit()
 
@@ -1604,25 +1639,26 @@ def get_player_attendance(player_id):
             404
         )
 
-    membership = TeamPlayer.query.filter_by(
+    memberships = TeamPlayer.query.filter_by(
         player_id=player.id
-    ).first()
+    ).all()
 
-    if not membership:
+    if not memberships:
         return error_response(
             "El jugador no pertenece a ningún equipo",
             "PLAYER_MEMBERSHIP_NOT_FOUND",
             404
         )
 
-    team = Team.query.get(membership.team_id)
+    for membership in memberships:
+        team = Team.query.get(membership.team_id)
 
-    if not team or team.club_id != user.club_id:
-        return error_response(
-            "No tienes acceso",
-            "FORBIDDEN",
-            403
-        )
+        if not team or team.club_id != user.club_id:
+            return error_response(
+                "No tienes acceso",
+                "FORBIDDEN",
+                403
+            )
 
     attendance_records = Attendance.query.join(TrainingSession).filter(
         Attendance.player_id == player.id
@@ -1654,9 +1690,16 @@ def get_player_attendance(player_id):
     return jsonify({
         "player": {
             **player.serialize(),
-            "team_id": membership.team_id,
-            "player_number": membership.player_number,
-            "status": membership.status
+            "teams": [
+                {
+                    "id": m.team.id,
+                    "name": m.team.name,
+                    "gender": m.team.gender,
+                    "player_number": m.player_number,
+                    "status": m.status
+                }
+                for m in memberships
+            ]
         },
         "summary": {
             "present": present,

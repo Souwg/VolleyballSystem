@@ -76,44 +76,24 @@ export const validateTeam = ({ name, gender }) => {
   return errors;
 };
 
-export const validatePlayer = ({
+export const validatePlayerProfile = ({
   first_name,
   last_name,
-  player_number,
   sex,
-  team_id,
   birth_date,
 }) => {
   const errors = {};
 
-  if (!first_name.trim()) {
+  if (!first_name?.trim()) {
     errors.FIRST_NAME_REQUIRED = true;
   }
 
-  if (!last_name.trim()) {
+  if (!last_name?.trim()) {
     errors.LAST_NAME_REQUIRED = true;
-  }
-
-  if (!player_number.toString().trim()) {
-    errors.PLAYER_NUMBER_REQUIRED = true;
-  } else {
-    const parsedNumber = Number(player_number);
-
-    if (
-      !Number.isInteger(parsedNumber) ||
-      parsedNumber < 1 ||
-      parsedNumber > 99
-    ) {
-      errors.INVALID_PLAYER_NUMBER = true;
-    }
   }
 
   if (!sex) {
     errors.SEX_REQUIRED = true;
-  }
-
-  if (!team_id) {
-    errors.TEAM_ID_REQUIRED = true;
   }
 
   if (birth_date) {
@@ -123,6 +103,33 @@ export const validatePlayer = ({
     if (selectedDate > today) {
       errors.INVALID_BIRTH_DATE = true;
     }
+  }
+
+  return errors;
+};
+
+export const validatePlayerAssignment = ({ team_id, player_number }) => {
+  const errors = {};
+
+  if (!team_id) return errors;
+
+  if (
+    player_number === undefined ||
+    player_number === null ||
+    player_number === ""
+  ) {
+    errors.PLAYER_NUMBER_REQUIRED = true;
+    return errors;
+  }
+
+  const parsedNumber = Number(player_number);
+
+  if (
+    !Number.isInteger(parsedNumber) ||
+    parsedNumber < 1 ||
+    parsedNumber > 99
+  ) {
+    errors.INVALID_PLAYER_NUMBER = true;
   }
 
   return errors;

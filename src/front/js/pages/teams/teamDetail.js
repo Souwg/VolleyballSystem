@@ -2,7 +2,10 @@ import React, { useEffect, useState, useContext } from "react";
 import { useNavigate } from "react-router-dom";
 import { Context } from "../../store/appContext";
 import { useParams } from "react-router-dom";
-import { validatePlayer } from "../../utils/validators";
+import {
+  validatePlayerProfile,
+  validatePlayerAssignment,
+} from "../../utils/validators";
 import { errorMessages } from "../../utils/errorMessages";
 import { useToast } from "../../../../context/toastContext";
 
@@ -55,23 +58,34 @@ export const TeamDetail = () => {
   const saveEdit = async () => {
     setErrors({});
     if (loadingSubmit) return;
-    const newErrors = validatePlayer({
+
+    const profileErrors = validatePlayerProfile({
       first_name: editData.first_name,
       last_name: editData.last_name,
-      player_number: editData.player_number,
       sex: editData.sex,
-      team_id,
     });
+
+    const assignmentErrors = validatePlayerAssignment({
+      team_id,
+      player_number: editData.player_number,
+    });
+
+    const newErrors = {
+      ...profileErrors,
+      ...assignmentErrors,
+    };
 
     if (Object.keys(newErrors).length > 0) {
       setErrors(newErrors);
       return;
     }
-    setErrors({});
+
     setLoadingSubmit(true);
+
     const result = await actions.updatePlayer(editingPlayerId, {
       ...editData,
-      team_id: team_id,
+      team_id,
+      player_number: Number(editData.player_number),
     });
 
     if (!result.ok) {
@@ -81,7 +95,15 @@ export const TeamDetail = () => {
     }
 
     setPlayers((prev) =>
-      prev.map((p) => (p.id === editingPlayerId ? { ...p, ...editData } : p)),
+      prev.map((p) =>
+        p.id === editingPlayerId
+          ? {
+              ...p,
+              ...editData,
+              player_number: Number(editData.player_number),
+            }
+          : p,
+      ),
     );
 
     setEditingPlayerId(null);
@@ -122,18 +144,27 @@ export const TeamDetail = () => {
 
     if (loadingSubmit) return;
 
-    const newErrors = validatePlayer({
+    const profileErrors = validatePlayerProfile({
       first_name: firstName,
       last_name: lastName,
-      player_number: playerNumber,
       sex,
-      team_id,
     });
+
+    const assignmentErrors = validatePlayerAssignment({
+      team_id,
+      player_number: playerNumber,
+    });
+
+    const newErrors = {
+      ...profileErrors,
+      ...assignmentErrors,
+    };
 
     if (Object.keys(newErrors).length > 0) {
       setErrors(newErrors);
       return;
     }
+
     setErrors({});
     setLoadingSubmit(true);
 

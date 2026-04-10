@@ -6,7 +6,10 @@ import { Card } from "../../component/ui/card";
 import { PageHeader } from "../../component/ui/pageHeader";
 import { Input } from "../../component/ui/input";
 import { Button } from "../../component/ui/button";
-import { validatePlayer } from "../../utils/validators";
+import {
+  validatePlayerProfile,
+  validatePlayerAssignment,
+} from "../../utils/validators";
 import { errorMessages } from "../../utils/errorMessages";
 
 export const Players = () => {
@@ -34,6 +37,14 @@ export const Players = () => {
   const [createTeamId, setCreateTeamId] = useState("");
   const [createLoading, setCreateLoading] = useState(false);
 
+  const editingPlayerTeam = store.teams.find(
+    (team) => team.id === editingPlayer?.team_id,
+  );
+
+  const selectedCreateTeam = store.teams.find(
+    (team) => team.id === createTeamId,
+  );
+
   useEffect(() => {
     const loadPlayers = async () => {
       if (!store.token) return;
@@ -48,6 +59,18 @@ export const Players = () => {
     loadPlayers();
   }, [store.token]);
 
+  useEffect(() => {
+    if (!selectedCreateTeam) return;
+
+    if (selectedCreateTeam.gender === "female") {
+      setCreateSex("female");
+    } else if (selectedCreateTeam.gender === "male") {
+      setCreateSex("male");
+    } else {
+      setCreateSex("");
+    }
+  }, [createTeamId, selectedCreateTeam]);
+
   const openCreateForm = () => {
     setShowCreateForm(true);
     setErrors({});
@@ -57,26 +80,33 @@ export const Players = () => {
     setShowCreateForm(false);
     setCreateFirstName("");
     setCreateLastName("");
-    setCreatePlayerNumber("");
     setCreateSex("");
     setCreateTeamId("");
+    setCreatePlayerNumber("");
     setErrors({});
   };
 
   const handleCreatePlayer = async (e) => {
     e.preventDefault();
-
     if (createLoading) return;
 
     setErrors({});
 
-    const newErrors = validatePlayer({
+    const profileErrors = validatePlayerProfile({
       first_name: createFirstName,
       last_name: createLastName,
-      player_number: createPlayerNumber,
       sex: createSex,
-      team_id: createTeamId,
     });
+
+    const assignmentErrors = validatePlayerAssignment({
+      team_id: createTeamId,
+      player_number: createPlayerNumber,
+    });
+
+    const newErrors = {
+      ...profileErrors,
+      ...assignmentErrors,
+    };
 
     if (Object.keys(newErrors).length > 0) {
       setErrors(newErrors);
@@ -85,13 +115,18 @@ export const Players = () => {
 
     setCreateLoading(true);
 
-    const result = await actions.createPlayer({
+    const payload = {
       first_name: createFirstName.trim(),
       last_name: createLastName.trim(),
-      player_number: Number(createPlayerNumber),
       sex: createSex,
-      team_id: createTeamId,
-    });
+    };
+
+    if (createTeamId) {
+      payload.team_id = createTeamId;
+      payload.player_number = Number(createPlayerNumber);
+    }
+
+    const result = await actions.createPlayer(payload);
 
     if (!result.ok) {
       setErrors({ [result.code]: true });
@@ -99,8 +134,7 @@ export const Players = () => {
       return;
     }
 
-    await Promise.all([actions.getPlayers(), actions.getTeams()]);
-
+    await actions.getPlayers();
     closeCreateForm();
     setCreateLoading(false);
   };
@@ -119,13 +153,23 @@ export const Players = () => {
 
     if (loading) return;
 
-    const newErrors = validatePlayer({
+    const profileErrors = validatePlayerProfile({
       first_name: firstName,
       last_name: lastName,
-      player_number: playerNumber,
       sex,
-      team_id: editingPlayer.team_id,
     });
+
+    const assignmentErrors = editingPlayer.team_id
+      ? validatePlayerAssignment({
+          team_id: editingPlayer.team_id,
+          player_number: playerNumber,
+        })
+      : {};
+
+    const newErrors = {
+      ...profileErrors,
+      ...assignmentErrors,
+    };
 
     if (Object.keys(newErrors).length > 0) {
       setErrors(newErrors);
@@ -214,13 +258,13 @@ export const Players = () => {
   };
 
   const validateAssignTeam = () => {
-    if (!selectedTeam) {
-      setErrors({ TEAM_ID_REQUIRED: true });
-      return false;
-    }
+    const assignmentErrors = validatePlayerAssignment({
+      team_id: selectedTeam,
+      player_number: newNumber,
+    });
 
-    if (!newNumber) {
-      setErrors({ PLAYER_NUMBER_REQUIRED: true });
+    if (Object.keys(assignmentErrors).length > 0) {
+      setErrors(assignmentErrors);
       return false;
     }
 
@@ -328,110 +372,120 @@ export const Players = () => {
             {errors.LAST_NAME_REQUIRED && (
               <p className="form-error">{errorMessages.LAST_NAME_REQUIRED}</p>
             )}
-
-            <Input
-              type="number"
-              min="1"
-              max="99"
-              value={createPlayerNumber}
-              placeholder="Número"
-              className={
-                errors.PLAYER_NUMBER_REQUIRED ||
-                errors.INVALID_PLAYER_NUMBER ||
-                errors.PLAYER_NUMBER_DUPLICATED
-                  ? "input-error"
-                  : ""
-              }
-              onChange={(e) => {
-                const value = e.target.value;
-
-                if (value === "") {
-                  setCreatePlayerNumber("");
-                  setErrors((prev) => ({
-                    ...prev,
-                    PLAYER_NUMBER_REQUIRED: false,
-                    INVALID_PLAYER_NUMBER: false,
-                    PLAYER_NUMBER_DUPLICATED: false,
-                  }));
-                  return;
-                }
-
-                if (value.length > 2) return;
-                if (Number(value) <= 0) return;
-
-                setCreatePlayerNumber(value);
-
-                setErrors((prev) => ({
-                  ...prev,
-                  PLAYER_NUMBER_REQUIRED: false,
-                  INVALID_PLAYER_NUMBER: false,
-                  PLAYER_NUMBER_DUPLICATED: false,
-                }));
-              }}
-            />
-            {errors.PLAYER_NUMBER_REQUIRED && (
-              <p className="form-error">
-                {errorMessages.PLAYER_NUMBER_REQUIRED}
-              </p>
-            )}
-            {errors.INVALID_PLAYER_NUMBER && (
-              <p className="form-error">
-                {errorMessages.INVALID_PLAYER_NUMBER}
-              </p>
-            )}
-            {errors.PLAYER_NUMBER_DUPLICATED && (
-              <p className="form-error">
-                {errorMessages.PLAYER_NUMBER_DUPLICATED}
-              </p>
-            )}
-
-            <select
-              value={createSex}
-              className={
-                errors.SEX_REQUIRED || errors.INVALID_SEX ? "input-error" : ""
-              }
-              onChange={(e) => {
-                setCreateSex(e.target.value);
-                setErrors((prev) => ({
-                  ...prev,
-                  SEX_REQUIRED: false,
-                  INVALID_SEX: false,
-                }));
-              }}
-            >
-              <option value="">Selecciona sexo</option>
-              <option value="male">Masculino</option>
-              <option value="female">Femenino</option>
-            </select>
-            {errors.SEX_REQUIRED && (
-              <p className="form-error">{errorMessages.SEX_REQUIRED}</p>
-            )}
-            {errors.INVALID_SEX && (
-              <p className="form-error">{errorMessages.INVALID_SEX}</p>
-            )}
-
             <select
               value={createTeamId}
-              className={errors.TEAM_ID_REQUIRED ? "input-error" : ""}
               onChange={(e) => {
                 setCreateTeamId(e.target.value);
                 setErrors((prev) => ({
                   ...prev,
                   TEAM_ID_REQUIRED: false,
+                  PLAYER_NUMBER_REQUIRED: false,
+                  INVALID_PLAYER_NUMBER: false,
+                  PLAYER_NUMBER_DUPLICATED: false,
                 }));
               }}
             >
-              <option value="">Selecciona categoría</option>
+              <option value="">Sin categoría</option>
               {store.teams.map((team) => (
                 <option key={team.id} value={team.id}>
                   {team.name}
                 </option>
               ))}
             </select>
-            {errors.TEAM_ID_REQUIRED && (
-              <p className="form-error">{errorMessages.TEAM_ID_REQUIRED}</p>
+            {(!createTeamId || selectedCreateTeam?.gender === "mixed") && (
+              <>
+                <select
+                  value={createSex}
+                  className={
+                    errors.SEX_REQUIRED || errors.INVALID_SEX
+                      ? "input-error"
+                      : ""
+                  }
+                  onChange={(e) => {
+                    setCreateSex(e.target.value);
+                    setErrors((prev) => ({
+                      ...prev,
+                      SEX_REQUIRED: false,
+                      INVALID_SEX: false,
+                    }));
+                  }}
+                >
+                  <option value="">Selecciona sexo</option>
+                  <option value="male">Masculino</option>
+                  <option value="female">Femenino</option>
+                </select>
+
+                {errors.SEX_REQUIRED && (
+                  <p className="form-error">{errorMessages.SEX_REQUIRED}</p>
+                )}
+
+                {errors.INVALID_SEX && (
+                  <p className="form-error">{errorMessages.INVALID_SEX}</p>
+                )}
+              </>
             )}
 
+            {createTeamId && (
+              <>
+                <Input
+                  type="number"
+                  min="1"
+                  max="99"
+                  value={createPlayerNumber}
+                  placeholder="Número en la categoría"
+                  className={
+                    errors.PLAYER_NUMBER_REQUIRED ||
+                    errors.INVALID_PLAYER_NUMBER ||
+                    errors.PLAYER_NUMBER_DUPLICATED
+                      ? "input-error"
+                      : ""
+                  }
+                  onChange={(e) => {
+                    const value = e.target.value;
+
+                    if (value === "") {
+                      setCreatePlayerNumber("");
+                      setErrors((prev) => ({
+                        ...prev,
+                        PLAYER_NUMBER_REQUIRED: false,
+                        INVALID_PLAYER_NUMBER: false,
+                        PLAYER_NUMBER_DUPLICATED: false,
+                      }));
+                      return;
+                    }
+
+                    if (value.length > 2) return;
+
+                    setCreatePlayerNumber(value);
+
+                    setErrors((prev) => ({
+                      ...prev,
+                      PLAYER_NUMBER_REQUIRED: false,
+                      INVALID_PLAYER_NUMBER: false,
+                      PLAYER_NUMBER_DUPLICATED: false,
+                    }));
+                  }}
+                />
+
+                {errors.PLAYER_NUMBER_REQUIRED && (
+                  <p className="form-error">
+                    {errorMessages.PLAYER_NUMBER_REQUIRED}
+                  </p>
+                )}
+
+                {errors.INVALID_PLAYER_NUMBER && (
+                  <p className="form-error">
+                    {errorMessages.INVALID_PLAYER_NUMBER}
+                  </p>
+                )}
+
+                {errors.PLAYER_NUMBER_DUPLICATED && (
+                  <p className="form-error">
+                    {errorMessages.PLAYER_NUMBER_DUPLICATED}
+                  </p>
+                )}
+              </>
+            )}
             <div className="form-actions">
               <Button
                 type="button"
@@ -453,17 +507,21 @@ export const Players = () => {
         </Card>
       )}
       <div>
+        {/* 🔎 SEARCH */}
         <div>
           <Input
-            placeholder="Search player..."
+            placeholder="Buscar jugadora..."
             value={searchTerm}
             onChange={(e) => setSearchTerm(e.target.value)}
           />
         </div>
 
+        {/* 📌 STATUS FILTER */}
         <div>
+          <p>Estado</p>
           <div className="filter-chips">
             <button
+              type="button"
               className={statusFilter === "active" ? "chip active" : "chip"}
               onClick={() => handleStatusFilter("active")}
             >
@@ -471,6 +529,7 @@ export const Players = () => {
             </button>
 
             <button
+              type="button"
               className={statusFilter === "inactive" ? "chip active" : "chip"}
               onClick={() => handleStatusFilter("inactive")}
             >
@@ -478,24 +537,29 @@ export const Players = () => {
             </button>
 
             <button
+              type="button"
               className={statusFilter === "all" ? "chip active" : "chip"}
               onClick={() => handleStatusFilter("all")}
             >
               Todos ({store.players.length})
             </button>
           </div>
+        </div>
 
-          {/* 🏐 TEAM FILTER */}
-          <p className="filter-label">Categoría</p>
+        {/* 🏐 TEAM FILTER */}
+        <div>
+          <p>Categoría</p>
           <div className="filter-chips">
             <button
+              type="button"
               className={teamFilter === "" ? "chip active" : "chip"}
               onClick={() => handleTeamFilter("")}
             >
-              Todos ({store.players.length})
+              Todas las categorías ({store.players.length})
             </button>
 
             <button
+              type="button"
               className={teamFilter === "unassigned" ? "chip active" : "chip"}
               onClick={() => handleTeamFilter("unassigned")}
             >
@@ -504,6 +568,7 @@ export const Players = () => {
 
             {store.teams.map((team) => (
               <button
+                type="button"
                 key={team.id}
                 className={teamFilter === team.id ? "chip active" : "chip"}
                 onClick={() => handleTeamFilter(team.id)}
@@ -641,28 +706,28 @@ export const Players = () => {
                           {errorMessages.PLAYER_NUMBER_DUPLICATED}
                         </p>
                       )}
-
-                      <select
-                        value={sex}
-                        className={
-                          errors.SEX_REQUIRED || errors.INVALID_SEX
-                            ? "input-error"
-                            : ""
-                        }
-                        onChange={(e) => {
-                          setSex(e.target.value);
-                          setErrors((prev) => ({
-                            ...prev,
-                            SEX_REQUIRED: false,
-                            INVALID_SEX: false,
-                          }));
-                        }}
-                      >
-                        <option value="">Selecciona sexo</option>
-                        <option value="male">Male</option>
-                        <option value="female">Female</option>
-                      </select>
-
+                      {editingPlayerTeam?.gender === "mixed" && (
+                        <select
+                          value={sex}
+                          className={
+                            errors.SEX_REQUIRED || errors.INVALID_SEX
+                              ? "input-error"
+                              : ""
+                          }
+                          onChange={(e) => {
+                            setSex(e.target.value);
+                            setErrors((prev) => ({
+                              ...prev,
+                              SEX_REQUIRED: false,
+                              INVALID_SEX: false,
+                            }));
+                          }}
+                        >
+                          <option value="">Selecciona sexo</option>
+                          <option value="male">Masculino</option>
+                          <option value="female">Femenino</option>
+                        </select>
+                      )}
                       {errors.SEX_REQUIRED && (
                         <p className="form-error">
                           {errorMessages.SEX_REQUIRED}
@@ -704,10 +769,20 @@ export const Players = () => {
                           {player.first_name} {player.last_name}
                         </p>
                         <p className="player-meta">
-                          {player.team_id ? (
+                          {player.teams?.length > 0 ? (
                             <>
-                              #{player.player_number} ·{" "}
-                              {getTeamName(player.team_id)}
+                              {player.teams.map((team, index) => (
+                                <span key={team.id}>
+                                  #{team.player_number} · {team.name}
+                                  {index < player.teams.length - 1 ? " • " : ""}
+                                </span>
+                              ))}{" "}
+                              ·{" "}
+                              {player.sex === "female"
+                                ? "♀"
+                                : player.sex === "male"
+                                ? "♂"
+                                : "—"}
                             </>
                           ) : (
                             "Sin categoría"
@@ -797,23 +872,48 @@ export const Players = () => {
                           placeholder="Número"
                           value={newNumber}
                           onChange={(e) => {
-                            setNewNumber(e.target.value);
+                            const value = e.target.value;
+
+                            if (value === "") {
+                              setNewNumber("");
+                              setErrors((prev) => ({
+                                ...prev,
+                                PLAYER_NUMBER_REQUIRED: false,
+                                INVALID_PLAYER_NUMBER: false,
+                                PLAYER_NUMBER_DUPLICATED: false,
+                              }));
+                              return;
+                            }
+
+                            if (value.length > 2) return;
+
+                            setNewNumber(value);
+
                             setErrors((prev) => ({
                               ...prev,
                               PLAYER_NUMBER_REQUIRED: false,
+                              INVALID_PLAYER_NUMBER: false,
                               PLAYER_NUMBER_DUPLICATED: false,
                             }));
                           }}
                           className={
                             errors.PLAYER_NUMBER_REQUIRED ||
+                            errors.INVALID_PLAYER_NUMBER ||
                             errors.PLAYER_NUMBER_DUPLICATED
                               ? "input-error"
                               : ""
                           }
                         />
+
                         {errors.PLAYER_NUMBER_REQUIRED && (
                           <p className="form-error">
                             {errorMessages.PLAYER_NUMBER_REQUIRED}
+                          </p>
+                        )}
+
+                        {errors.INVALID_PLAYER_NUMBER && (
+                          <p className="form-error">
+                            {errorMessages.INVALID_PLAYER_NUMBER}
                           </p>
                         )}
 

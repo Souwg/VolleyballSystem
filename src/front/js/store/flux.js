@@ -330,14 +330,17 @@ const getState = ({ getStore, getActions, setStore }) => {
         }
       },
 
-      updatePlayerStatus: async (playerId, status) => {
+      updatePlayerStatus: async (playerId, teamId, status) => {
         try {
           const resp = await authFetch(`/api/players/${playerId}/status`, {
             method: "PUT",
             headers: {
               "Content-Type": "application/json",
             },
-            body: JSON.stringify({ status }),
+            body: JSON.stringify({
+              team_id: teamId,
+              status,
+            }),
           });
 
           const result = await parseResponse(resp);

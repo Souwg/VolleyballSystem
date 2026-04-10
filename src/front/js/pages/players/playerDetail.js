@@ -46,30 +46,76 @@ export const PlayerDetail = () => {
     <Container>
       <PageHeader
         title={`${player.first_name} ${player.last_name}`}
-        subtitle={`#${player.player_number}`}
+        subtitle={
+          player.teams
+            ?.map((t) => `#${t.player_number} ${t.name}`)
+            .join(" • ") || "Sin categoría"
+        }
       />
 
+      {/* 🔥 PERFIL GENERAL */}
       <Card>
-        <h3>Attendance Summary</h3>
+        <h3>Perfil general</h3>
+
+        <p>
+          <strong>Sexo:</strong>{" "}
+          {player.sex === "female" ? "Femenino" : "Masculino"}
+        </p>
+      </Card>
+
+      {/* 🏐 MEMBERSHIP CARDS */}
+      {player.teams?.length > 0 ? (
+        player.teams.map((team) => (
+          <Card key={team.id}>
+            <h3>{team.name}</h3>
+
+            <p>
+              <strong>Número:</strong> #{team.player_number}
+            </p>
+
+            <p>
+              <strong>Estado:</strong>{" "}
+              {team.status === "active"
+                ? "Activa"
+                : team.status === "injured"
+                ? "Lesionada"
+                : "Inactiva"}
+            </p>
+          </Card>
+        ))
+      ) : (
+        <Card>
+          <p>Sin categorías asignadas</p>
+        </Card>
+      )}
+
+      {/* 📊 RESUMEN DE ASISTENCIA */}
+      <Card>
+        <h3>Resumen de asistencia</h3>
 
         {summary && (
           <div>
-            <p>Present: {summary.present}</p>
-            <p>Late: {summary.late}</p>
-            <p>Absent: {summary.absent}</p>
-            <p>Attendance Rate: {summary.attendance_rate}%</p>
+            <p>Presentes: {summary.present}</p>
+            <p>Tardes: {summary.late}</p>
+            <p>Ausencias: {summary.absent}</p>
+            <p>Asistencia: {summary.attendance_rate}%</p>
           </div>
         )}
       </Card>
 
+      {/* 🕓 HISTORIAL */}
       <Card>
-        <h3>Attendance History</h3>
+        <h3>Historial</h3>
 
-        {history.map((h) => (
-          <div key={h.training_id}>
-            {h.date} — {h.status}
-          </div>
-        ))}
+        {history.length === 0 ? (
+          <p>No hay historial todavía</p>
+        ) : (
+          history.map((h) => (
+            <div key={h.training_id}>
+              {h.date} — {h.status}
+            </div>
+          ))
+        )}
       </Card>
     </Container>
   );
