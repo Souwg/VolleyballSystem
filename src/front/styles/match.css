@@ -1,0 +1,46 @@
+.match-card {
+  cursor: pointer;
+}
+
+.match-card-header {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.match-card-main h3 {
+  font-size: var(--font-size-lg);
+  font-weight: var(--font-weight-bold);
+  color: var(--color-text);
+  margin-bottom: 6px;
+}
+
+.match-card-meta {
+  font-size: var(--font-size-sm);
+  color: var(--color-muted);
+}
+
+.match-card-side {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 8px;
+}
+
+.match-score {
+  font-size: var(--font-size-base);
+  font-weight: var(--font-weight-bold);
+  color: var(--color-text);
+}
+
+@media (min-width: 768px) {
+  .match-card-header {
+    flex-direction: row;
+    justify-content: space-between;
+    align-items: flex-start;
+  }
+
+  .match-card-side {
+    align-items: flex-end;
+  }
+}

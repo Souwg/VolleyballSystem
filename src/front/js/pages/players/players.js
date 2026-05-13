@@ -12,6 +12,14 @@ import {
 } from "../../utils/validators";
 import { errorMessages } from "../../utils/errorMessages";
 
+const POSITIONS = [
+  { label: "Armadora", value: "setter" },
+  { label: "Punta", value: "outside" },
+  { label: "Central", value: "middle" },
+  { label: "Opuesto", value: "opposite" },
+  { label: "Líbero", value: "libero" },
+];
+
 export const Players = () => {
   const { store, actions } = useContext(Context);
   const navigate = useNavigate();
@@ -36,6 +44,15 @@ export const Players = () => {
   const [createSex, setCreateSex] = useState("");
   const [createTeamId, setCreateTeamId] = useState("");
   const [createLoading, setCreateLoading] = useState(false);
+  const [createMainPosition, setCreateMainPosition] = useState("");
+  const [mainPosition, setMainPosition] = useState("");
+
+  const assignAvailableTeams = assigningPlayer
+    ? store.teams.filter(
+        (team) =>
+          team.gender === "mixed" || team.gender === assigningPlayer.sex,
+      )
+    : [];
 
   const editingPlayerTeam = store.teams.find(
     (team) => team.id === editingPlayer?.team_id,
@@ -83,6 +100,7 @@ export const Players = () => {
     setCreateSex("");
     setCreateTeamId("");
     setCreatePlayerNumber("");
+    setCreateMainPosition("");
     setErrors({});
   };
 
@@ -119,6 +137,7 @@ export const Players = () => {
       first_name: createFirstName.trim(),
       last_name: createLastName.trim(),
       sex: createSex,
+      main_position: createMainPosition || null,
     };
 
     if (createTeamId) {
@@ -146,6 +165,7 @@ export const Players = () => {
     setLastName(player.last_name);
     setPlayerNumber(player.player_number);
     setSex(player.sex);
+    setMainPosition(player.main_position || "");
   };
 
   const savePlayer = async (e) => {
@@ -185,6 +205,7 @@ export const Players = () => {
       player_number: Number(playerNumber),
       sex: sex,
       team_id: editingPlayer.team_id,
+      main_position: mainPosition || null,
     });
 
     if (!result.ok) {
@@ -203,23 +224,30 @@ export const Players = () => {
     return team ? team.name : "Unknown";
   };
 
-  const filteredPlayers = store.players
+  const baseFilteredPlayers = store.players.filter((player) => {
+    const fullName = `${player.first_name} ${player.last_name}`.toLowerCase();
+
+    const matchesSearch = fullName.includes(searchTerm.toLowerCase());
+
+    const matchesTeam =
+      teamFilter === ""
+        ? true
+        : teamFilter === "unassigned"
+        ? !player.teams?.length
+        : player.teams?.some((team) => team.id === teamFilter);
+
+    return matchesSearch && matchesTeam;
+  });
+
+  const filteredPlayers = baseFilteredPlayers
     .filter((player) => {
-      const fullName = `${player.first_name} ${player.last_name}`.toLowerCase();
+      if (statusFilter === "all") return true;
 
-      const matchesSearch = fullName.includes(searchTerm.toLowerCase());
+      if (statusFilter === "active") return player.is_active === true;
 
-      const matchesTeam =
-        teamFilter === ""
-          ? true
-          : teamFilter === "unassigned"
-          ? !player.team_id
-          : player.team_id === teamFilter;
+      if (statusFilter === "inactive") return player.is_active === false;
 
-      const matchesStatus =
-        statusFilter === "all" || player.status === statusFilter;
-
-      return matchesSearch && matchesTeam && matchesStatus;
+      return true;
     })
     .sort((a, b) => {
       const numA = Number(a.player_number) || 999;
@@ -288,10 +316,10 @@ export const Players = () => {
     closeAssignTeam();
   };
 
-  const handleStatusChange = async (e, player, newStatus) => {
+  const handleActiveChange = async (e, player, isActive) => {
     e.stopPropagation();
 
-    const actionText = newStatus === "inactive" ? "desactivar" : "activar";
+    const actionText = isActive ? "activar" : "desactivar";
 
     const confirmed = window.confirm(
       `¿Seguro que deseas ${actionText} a ${player.first_name}?`,
@@ -299,14 +327,14 @@ export const Players = () => {
 
     if (!confirmed) return;
 
-    const result = await actions.updatePlayerStatus(player.id, newStatus);
+    const result = await actions.updatePlayerActiveStatus(player.id, isActive);
 
     if (!result.ok) {
       setErrors({ GENERIC_ERROR: true });
       return;
     }
 
-    setStatusFilter(newStatus);
+    setStatusFilter(isActive ? "active" : "inactive");
   };
 
   const handleStartEdit = (e, player) => {
@@ -314,33 +342,39 @@ export const Players = () => {
     startEdit(player);
   };
 
-  const activeCount = store.players.filter((p) => p.status === "active").length;
+  const totalPlayersCount = store.players.length;
 
-  const inactiveCount = store.players.filter(
-    (p) => p.status === "inactive",
+  const activeCount = baseFilteredPlayers.filter(
+    (p) => p.is_active === true,
   ).length;
 
-  const unassignedCount = store.players.filter((p) => !p.team_id).length;
+  const inactiveCount = baseFilteredPlayers.filter(
+    (p) => p.is_active === false,
+  ).length;
+
+  const unassignedCount = store.players.filter((p) => !p.teams?.length).length;
 
   if (loadingPlayers) {
-    return <p>Cargando jugadoras...</p>;
+    return <p>Cargando deportistas...</p>;
   }
   return (
     <>
-      <PageHeader title="Players" />
-
-      <div className="players-top-actions">
-        {!showCreateForm && (
-          <Button className="button-primary" onClick={openCreateForm}>
-            + Añadir jugadora
-          </Button>
-        )}
-      </div>
+      <PageHeader
+        eyebrow="Gestión del club"
+        title="Deportistas"
+        subtitle="Administra el roster, estados, posiciones y categorías del club."
+        actions={
+          !showCreateForm && (
+            <Button onClick={openCreateForm}>+ Añadir deportista</Button>
+          )
+        }
+      />
       {showCreateForm && (
         <Card className="player-create-card">
-          <h4>Nueva jugadora</h4>
+          <h4>Nuevo deportista</h4>
 
           <form onSubmit={handleCreatePlayer} className="form">
+            <label>Nombre</label>
             <Input
               value={createFirstName}
               placeholder="Nombre"
@@ -356,7 +390,7 @@ export const Players = () => {
             {errors.FIRST_NAME_REQUIRED && (
               <p className="form-error">{errorMessages.FIRST_NAME_REQUIRED}</p>
             )}
-
+            <label>Apellido</label>
             <Input
               value={createLastName}
               placeholder="Apellido"
@@ -372,6 +406,7 @@ export const Players = () => {
             {errors.LAST_NAME_REQUIRED && (
               <p className="form-error">{errorMessages.LAST_NAME_REQUIRED}</p>
             )}
+            <label>Categoría</label>
             <select
               value={createTeamId}
               onChange={(e) => {
@@ -388,12 +423,18 @@ export const Players = () => {
               <option value="">Sin categoría</option>
               {store.teams.map((team) => (
                 <option key={team.id} value={team.id}>
-                  {team.name}
+                  {team.name} ·{" "}
+                  {team.gender === "mixed"
+                    ? "Mixto"
+                    : team.gender === "male"
+                    ? "Masculino"
+                    : "Femenino"}
                 </option>
               ))}
             </select>
             {(!createTeamId || selectedCreateTeam?.gender === "mixed") && (
               <>
+                <label>Género</label>
                 <select
                   value={createSex}
                   className={
@@ -427,6 +468,7 @@ export const Players = () => {
 
             {createTeamId && (
               <>
+                <label>Número en la categoría</label>
                 <Input
                   type="number"
                   min="1"
@@ -486,6 +528,20 @@ export const Players = () => {
                 )}
               </>
             )}
+
+            <label>Posición principal</label>
+            <select
+              value={createMainPosition}
+              onChange={(e) => setCreateMainPosition(e.target.value)}
+            >
+              <option value="">Sin posición definida</option>
+              {POSITIONS.map((position) => (
+                <option key={position.value} value={position.value}>
+                  {position.label}
+                </option>
+              ))}
+            </select>
+
             <div className="form-actions">
               <Button
                 type="button"
@@ -506,61 +562,26 @@ export const Players = () => {
           </form>
         </Card>
       )}
+
       <div>
         {/* 🔎 SEARCH */}
-        <div>
-          <Input
-            placeholder="Buscar jugadora..."
-            value={searchTerm}
-            onChange={(e) => setSearchTerm(e.target.value)}
-          />
-        </div>
+        <Input
+          placeholder="Buscar jugador..."
+          value={searchTerm}
+          onChange={(e) => setSearchTerm(e.target.value)}
+        />
 
-        {/* 📌 STATUS FILTER */}
-        <div>
-          <p>Estado</p>
-          <div className="filter-chips">
-            <button
-              type="button"
-              className={statusFilter === "active" ? "chip active" : "chip"}
-              onClick={() => handleStatusFilter("active")}
-            >
-              Activos ({activeCount})
-            </button>
-
-            <button
-              type="button"
-              className={statusFilter === "inactive" ? "chip active" : "chip"}
-              onClick={() => handleStatusFilter("inactive")}
-            >
-              Inactivos ({inactiveCount})
-            </button>
-
-            <button
-              type="button"
-              className={statusFilter === "all" ? "chip active" : "chip"}
-              onClick={() => handleStatusFilter("all")}
-            >
-              Todos ({store.players.length})
-            </button>
-          </div>
-        </div>
-
-        {/* 🏐 TEAM FILTER */}
+        {/* 🏐 CATEGORY FILTER */}
         <div>
           <p>Categoría</p>
-          <div className="filter-chips">
-            <button
-              type="button"
-              className={teamFilter === "" ? "chip active" : "chip"}
-              onClick={() => handleTeamFilter("")}
-            >
-              Todas las categorías ({store.players.length})
+
+          <div>
+            <button type="button" onClick={() => handleTeamFilter("")}>
+              Todas ({totalPlayersCount})
             </button>
 
             <button
               type="button"
-              className={teamFilter === "unassigned" ? "chip active" : "chip"}
               onClick={() => handleTeamFilter("unassigned")}
             >
               Sin categoría ({unassignedCount})
@@ -570,15 +591,42 @@ export const Players = () => {
               <button
                 type="button"
                 key={team.id}
-                className={teamFilter === team.id ? "chip active" : "chip"}
                 onClick={() => handleTeamFilter(team.id)}
               >
-                {team.name}
+                {team.name} ·{" "}
+                {team.gender === "mixed"
+                  ? "Mixto"
+                  : team.gender === "male"
+                  ? "Masculino"
+                  : "Femenino"}
               </button>
             ))}
           </div>
         </div>
+
+        {/* 📌 STATUS FILTER */}
+        <div>
+          <p>Estado</p>
+
+          <div>
+            <button type="button" onClick={() => handleStatusFilter("all")}>
+              Todas ({baseFilteredPlayers.length})
+            </button>
+
+            <button type="button" onClick={() => handleStatusFilter("active")}>
+              Activas ({activeCount})
+            </button>
+
+            <button
+              type="button"
+              onClick={() => handleStatusFilter("inactive")}
+            >
+              Inactivas ({inactiveCount})
+            </button>
+          </div>
+        </div>
       </div>
+
       <Card>
         {filteredPlayers.length === 0 ? (
           <div className="empty-state">
@@ -740,6 +788,19 @@ export const Players = () => {
                         </p>
                       )}
 
+                      <label>Posición principal</label>
+                      <select
+                        value={mainPosition}
+                        onChange={(e) => setMainPosition(e.target.value)}
+                      >
+                        <option value="">Sin posición definida</option>
+                        {POSITIONS.map((position) => (
+                          <option key={position.value} value={position.value}>
+                            {position.label}
+                          </option>
+                        ))}
+                      </select>
+
                       <div className="edit-actions">
                         <Button type="submit" disabled={loading}>
                           {loading ? "Guardando..." : "Guardar"}
@@ -750,6 +811,7 @@ export const Players = () => {
                           className="button-secondary"
                           onClick={() => {
                             setEditingPlayer(null);
+                            setMainPosition("");
                           }}
                         >
                           Cancelar
@@ -792,12 +854,10 @@ export const Players = () => {
 
                       <div
                         className={`status-badge ${
-                          player.status === "active"
-                            ? "status-active"
-                            : "status-inactive"
+                          player.is_active ? "status-active" : "status-inactive"
                         }`}
                       >
-                        {player.status}
+                        {player.is_active ? "Activa" : "Inactiva"}
                       </div>
                     </div>
 
@@ -808,31 +868,28 @@ export const Players = () => {
                       >
                         Editar
                       </Button>
-
-                      {!player.team_id ? (
+                      {!player.teams?.length && player.is_active && (
                         <Button
                           className="button-primary"
                           onClick={(e) => openAssignTeam(e, player)}
                         >
                           Asignar categoría
                         </Button>
-                      ) : player.status === "inactive" ? (
+                      )}
+
+                      {player.is_active ? (
                         <Button
-                          className="button-success"
-                          onClick={(e) =>
-                            handleStatusChange(e, player, "active")
-                          }
+                          className="button-danger"
+                          onClick={(e) => handleActiveChange(e, player, false)}
                         >
-                          Activar
+                          Desactivar
                         </Button>
                       ) : (
                         <Button
-                          className="button-danger"
-                          onClick={(e) =>
-                            handleStatusChange(e, player, "inactive")
-                          }
+                          className="button-success"
+                          onClick={(e) => handleActiveChange(e, player, true)}
                         >
-                          Desactivar
+                          Activar
                         </Button>
                       )}
                     </div>
@@ -855,9 +912,14 @@ export const Players = () => {
                           }
                         >
                           <option value="">Selecciona categoría</option>
-                          {store.teams.map((team) => (
+                          {assignAvailableTeams.map((team) => (
                             <option key={team.id} value={team.id}>
-                              {team.name}
+                              {team.name} ·{" "}
+                              {team.gender === "mixed"
+                                ? "Mixto"
+                                : team.gender === "male"
+                                ? "Masculino"
+                                : "Femenino"}
                             </option>
                           ))}
                         </select>

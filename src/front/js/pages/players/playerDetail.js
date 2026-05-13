@@ -1,14 +1,23 @@
 import React, { useEffect, useContext, useState } from "react";
-import { useParams } from "react-router-dom";
+import { useParams, useNavigate } from "react-router-dom";
 import { Context } from "../../store/appContext";
-
-import { Container } from "../../component/ui/container";
+import "../../../styles/playerDetails.css";
 import { PageHeader } from "../../component/ui/pageHeader";
 import { Card } from "../../component/ui/card";
+import { Button } from "../../component/ui/button";
+
+const POSITION_LABELS = {
+  setter: "Armadora",
+  outside: "Punta",
+  middle: "Central",
+  opposite: "Opuesto",
+  libero: "Líbero",
+};
 
 export const PlayerDetail = () => {
   const { actions } = useContext(Context);
   const { player_id } = useParams();
+  const navigate = useNavigate();
 
   const [player, setPlayer] = useState(null);
   const [summary, setSummary] = useState(null);
@@ -35,21 +44,34 @@ export const PlayerDetail = () => {
   }, [player_id]);
 
   if (loading) {
-    return (
-      <Container>
-        <p>Cargando perfil...</p>
-      </Container>
-    );
+    return <p>Cargando perfil...</p>;
+  }
+
+  if (!player) {
+    return <p>No se pudo cargar el deportista.</p>;
   }
 
   return (
-    <Container>
+    <div className="player-detail-page">
       <PageHeader
+        variant="detail"
+        eyebrow="Perfil de deportista"
         title={`${player.first_name} ${player.last_name}`}
         subtitle={
-          player.teams
-            ?.map((t) => `#${t.player_number} ${t.name}`)
-            .join(" • ") || "Sin categoría"
+          player.teams?.length > 0
+            ? player.teams
+                .map((t) => `#${t.player_number} · ${t.name}`)
+                .join(" • ")
+            : "Sin categoría asignada"
+        }
+        onBack={() => navigate("/players")}
+        actions={
+          <Button
+            variant="secondary"
+            onClick={() => navigate(`/players/${player_id}/edit`)}
+          >
+            Editar perfil
+          </Button>
         }
       />
 
@@ -60,6 +82,16 @@ export const PlayerDetail = () => {
         <p>
           <strong>Sexo:</strong>{" "}
           {player.sex === "female" ? "Femenino" : "Masculino"}
+        </p>
+
+        <p>
+          <strong>Fecha de nacimiento:</strong>{" "}
+          {player.birth_date || "Sin definir"}
+        </p>
+
+        <p>
+          <strong>Posición principal:</strong>{" "}
+          {POSITION_LABELS[player.main_position] || "Sin definir"}
         </p>
       </Card>
 
@@ -73,14 +105,24 @@ export const PlayerDetail = () => {
               <strong>Número:</strong> #{team.player_number}
             </p>
 
-            <p>
+            <div>
               <strong>Estado:</strong>{" "}
-              {team.status === "active"
-                ? "Activa"
-                : team.status === "injured"
-                ? "Lesionada"
-                : "Inactiva"}
-            </p>
+              <span
+                className={`status-badge ${
+                  team.status === "active"
+                    ? "status-success"
+                    : team.status === "injured"
+                    ? "status-warning"
+                    : "status-muted"
+                }`}
+              >
+                {team.status === "active"
+                  ? "Activo"
+                  : team.status === "injured"
+                  ? "Lesionado"
+                  : "Inactivo"}
+              </span>
+            </div>
           </Card>
         ))
       ) : (
@@ -117,6 +159,6 @@ export const PlayerDetail = () => {
           ))
         )}
       </Card>
-    </Container>
+    </div>
   );
 };

@@ -16,6 +16,8 @@ export const SetPassword = () => {
   const [confirmPassword, setConfirmPassword] = useState("");
   const [errors, setErrors] = useState({});
   const [loading, setLoading] = useState(false);
+  const [showPassword, setShowPassword] = useState(false);
+  const [showConfirmPassword, setShowConfirmPassword] = useState(false);
 
   const handleSubmit = async (e) => {
     e.preventDefault();
@@ -47,72 +49,104 @@ export const SetPassword = () => {
 
   return (
     <AuthLayout
-      title="Create password"
-      subtitle="You must configure your password"
+      title="Crear contraseña"
+      subtitle="Configura tu nueva contraseña para activar tu acceso"
     >
       <form onSubmit={handleSubmit} className="auth-form">
-        <Input
-          type="password"
-          placeholder="New password"
-          value={password}
-          className={
-            errors.PASSWORD_REQUIRED || errors.PASSWORD_TOO_SHORT
-              ? "input-error"
-              : ""
-          }
-          onChange={(e) => {
-            setPassword(e.target.value);
-            setErrors((prev) => ({
-              ...prev,
-              PASSWORD_REQUIRED: false,
-              PASSWORD_TOO_SHORT: false,
-            }));
-          }}
-        />
+        <div className="auth-field">
+          <label className="auth-label">Nueva contraseña</label>
 
-        {errors.PASSWORD_REQUIRED && (
-          <p className="form-error">{errorMessages.PASSWORD_REQUIRED}</p>
-        )}
+          <div className="password-field">
+            <Input
+              type={showPassword ? "text" : "password"}
+              placeholder="Mínimo 8 caracteres"
+              value={password}
+              className={
+                errors.PASSWORD_REQUIRED || errors.PASSWORD_TOO_SHORT
+                  ? "input-error"
+                  : ""
+              }
+              onChange={(e) => {
+                setPassword(e.target.value);
+                setErrors((prev) => ({
+                  ...prev,
+                  PASSWORD_REQUIRED: false,
+                  PASSWORD_TOO_SHORT: false,
+                }));
+              }}
+            />
 
-        {errors.PASSWORD_TOO_SHORT && (
-          <p className="form-error">{errorMessages.PASSWORD_TOO_SHORT}</p>
-        )}
-        <Input
-          type="password"
-          placeholder="Confirm password"
-          value={confirmPassword}
-          className={
-            errors.CONFIRM_PASSWORD_REQUIRED || errors.PASSWORDS_NOT_MATCH
-              ? "input-error"
-              : ""
-          }
-          onChange={(e) => {
-            setConfirmPassword(e.target.value);
-            setErrors((prev) => ({
-              ...prev,
-              CONFIRM_PASSWORD_REQUIRED: false,
-              PASSWORDS_NOT_MATCH: false,
-            }));
-          }}
-        />
-        {errors.CONFIRM_PASSWORD_REQUIRED && (
-          <p className="form-error">
-            {errorMessages.CONFIRM_PASSWORD_REQUIRED}
-          </p>
-        )}
+            <button
+              type="button"
+              className="password-toggle"
+              onClick={() => setShowPassword((prev) => !prev)}
+            >
+              {showPassword ? "Ocultar" : "Ver"}
+            </button>
+          </div>
 
-        {errors.PASSWORDS_NOT_MATCH && (
-          <p className="form-error">{errorMessages.PASSWORDS_NOT_MATCH}</p>
-        )}
-        {confirmPassword && password === confirmPassword && (
-          <p className="form-success">✅ contraseñas coinciden</p>
-        )}
+          {errors.PASSWORD_REQUIRED && (
+            <p className="form-error">{errorMessages.PASSWORD_REQUIRED}</p>
+          )}
 
-        {confirmPassword && password && password !== confirmPassword && (
-          <p className="form-error">❌ {errorMessages.PASSWORDS_NOT_MATCH}</p>
-        )}
+          {errors.PASSWORD_TOO_SHORT && (
+            <p className="form-error">{errorMessages.PASSWORD_TOO_SHORT}</p>
+          )}
+        </div>
+
+        <div className="auth-field">
+          <label className="auth-label">Confirmar contraseña</label>
+
+          <div className="password-field">
+            <Input
+              type={showConfirmPassword ? "text" : "password"}
+              placeholder="Repite tu contraseña"
+              value={confirmPassword}
+              className={
+                errors.CONFIRM_PASSWORD_REQUIRED || errors.PASSWORDS_NOT_MATCH
+                  ? "input-error"
+                  : ""
+              }
+              onChange={(e) => {
+                setConfirmPassword(e.target.value);
+                setErrors((prev) => ({
+                  ...prev,
+                  CONFIRM_PASSWORD_REQUIRED: false,
+                  PASSWORDS_NOT_MATCH: false,
+                }));
+              }}
+            />
+
+            <button
+              type="button"
+              className="password-toggle"
+              onClick={() => setShowConfirmPassword((prev) => !prev)}
+            >
+              {showConfirmPassword ? "Ocultar" : "Ver"}
+            </button>
+          </div>
+
+          {errors.CONFIRM_PASSWORD_REQUIRED && (
+            <p className="form-error">
+              {errorMessages.CONFIRM_PASSWORD_REQUIRED}
+            </p>
+          )}
+
+          {errors.PASSWORDS_NOT_MATCH && (
+            <p className="form-error">{errorMessages.PASSWORDS_NOT_MATCH}</p>
+          )}
+
+          {confirmPassword && password === confirmPassword && (
+            <p className="form-success">Las contraseñas coinciden</p>
+          )}
+
+          {confirmPassword && password && password !== confirmPassword && (
+            <p className="form-error">{errorMessages.PASSWORDS_NOT_MATCH}</p>
+          )}
+        </div>
+
         <Button variant="primary" type="submit" disabled={loading}>
-          {loading ? "Saving..." : "Save password"}
+          {loading ? "Guardando..." : "Guardar contraseña"}
         </Button>
       </form>
     </AuthLayout>

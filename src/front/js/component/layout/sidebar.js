@@ -34,7 +34,7 @@ export const Sidebar = ({
 
       <div className="sidebar-footer">
         <Button variant="secondary" onClick={handleLogout}>
-          Logout
+          Cerrar sesión
         </Button>
       </div>
     </aside>

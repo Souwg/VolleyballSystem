@@ -3,8 +3,6 @@ import { useNavigate, useParams } from "react-router-dom";
 import { Context } from "../../store/appContext";
 import { validateTraining } from "../../utils/validators";
 import { errorMessages } from "../../utils/errorMessages";
-
-import { Container } from "../../component/ui/container";
 import { PageHeader } from "../../component/ui/pageHeader";
 import { Input } from "../../component/ui/input";
 import { Button } from "../../component/ui/button";
@@ -29,10 +27,6 @@ export const CreateTraining = () => {
   useEffect(() => {
     loadTeams();
   }, [team_id]);
-
-  const handleGoBack = () => {
-    navigate(-1);
-  };
 
   const handleCreateTraining = async (e) => {
     e.preventDefault();
@@ -71,14 +65,14 @@ export const CreateTraining = () => {
   };
 
   return (
-    <Container>
+    <div className="training-form-page">
       <PageHeader
+        variant="detail"
+        eyebrow="Entrenamiento"
         title="Crear entrenamiento"
-        subtitle="Registra un nuevo entrenamiento"
-        actions={
-          <Button className="button-secondary" onClick={handleGoBack}>
-            ← Volver
-          </Button>
+        subtitle="Registra una nueva sesión para una categoría."
+        onBack={() =>
+          navigate(team_id ? `/teams/${team_id}/trainings` : "/trainings")
         }
       />
 
@@ -89,9 +83,11 @@ export const CreateTraining = () => {
         <form onSubmit={handleCreateTraining} className="form">
           {!team_id && (
             <>
-              <label>Equipo</label>
+              <label>Categoría</label>
               <select
-                className={errors.TEAM_ID_REQUIRED ? "input-error" : ""}
+                className={`select ${
+                  errors.TEAM_ID_REQUIRED ? "input-error" : ""
+                }`}
                 value={selectedTeam}
                 onChange={(e) => {
                   setSelectedTeam(e.target.value);
@@ -101,11 +97,16 @@ export const CreateTraining = () => {
                   }));
                 }}
               >
-                <option value="">Selecciona un equipo</option>
+                <option value="">Selecciona una categoría</option>
 
                 {store.teams.map((team) => (
                   <option key={team.id} value={team.id}>
-                    {team.name}
+                    {team.name} ·{" "}
+                    {team.gender === "mixed"
+                      ? "Mixto"
+                      : team.gender === "male"
+                      ? "Masculino"
+                      : "Femenino"}
                   </option>
                 ))}
               </select>
@@ -151,12 +152,12 @@ export const CreateTraining = () => {
           )}
 
           <div className="form-actions">
-            <Button type="submit" className="button-primary" disabled={loading}>
+            <Button type="submit" disabled={loading}>
               {loading ? "Creando..." : "Crear entrenamiento"}
             </Button>
           </div>
         </form>
       </Card>
-    </Container>
+    </div>
   );
 };

@@ -26,7 +26,7 @@ export const ToastProvider = ({ children }) => {
 
     timeoutRef.current = setTimeout(() => {
       setToasts([]);
-    }, 3000);
+    }, 2000);
   };
 
   useEffect(() => {

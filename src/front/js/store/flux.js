@@ -28,6 +28,7 @@ const getState = ({ getStore, getActions, setStore }) => {
       onboardingStep: null,
       club: null,
       dashboardStats: null,
+      nextMatch: null,
 
       adminClients: [],
       teams: [],
@@ -356,6 +357,31 @@ const getState = ({ getStore, getActions, setStore }) => {
         }
       },
 
+      updatePlayerActiveStatus: async (playerId, isActive) => {
+        try {
+          const resp = await authFetch(`/api/players/${playerId}/active`, {
+            method: "PUT",
+            headers: {
+              "Content-Type": "application/json",
+            },
+            body: JSON.stringify({
+              is_active: isActive,
+            }),
+          });
+
+          const result = await parseResponse(resp);
+
+          if (!result.ok) return result;
+
+          const actions = getActions();
+          await actions.getPlayers();
+
+          return successResponse(result.data);
+        } catch (error) {
+          return networkError("Error updating player active status:", error);
+        }
+      },
+
       getDashboard: async () => {
         try {
           const resp = await authFetch("/api/club/dashboard");
@@ -369,6 +395,7 @@ const getState = ({ getStore, getActions, setStore }) => {
           setStore({
             club: data.club,
             dashboardStats: data.stats,
+            nextMatch: data.next_match,
           });
 
           return successResponse(data);
@@ -698,6 +725,54 @@ const getState = ({ getStore, getActions, setStore }) => {
         }
       },
 
+      saveStartingLineup: async (matchId, players) => {
+        try {
+          const resp = await authFetch(
+            `/api/matches/${matchId}/starting-lineup`,
+            {
+              method: "PUT",
+              headers: {
+                "Content-Type": "application/json",
+              },
+              body: JSON.stringify({
+                players,
+              }),
+            },
+          );
+
+          const result = await parseResponse(resp);
+
+          if (!result.ok) return result;
+
+          return successResponse(result.data);
+        } catch (error) {
+          return networkError("Error saving starting lineup:", error);
+        }
+      },
+
+      createMatchSubstitution: async (matchId, substitutionData) => {
+        try {
+          const resp = await authFetch(
+            `/api/matches/${matchId}/substitutions`,
+            {
+              method: "POST",
+              headers: {
+                "Content-Type": "application/json",
+              },
+              body: JSON.stringify(substitutionData),
+            },
+          );
+
+          const result = await parseResponse(resp);
+
+          if (!result.ok) return result;
+
+          return successResponse(result.data);
+        } catch (error) {
+          return networkError("Error creating substitution:", error);
+        }
+      },
+
       saveMatchParticipation: async (matchId, players) => {
         try {
           const resp = await authFetch(
@@ -754,7 +829,7 @@ const getState = ({ getStore, getActions, setStore }) => {
 
           if (!result.ok) return result;
 
-          return successResponse(result.data.stats || {});
+          return successResponse(result.data);
         } catch (error) {
           return networkError("Error loading player stats:", error);
         }
@@ -788,6 +863,59 @@ const getState = ({ getStore, getActions, setStore }) => {
         }
       },
 
+      saveMatchResult: async (matchId, resultData) => {
+        try {
+          const resp = await authFetch(`/api/matches/${matchId}/result`, {
+            method: "PUT",
+            headers: {
+              "Content-Type": "application/json",
+            },
+            body: JSON.stringify(resultData),
+          });
+
+          const result = await parseResponse(resp);
+
+          if (!result.ok) return result;
+
+          return successResponse(result.data);
+        } catch (error) {
+          return networkError("Error saving match result:", error);
+        }
+      },
+      createMatchEvent: async (eventData) => {
+        try {
+          const resp = await authFetch("/api/match-events", {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+            },
+            body: JSON.stringify(eventData),
+          });
+
+          const result = await parseResponse(resp);
+
+          if (!result.ok) return result;
+
+          return successResponse(result.data);
+        } catch (error) {
+          return networkError("Error creating match event:", error);
+        }
+      },
+      deleteMatchEvent: async (eventId) => {
+        try {
+          const resp = await authFetch(`/api/match-events/${eventId}`, {
+            method: "DELETE",
+          });
+
+          const result = await parseResponse(resp);
+
+          if (!result.ok) return result;
+
+          return successResponse(result.data);
+        } catch (error) {
+          return networkError("Error deleting match event:", error);
+        }
+      },
       restoreSession: async () => {
         const refresh = localStorage.getItem("refresh");
 

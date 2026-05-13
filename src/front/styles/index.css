@@ -6,43 +6,132 @@
   padding: 0;
 }
 
-/* ===== DESIGN TOKENS ===== */
-
 :root {
-  /* PRIMARY COLOR */
-  --color-primary: #2563eb;
+  /* Brand */
+  --color-primary: #1e3a8a;
+  --color-primary-dark: #0f172a;
+  --color-primary-light: #dbeafe;
 
-  /* BACKGROUNDS */
-  --color-background: #f1f5f9;
+  /* Sport / Action */
+  --color-accent: #22c55e;
+  --color-accent-soft: #dcfce7;
+
+  /* Backgrounds */
+  --color-bg: #f8fafc;
+  --color-bg-gradient: linear-gradient(
+    180deg,
+    #ffe27a 0%,
+    #ffe68a 22%,
+    #ffedb3 48%,
+    #fff4d1 72%,
+    #f8fafc 100%
+  );
   --color-surface: #ffffff;
+  --color-surface-soft: #f1f5f9;
+  /* Text */
+  --color-text: #0f172a;
+  --color-muted: #64748b;
+  --color-light: #94a3b8;
 
-  /* TEXT */
-  --color-text: #111827;
-  --color-text-muted: #64748b;
+  /* Borders */
+  --color-border: #e2e8f0;
 
-  /* BORDERS */
-  --color-border: #e5e7eb;
-
-  /* HOVER */
-  --color-hover: #f1f5f9;
-
-  /* STATES */
-  --color-success: #22c55e;
+  /* States */
   --color-danger: #ef4444;
+  --color-danger-soft: #fee2e2;
+  --color-danger-border: rgba(239, 68, 68, 0.2);
+  --color-warning: #f59e0b;
+  --color-warning-soft: #fef3c7;
+  --color-info: #3b82f6;
+  --color-info-soft: #dbeafe;
+  --color-success: #22c55e;
+
+  /*Toast*/
+  --color-toast-success: rgba(34, 197, 94, 0.95);
+  --color-toast-error: rgba(239, 68, 68, 0.95);
+  --color-toast-info: rgba(59, 130, 246, 0.95);
+
+  /* Radius */
+  --radius-sm: 8px;
+  --radius-md: 12px;
+  --radius-lg: 18px;
+
+  /* Typography */
+  --font-size-xs: 12px;
+  --font-size-sm: 13px;
+  --font-size-md: 14px;
+  --font-size-base: 16px;
+  --font-size-lg: 18px;
+  --font-size-xl: 22px;
+  --font-size-2xl: 24px;
+  --font-size-3xl: 28px;
+  --font-size-metric: 30px;
+
+  --font-weight-medium: 500;
+  --font-weight-semibold: 600;
+  --font-weight-bold: 700;
+  --font-weight-extrabold: 800;
+
+  --line-height-tight: 1.15;
+  --line-height-normal: 1.5;
+
+  /* Shadows */
+  --shadow-card: 0 8px 24px rgba(15, 23, 42, 0.06);
 }
 
-/* ===== GLOBAL ===== */
+html,
+body,
+#root {
+  min-height: 100%;
+}
 
 body {
-  font-family: system-ui, -apple-system, sans-serif;
-  background: var(--color-background);
+  min-height: 100vh;
+  font-family: Inter, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI",
+    sans-serif;
+
+  background-color: var(--color-bg);
+  background-image: var(--color-bg-gradient);
+  background-repeat: no-repeat;
+  background-position: top;
+  background-size: 100% 340px;
+
   color: var(--color-text);
 }
 
-button {
-  font-family: inherit;
+h1 {
+  font-size: var(--font-size-3xl);
+  font-weight: var(--font-weight-bold);
+  line-height: var(--line-height-tight);
 }
 
-input {
-  font-family: inherit;
+h2 {
+  font-size: var(--font-size-xl);
+  font-weight: var(--font-weight-bold);
+  line-height: var(--line-height-tight);
+}
+
+h3 {
+  font-size: var(--font-size-lg);
+  font-weight: var(--font-weight-semibold);
+  line-height: var(--line-height-tight);
+}
+h4 {
+  font-size: var(--font-size-base);
+  font-weight: var(--font-weight-bold);
+  line-height: var(--line-height-tight);
+  color: var(--color-text);
+}
+
+h5 {
+  font-size: var(--font-size-md);
+  font-weight: var(--font-weight-semibold);
+  line-height: var(--line-height-tight);
+  color: var(--color-text);
+}
+
+p {
+  font-size: var(--font-size-md);
+  color: var(--color-muted);
+  line-height: var(--line-height-normal);
 }

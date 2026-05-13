@@ -20,6 +20,7 @@ import { Teams } from "./pages/teams/teams";
 import { TeamDetail } from "./pages/teams/teamDetail";
 import { Players } from "./pages/players/players";
 import { PlayerDetail } from "./pages/players/playerDetail";
+import { EditPlayer } from "./pages/players/editPlayer";
 import { Trainings } from "./pages/trainings/trainings";
 import { TeamTrainings } from "./pages/trainings/teamTrainings";
 import { TrainingDetail } from "./pages/trainings/trainingDetail";
@@ -27,7 +28,9 @@ import { CreateTraining } from "./pages/trainings/createTraining";
 import { MatchSessions } from "./pages/matches/matchSessions";
 import { CreateMatch } from "./pages/matches/createMatch";
 import { MatchDetail } from "./pages/matches/matchDetail";
+import { LiveMatch } from "./pages/matches/liveMatch";
 import { PlayerMatchStats } from "./pages/matches/playerMatchStats";
+import { MatchStatsAdjust } from "./pages/matches/matchStatsAdjust";
 import injectContext from "./store/appContext";
 
 const Layout = () => {
@@ -111,11 +114,17 @@ const Layout = () => {
               />
 
               <Route path="/matches/:match_id" element={<MatchDetail />} />
+              <Route path="/matches/:match_id/live" element={<LiveMatch />} />
+              <Route
+                path="/matches/:match_id/stats"
+                element={<MatchStatsAdjust />}
+              />
               <Route
                 path="/match-players/:match_player_id/stats"
                 element={<PlayerMatchStats />}
               />
               <Route path="/players" element={<Players />} />
+              <Route path="/players/:player_id/edit" element={<EditPlayer />} />
               <Route path="/players/:player_id" element={<PlayerDetail />} />
             </Route>
           </Route>

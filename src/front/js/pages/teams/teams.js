@@ -3,6 +3,8 @@ import { useNavigate } from "react-router-dom";
 import { Context } from "../../store/appContext";
 import { PageHeader } from "../../component/ui/pageHeader";
 import { Input } from "../../component/ui/input";
+import { FormField } from "../../component/ui/formField";
+import { Select } from "../../component/ui/select";
 import { Button } from "../../component/ui/button";
 import { Card } from "../../component/ui/card";
 import { validateTeam } from "../../utils/validators";
@@ -78,6 +80,7 @@ export const Teams = () => {
   const closeCreateForm = () => {
     setShowForm(false);
     setTeamName("");
+    setTeamGender("");
     setErrors({});
   };
 
@@ -87,74 +90,87 @@ export const Teams = () => {
 
   return (
     <>
-      <PageHeader title="Equipos" subtitle="Gestiona los equipos de tu club" />
-      {!showForm && (
-        <Button className="button-primary" onClick={openCreateForm}>
-          + Crear equipo
-        </Button>
-      )}
+      <PageHeader
+        eyebrow="Gestión del club"
+        title="Categorías"
+        subtitle="Organiza los equipos por género, nivel o etapa deportiva."
+        actions={
+          !showForm && (
+            <Button onClick={openCreateForm}>+ Crear categoría</Button>
+          )
+        }
+      />
       {showForm && (
         <Card>
-          <h4>Nuevo equipo</h4>
+          <h4>Nueva categoría</h4>
 
           <form onSubmit={handleCreateTeam} className="form">
-            <Input
-              type="text"
-              placeholder="Ej: Sub12, Juvenil..."
-              value={teamName}
-              className={
-                errors.TEAM_NAME_REQUIRED || errors.TEAM_ALREADY_EXISTS
-                  ? "input-error"
-                  : ""
+            <FormField
+              label="Categoría"
+              error={
+                errors.TEAM_NAME_REQUIRED
+                  ? errorMessages.TEAM_NAME_REQUIRED
+                  : errors.TEAM_ALREADY_EXISTS
+                  ? errorMessages.TEAM_ALREADY_EXISTS
+                  : null
               }
-              onChange={(e) => {
-                setTeamName(e.target.value);
-                setErrors((prev) => ({
-                  ...prev,
-                  TEAM_NAME_REQUIRED: false,
-                  TEAM_ALREADY_EXISTS: false,
-                }));
-              }}
-            />
-
-            {errors.TEAM_NAME_REQUIRED && (
-              <p className="form-error">{errorMessages.TEAM_NAME_REQUIRED}</p>
-            )}
-
-            {errors.TEAM_ALREADY_EXISTS && (
-              <p className="form-error">{errorMessages.TEAM_ALREADY_EXISTS}</p>
-            )}
-
-            <select
-              className={`select ${
-                errors.INVALID_TEAM_GENDER ? "input-error" : ""
-              }`}
-              value={teamGender}
-              onChange={(e) => {
-                setTeamGender(e.target.value);
-                setErrors((prev) => ({
-                  ...prev,
-                  INVALID_TEAM_GENDER: false,
-                }));
-              }}
             >
-              <option value="">Selecciona la rama</option>
-              <option value="female">Femenino</option>
-              <option value="male">Masculino</option>
-              <option value="mixed">Mixto</option>
-            </select>
+              <Input
+                type="text"
+                placeholder="Ej: Sub12, Juvenil..."
+                value={teamName}
+                className={
+                  errors.TEAM_NAME_REQUIRED || errors.TEAM_ALREADY_EXISTS
+                    ? "input-error"
+                    : ""
+                }
+                onChange={(e) => {
+                  setTeamName(e.target.value);
+                  setErrors((prev) => ({
+                    ...prev,
+                    TEAM_NAME_REQUIRED: false,
+                    TEAM_ALREADY_EXISTS: false,
+                  }));
+                }}
+              />
+            </FormField>
+
+            <FormField
+              label="Género"
+              error={
+                errors.INVALID_TEAM_GENDER
+                  ? errorMessages.INVALID_TEAM_GENDER
+                  : null
+              }
+            >
+              <Select
+                value={teamGender}
+                className={errors.INVALID_TEAM_GENDER ? "input-error" : ""}
+                onChange={(e) => {
+                  setTeamGender(e.target.value);
+                  setErrors((prev) => ({
+                    ...prev,
+                    INVALID_TEAM_GENDER: false,
+                  }));
+                }}
+              >
+                <option value="">Selecciona el género</option>
+                <option value="female">Femenino</option>
+                <option value="male">Masculino</option>
+                <option value="mixed">Mixto</option>
+              </Select>
+            </FormField>
 
             <div className="form-actions">
               <Button
                 type="button"
-                className="button-secondary"
+                variant="secondary"
                 onClick={closeCreateForm}
               >
                 Cancelar
               </Button>
-
               <Button type="submit" disabled={loading}>
-                {loading ? "Creando..." : "Crear equipo"}
+                {loading ? "Creando..." : "Crear categoría"}
               </Button>
             </div>
           </form>
@@ -163,24 +179,27 @@ export const Teams = () => {
       {!showForm &&
         (store.teams.length === 0 ? (
           <Card>
-            <h4>Aún no tienes equipos</h4>
-            <p>Crea tu primer equipo para empezar</p>
+            <h4>Aún no tienes categorías</h4>
+            <p>Crea tu primera categoría para empezar</p>
 
-            <Button className="button-primary" onClick={openCreateForm}>
-              Crear equipo
-            </Button>
+            <Button onClick={openCreateForm}>Crear categoría</Button>
           </Card>
         ) : (
           <div className="teams-grid">
             {store.teams.map((team) => (
-              <Card key={team.id} onClick={() => navigate(`/teams/${team.id}`)}>
-                <h5>{team.name}</h5>
+              <Card
+                key={team.id}
+                className="team-card card-interactive"
+                onClick={() => navigate(`/teams/${team.id}`)}
+              >
+                <h3 className="team-card-title">{team.name}</h3>
+
                 <p className="team-meta">
                   {team.gender === "female"
-                    ? "Femenina"
+                    ? "Femenino"
                     : team.gender === "male"
-                    ? "Masculina"
-                    : "Mixta"}
+                    ? "Masculino"
+                    : "Mixto"}
                 </p>
               </Card>
             ))}

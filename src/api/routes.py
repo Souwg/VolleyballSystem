@@ -2,6 +2,7 @@
 This module takes care of starting the API Server, Loading the DB and Adding the endpoints
 """
 from flask import Flask, request, jsonify, url_for, Blueprint
+from sqlalchemy import func
 from src.api.models import (
     db,
     User,
@@ -15,9 +16,12 @@ from src.api.models import (
     TokenBlockedList,
     MatchSession,
     MatchPlayer,
+    MatchSubstitution,
+    MatchEvent,
     PlayerMatchStat,
     RefreshToken
 )
+from src.api.stats_validator import validate_match_stats
 from flask_cors import CORS
 from src.api.extensions import bcrypt
 from src.api.utils import (
@@ -41,6 +45,178 @@ api = Blueprint('api', __name__)
 
 
 CORS(api)
+
+VALID_MATCH_STATUSES = ["present", "late", "absent", "injured"]
+PLAYABLE_MATCH_STATUSES = ["present", "late"]
+VALID_MATCH_STEPS = [0, 1, 2, 3, 4]
+VALID_MATCH_TYPES = ["official", "friendly", "scrimmage"]
+ALLOWED_POSITIONS = ["setter", "outside", "middle", "opposite", "libero"]
+
+def sync_match_roster_if_open(match):
+    """
+    Sincroniza jugadoras nuevas del equipo al partido SOLO si el partido
+    todavía no tiene convocatoria guardada.
+
+    No elimina jugadoras viejas del snapshot.
+    Solo agrega las que faltan.
+    """
+
+    if not match:
+        return 0
+
+    # Si ya avanzó de convocatoria, no tocamos el snapshot
+    if match.match_step != 0:
+        return 0
+
+    if match.is_completed:
+        return 0
+
+    existing_player_ids = {
+        row.player_id
+        for row in MatchPlayer.query.filter_by(match_id=match.id).all()
+    }
+
+    current_roster = TeamPlayer.query.filter_by(
+        team_id=match.team_id
+    ).all()
+
+    added_count = 0
+
+    for member in current_roster:
+        if member.player_id in existing_player_ids:
+            continue
+
+        snapshot = MatchPlayer(
+            match_id=match.id,
+            player_id=member.player_id,
+            player_number=member.player_number,
+            is_called=False,
+            attendance_status=None,
+            did_play=False
+        )
+
+        db.session.add(snapshot)
+        added_count += 1
+
+    if added_count > 0:
+        db.session.commit()
+
+    return added_count
+
+def recalculate_player_match_stats(match_player_id):
+    row = MatchPlayer.query.get(match_player_id)
+
+    if not row:
+        return
+
+    stat = PlayerMatchStat.query.filter_by(
+        match_player_id=match_player_id
+    ).first()
+
+    if not stat:
+        stat = PlayerMatchStat(match_player_id=match_player_id)
+        db.session.add(stat)
+
+
+    events = MatchEvent.query.filter_by(
+        match_player_id=match_player_id
+    ).all()
+
+    # Reset stats
+    stat.attacks_total = 0
+    stat.attacks_positive = 0
+    stat.attacks_neutral = 0
+    stat.attacks_errors = 0
+
+    stat.receptions_total = 0
+    stat.receptions_positive = 0
+    stat.receptions_neutral = 0
+    stat.receptions_negative = 0
+
+    stat.defenses_total = 0
+    stat.defenses_positive = 0
+    stat.defenses_neutral = 0
+    stat.defenses_negative = 0
+
+    stat.sets_total = 0
+    stat.sets_positive = 0
+    stat.sets_neutral = 0
+    stat.sets_errors = 0
+
+    stat.serves_total = 0
+    stat.serves_in = 0
+    stat.serves_aces = 0
+    stat.serves_errors = 0
+
+    stat.blocks_total = 0
+    stat.blocks_points = 0
+    stat.blocks_neutral = 0
+    stat.blocks_errors = 0
+
+
+    for event in events:
+        action = event.action_type
+        result = event.result
+
+        if action == "attack":
+            stat.attacks_total += 1
+
+            if result == "positive":
+                stat.attacks_positive += 1
+            elif result == "neutral":
+                stat.attacks_neutral += 1
+            elif result == "error":
+                stat.attacks_errors += 1
+
+        elif action == "reception":
+            stat.receptions_total += 1
+
+            if result == "positive":
+                stat.receptions_positive += 1
+            elif result == "neutral":
+                stat.receptions_neutral += 1
+            elif result == "negative":
+                stat.receptions_negative += 1
+
+        elif action == "defense":
+            stat.defenses_total += 1
+
+            if result == "positive":
+                stat.defenses_positive += 1
+            elif result == "neutral":
+                stat.defenses_neutral += 1
+            elif result == "negative":
+                stat.defenses_negative += 1
+
+        elif action == "set":
+            stat.sets_total += 1
+
+            if result == "positive":
+                stat.sets_positive += 1
+            elif result == "neutral":
+                stat.sets_neutral += 1
+            elif result == "error":
+                stat.sets_errors += 1
+
+        elif action == "serve":
+            stat.serves_total += 1
+
+            if result == "ace":
+                stat.serves_aces += 1
+            elif result == "in":
+                stat.serves_in += 1
+            elif result == "error":
+                stat.serves_errors += 1
+
+        elif action == "block":
+            stat.blocks_total += 1
+
+            if result == "point":
+                stat.blocks_points += 1
+            elif result == "neutral":
+                stat.blocks_neutral += 1
+            elif result == "error":
+                stat.blocks_errors += 1
 
 
 ######################### SYSTEM ###############################
@@ -584,6 +760,23 @@ def club_dashboard():
         Team.club_id == club.id
     ).count()
 
+    today = datetime.utcnow().date()
+
+    
+    next_match = MatchSession.query.join(Team).filter(
+        Team.club_id == club.id,
+        MatchSession.is_completed == False,
+        MatchSession.date >= today
+    ).order_by(MatchSession.date.asc()).first()
+
+   
+    if not next_match:
+        next_match = MatchSession.query.join(Team).filter(
+            Team.club_id == club.id,
+            MatchSession.is_completed == False,
+            MatchSession.date < today
+        ).order_by(MatchSession.date.desc()).first()
+
     return jsonify({
         "club": club.serialize(),
         "stats": {
@@ -593,7 +786,11 @@ def club_dashboard():
             "injured_players": injured_players,
             "inactive_players": inactive_players,
             "total_trainings": total_trainings
-        }
+        },
+        "next_match": {
+            **next_match.serialize(),
+            "team_name": next_match.team.name
+        } if next_match else None
     }), 200
 
 @api.route("/teams/<string:team_id>/players/<string:player_id>", methods=["DELETE"])
@@ -654,8 +851,9 @@ def create_team():
     name = body.get("name")
     gender = body.get("gender")
 
+    # ✅ normalización fuerte
     if name:
-        name = name.strip()
+        name = " ".join(name.strip().split())
 
     if not name:
         return error_response(
@@ -673,10 +871,11 @@ def create_team():
             400
         )
 
-    existing_team = Team.query.filter_by(
-        name=name,
-        gender=gender,
-        club_id=user.club_id
+    # ✅ búsqueda robusta ignorando mayúsculas
+    existing_team = Team.query.filter(
+        Team.club_id == user.club_id,
+        Team.gender == gender,
+        func.lower(Team.name) == name.lower()
     ).first()
 
     if existing_team:
@@ -851,6 +1050,15 @@ def create_player():
     status = body.get("status", "active")
     team_id = body.get("team_id")
 
+    main_position = (body.get("main_position") or "").strip().lower() or None
+
+    if main_position and main_position not in ALLOWED_POSITIONS:
+        return error_response(
+            "Posición inválida",
+            "INVALID_POSITION",
+            400
+        )
+
     allowed_sex = ["male", "female"]
 
     if not sex:
@@ -970,6 +1178,7 @@ def create_player():
         last_name=last_name,
         sex=sex,
         birth_date=parsed_birth_date,
+        main_position=main_position,
         club_id=user.club_id
     )
 
@@ -997,6 +1206,54 @@ def create_player():
             "status": membership.status if membership else "active"
         }
     }), 201
+
+
+@api.route("/players/<string:player_id>/active", methods=["PUT"])
+@jwt_required()
+def update_player_active_status(player_id):
+    user = get_current_user()
+
+    if not user.club_id:
+        return error_response(
+            "El usuario no pertenece a ningún club",
+            "CLUB_REQUIRED",
+            400
+        )
+
+    if user.role not in ["club_owner", "coach"]:
+        return error_response(
+            "No tienes permisos para modificar jugadores",
+            "FORBIDDEN",
+            403
+        )
+
+    player = Player.query.get(player_id)
+
+    if not player or player.club_id != user.club_id:
+        return error_response(
+            "Jugador no encontrado",
+            "PLAYER_NOT_FOUND",
+            404
+        )
+
+    body = request.get_json() or {}
+    is_active = body.get("is_active")
+
+    if not isinstance(is_active, bool):
+        return error_response(
+            "Estado inválido",
+            "INVALID_PLAYER_ACTIVE_STATUS",
+            400
+        )
+
+    player.is_active = is_active
+
+    db.session.commit()
+
+    return jsonify({
+        "message": "Estado del jugador actualizado correctamente",
+        "player": player.serialize()
+    }), 200
 
 @api.route("/teams/<string:team_id>/players", methods=["GET"])
 @jwt_required()
@@ -1044,6 +1301,7 @@ def get_team_players(team_id):
             "last_name": m.player.last_name,
             "sex": m.player.sex,
             "birth_date": m.player.birth_date.isoformat() if m.player.birth_date else None,
+            "main_position": m.player.main_position,
             "team_id": m.team_id,
             "player_number": m.player_number,
             "status": m.status
@@ -1145,6 +1403,22 @@ def add_existing_player_to_team(team_id):
             "PLAYER_NUMBER_REQUIRED",
             400
         )
+    
+    try:
+        player_number = int(player_number)
+    except (TypeError, ValueError):
+        return error_response(
+            "El número del jugador debe ser numérico",
+            "INVALID_PLAYER_NUMBER",
+            400
+        )
+
+    if player_number < 1 or player_number > 99:
+        return error_response(
+            "El número del jugador debe estar entre 1 y 99",
+            "INVALID_PLAYER_NUMBER",
+            400
+        )
 
     player = Player.query.get(player_id)
 
@@ -1153,6 +1427,13 @@ def add_existing_player_to_team(team_id):
             "Jugador no encontrado",
             "PLAYER_NOT_FOUND",
             404
+        )
+
+    if not player.is_active:
+        return error_response(
+            "No puedes asignar una jugadora desactivada",
+            "PLAYER_INACTIVE",
+            400
         )
     
     if team.gender != "mixed" and team.gender != player.sex:
@@ -1236,6 +1517,16 @@ def update_player(player_id):
     sex = body.get("sex")
     birth_date = body.get("birth_date")
     team_id = body.get("team_id")
+
+    main_position = (body.get("main_position") or "").strip().lower() or None
+
+    if main_position and main_position not in ALLOWED_POSITIONS:
+        return error_response(
+            "Posición inválida",
+            "INVALID_POSITION",
+            400
+        )
+    
     player_number = body.get("player_number")
 
     if not first_name:
@@ -1310,6 +1601,22 @@ def update_player(player_id):
                 "PLAYER_MEMBERSHIP_NOT_FOUND",
                 404
             )
+        
+        try:
+            player_number = int(player_number)
+        except (TypeError, ValueError):
+            return error_response(
+                "El número del jugador debe ser numérico",
+                "INVALID_PLAYER_NUMBER",
+                400
+            )
+
+        if player_number < 1 or player_number > 99:
+            return error_response(
+                "El número del jugador debe estar entre 1 y 99",
+                "INVALID_PLAYER_NUMBER",
+                400
+            )
 
         duplicated_number = TeamPlayer.query.filter(
             TeamPlayer.team_id == team_id,
@@ -1325,6 +1632,8 @@ def update_player(player_id):
             )
 
         membership.player_number = int(player_number)
+
+    player.main_position = main_position
 
     db.session.commit()
 
@@ -1643,12 +1952,13 @@ def get_player_attendance(player_id):
         player_id=player.id
     ).all()
 
-    if not memberships:
+    if player.club_id != user.club_id:
         return error_response(
-            "El jugador no pertenece a ningún equipo",
-            "PLAYER_MEMBERSHIP_NOT_FOUND",
-            404
+            "No tienes acceso",
+            "FORBIDDEN",
+            403
         )
+
 
     for membership in memberships:
         team = Team.query.get(membership.team_id)
@@ -1659,7 +1969,7 @@ def get_player_attendance(player_id):
                 "FORBIDDEN",
                 403
             )
-
+        
     attendance_records = Attendance.query.join(TrainingSession).filter(
         Attendance.player_id == player.id
     ).order_by(TrainingSession.date.desc()).all()
@@ -1731,6 +2041,39 @@ def create_training():
     date = body.get("date")
     location = body.get("location")
 
+    # ✅ VALIDACIONES VAN AQUÍ
+    if not team_id:
+        return error_response(
+            "La categoría es obligatoria",
+            "TEAM_ID_REQUIRED",
+            400
+        )
+
+    if not date:
+        return error_response(
+            "La fecha del entrenamiento es obligatoria",
+            "TRAINING_DATE_REQUIRED",
+            400
+        )
+
+    if not location or not str(location).strip():
+        return error_response(
+            "La ubicación del entrenamiento es obligatoria",
+            "TRAINING_LOCATION_REQUIRED",
+            400
+        )
+
+    try:
+        parsed_date = datetime.strptime(date, "%Y-%m-%d").date()
+    except (ValueError, TypeError):
+        return error_response(
+            "Formato de fecha inválido. Usa YYYY-MM-DD",
+            "INVALID_DATE_FORMAT",
+            400
+        )
+
+    location = location.strip()
+
     team = Team.query.get(team_id)
 
     if not team:
@@ -1749,13 +2092,13 @@ def create_training():
 
     training = TrainingSession(
         team_id=team.id,
-        date=datetime.strptime(date, "%Y-%m-%d").date(),
+        date=parsed_date,
         location=location,
         created_by=user.id
     )
 
     db.session.add(training)
-    db.session.flush()  # 👈 importante para obtener training.id
+    db.session.flush()
 
     current_roster = TeamPlayer.query.filter_by(
         team_id=team.id
@@ -1982,10 +2325,20 @@ def create_match():
     location = body.get("location")
     notes = body.get("notes")
 
+    if opponent_name:
+        opponent_name = opponent_name.strip()
+    
     if not team_id:
         return error_response(
             "La categoría es obligatoria",
             "TEAM_ID_REQUIRED",
+            400
+        )
+    
+    if match_type not in VALID_MATCH_TYPES:
+        return error_response(
+            "Tipo de partido inválido",
+            "INVALID_MATCH_TYPE",
             400
         )
 
@@ -1993,6 +2346,22 @@ def create_match():
         return error_response(
             "La fecha es obligatoria",
             "MATCH_DATE_REQUIRED",
+            400
+        )
+
+    try:
+        parsed_date = datetime.strptime(date, "%Y-%m-%d").date()
+    except (ValueError, TypeError):
+        return error_response(
+            "Formato de fecha inválido. Usa YYYY-MM-DD",
+            "INVALID_DATE_FORMAT",
+            400
+        )
+    
+    if not opponent_name:
+        return error_response(
+            "El rival es obligatorio",
+            "OPPONENT_NAME_REQUIRED",
             400
         )
 
@@ -2014,7 +2383,7 @@ def create_match():
 
     match = MatchSession(
         team_id=team.id,
-        date=datetime.strptime(date, "%Y-%m-%d").date(),
+        date=parsed_date,
         opponent_name=opponent_name,
         match_type=match_type,
         location=location,
@@ -2023,6 +2392,24 @@ def create_match():
     )
 
     db.session.add(match)
+        
+    db.session.flush()
+
+    current_roster = TeamPlayer.query.filter_by(
+        team_id=team.id
+    ).all()
+
+    for member in current_roster:
+        snapshot = MatchPlayer(
+            match_id=match.id,
+            player_id=member.player_id,
+            player_number=member.player_number,
+            is_called=False,
+            attendance_status=None,
+            did_play=False
+        )
+        db.session.add(snapshot)
+
     db.session.commit()
 
     return jsonify({
@@ -2092,21 +2479,25 @@ def save_match_roster(match_id):
             400
         )
 
-    MatchPlayer.query.filter_by(match_id=match.id).delete()
+    selected_ids = {
+        item.get("player_id")
+        for item in players
+        if item.get("player_id")
+    }
 
-    for item in players:
-        player_id = item.get("player_id")
-        player_number = item.get("player_number")
+    rows = MatchPlayer.query.filter_by(match_id=match.id).all()
 
-        if not player_id:
-            continue
+    for row in rows:
+        was_called = row.player_id in selected_ids
+        row.is_called = was_called
 
-        row = MatchPlayer(
-            match_id=match.id,
-            player_id=player_id,
-            player_number=player_number
-        )
-        db.session.add(row)
+        if not was_called:
+            row.attendance_status = None
+            row.did_play = False
+            row.is_on_court = False
+            row.position = None
+
+    match.match_step = max(match.match_step, 1)
 
     db.session.commit()
 
@@ -2122,49 +2513,86 @@ def update_match_status(match_id):
     match = MatchSession.query.get(match_id)
 
     if not match:
-        return error_response(
-            "Partido no encontrado",
-            "MATCH_NOT_FOUND",
-            404
-        )
+        return error_response("Partido no encontrado", "MATCH_NOT_FOUND", 404)
 
     if match.team.club_id != user.club_id:
-        return error_response(
-            "No tienes acceso",
-            "FORBIDDEN",
-            403
-        )
+        return error_response("No tienes acceso", "FORBIDDEN", 403)
 
     body = request.get_json() or {}
     players = body.get("players")
 
     if not players:
-        return error_response(
-            "Lista requerida",
-            "MATCH_STATUS_REQUIRED",
-            400
-        )
-
-    allowed_status = ["present", "absent", "injured", "late"]
+        return error_response("Lista requerida", "MATCH_STATUS_REQUIRED", 400)
 
     for item in players:
-        row = MatchPlayer.query.get(item.get("match_player_id"))
-        if not row:
-            continue
-
+        match_player_id = item.get("match_player_id")
         status = item.get("attendance_status")
+        position = (item.get("position") or "").strip().lower()
 
-        if status not in allowed_status:
+        if not match_player_id:
+            return error_response(
+                "Registro del partido requerido",
+                "MATCH_PLAYER_ID_REQUIRED",
+                400
+            )
+
+        row = MatchPlayer.query.get(match_player_id)
+
+        if not row:
+            return error_response(
+                "Registro del partido no encontrado",
+                "MATCH_PLAYER_NOT_FOUND",
+                404
+            )
+
+        if row.match_id != match.id:
+            return error_response(
+                "La jugadora no pertenece a este partido",
+                "MATCH_PLAYER_INVALID",
+                400
+            )
+
+        if not row.is_called:
+            return error_response(
+                "La jugadora no está convocada para este partido",
+                "PLAYER_NOT_CALLED",
+                400
+            )
+
+        if status not in VALID_MATCH_STATUSES:
             return error_response(
                 "Estado inválido",
                 "INVALID_MATCH_STATUS",
                 400
             )
 
+        if status in PLAYABLE_MATCH_STATUSES:
+            if not position:
+                position = row.player.main_position
+
+            if not position:
+                return error_response(
+                    "La posición es obligatoria para jugadoras presentes o tarde",
+                    "POSITION_REQUIRED",
+                    400
+                )
+
+            if position not in ALLOWED_POSITIONS:
+                return error_response(
+                    "Posición inválida",
+                    "INVALID_POSITION",
+                    400
+                )
+
+            row.position = position
+        else:
+            row.position = None
+            row.did_play = False
+            row.is_on_court = False
+
         row.attendance_status = status
 
-        if status != "present":
-            row.did_play = False
+    match.match_step = max(match.match_step, 2)
 
     db.session.commit()
 
@@ -2218,6 +2646,8 @@ def get_match_roster(match_id):
             403
         )
 
+    synced_count = sync_match_roster_if_open(match)
+
     roster = MatchPlayer.query.filter_by(
         match_id=match.id
     ).order_by(MatchPlayer.player_number).all()
@@ -2235,12 +2665,239 @@ def get_match_roster(match_id):
             "last_name": row.player.last_name,
             "player_number": row.player_number,
             "attendance_status": row.attendance_status,
-            "did_play": row.did_play
+            "did_play": row.did_play,
+            "is_called": row.is_called,
+            "is_on_court": row.is_on_court,
+            "main_position": row.player.main_position,
+            "position": row.position or row.player.main_position,
         })
 
     return jsonify({
-        "players": players
+        "players": players,
+        "synced_count": synced_count
     }), 200
+
+@api.route("/matches/<string:match_id>/starting-lineup", methods=["PUT"])
+@jwt_required()
+def save_starting_lineup(match_id):
+    user = get_current_user()
+
+    match = MatchSession.query.get(match_id)
+
+    if not match:
+        return error_response(
+            "Partido no encontrado",
+            "MATCH_NOT_FOUND",
+            404
+        )
+
+    if match.team.club_id != user.club_id:
+        return error_response(
+            "No tienes acceso",
+            "FORBIDDEN",
+            403
+        )
+
+    body = request.get_json() or {}
+    players = body.get("players")
+
+    if not players:
+        return error_response(
+            "Debes seleccionar las jugadoras iniciales",
+            "STARTING_LINEUP_REQUIRED",
+            400
+        )
+
+    if len(players) != 6:
+        return error_response(
+            "Debes seleccionar exactamente 6 jugadoras en cancha",
+            "STARTING_LINEUP_MUST_HAVE_6",
+            400
+        )
+
+    selected_ids = set(players)
+
+    rows = MatchPlayer.query.filter_by(match_id=match.id).all()
+
+    valid_rows = []
+
+    for row in rows:
+        if row.id in selected_ids:
+            valid_rows.append(row)
+
+    if len(valid_rows) != 6:
+        return error_response(
+            "Una o más jugadoras no pertenecen a este partido",
+            "INVALID_STARTING_LINEUP",
+            400
+        )
+
+    for row in valid_rows:
+        if not row.is_called:
+            return error_response(
+                "Todas las jugadoras iniciales deben estar convocadas",
+                "PLAYER_NOT_CALLED",
+                400
+            )
+
+        if row.attendance_status not in PLAYABLE_MATCH_STATUSES:
+            return error_response(
+                "Todas las jugadoras iniciales deben estar presentes o tarde",
+                "PLAYER_NOT_ELIGIBLE_FOR_LINEUP",
+                400
+            )
+
+    for row in rows:
+        row.is_on_court = row.id in selected_ids
+
+        if row.is_on_court:
+            row.did_play = True
+            row.position = row.position or row.player.main_position
+
+    match.match_step = max(match.match_step, 3)
+
+    db.session.commit()
+
+    return jsonify({
+        "message": "Alineación inicial guardada correctamente",
+        "players": [row.serialize() for row in rows]
+    }), 200
+
+@api.route("/matches/<string:match_id>/substitutions", methods=["POST"])
+@jwt_required()
+def create_match_substitution(match_id):
+    user = get_current_user()
+
+    match = MatchSession.query.get(match_id)
+
+    if not match:
+        return error_response(
+            "Partido no encontrado",
+            "MATCH_NOT_FOUND",
+            404
+        )
+
+    if match.team.club_id != user.club_id:
+        return error_response(
+            "No tienes acceso",
+            "FORBIDDEN",
+            403
+        )
+
+    body = request.get_json() or {}
+
+    player_out_id = body.get("player_out_id")
+    player_in_id = body.get("player_in_id")
+
+    try:
+        set_number = int(body.get("set_number", 1))
+    except (TypeError, ValueError):
+        return error_response(
+            "Set inválido",
+            "INVALID_SET_NUMBER",
+            400
+        )
+
+    if set_number < 1 or set_number > 5:
+        return error_response(
+            "El set debe estar entre 1 y 5",
+            "INVALID_SET_NUMBER",
+            400
+        )
+
+    if not player_out_id or not player_in_id:
+        return error_response(
+            "Debes indicar quién sale y quién entra",
+            "SUBSTITUTION_PLAYERS_REQUIRED",
+            400
+        )
+
+    if player_out_id == player_in_id:
+        return error_response(
+            "La jugadora que entra no puede ser la misma que sale",
+            "INVALID_SUBSTITUTION",
+            400
+        )
+
+    player_out = MatchPlayer.query.get(player_out_id)
+    player_in = MatchPlayer.query.get(player_in_id)
+
+    if not player_out or not player_in:
+        return error_response(
+            "Jugadora no encontrada en el partido",
+            "MATCH_PLAYER_NOT_FOUND",
+            404
+        )
+
+    if player_out.match_id != match.id or player_in.match_id != match.id:
+        return error_response(
+            "Las jugadoras no pertenecen a este partido",
+            "MATCH_PLAYER_INVALID",
+            400
+        )
+
+    if not player_out.is_called or not player_in.is_called:
+        return error_response(
+            "Ambas jugadoras deben estar convocadas",
+            "PLAYER_NOT_CALLED",
+            400
+        )
+
+    if player_out.attendance_status not in PLAYABLE_MATCH_STATUSES:
+        return error_response(
+            "La jugadora que sale no está disponible para jugar",
+            "PLAYER_OUT_NOT_ELIGIBLE",
+            400
+        )
+
+    if not player_out.is_on_court:
+        return error_response(
+            "La jugadora que sale debe estar en cancha",
+            "PLAYER_OUT_NOT_ON_COURT",
+            400
+        )
+
+    if player_in.is_on_court:
+        return error_response(
+            "La jugadora que entra ya está en cancha",
+            "PLAYER_IN_ALREADY_ON_COURT",
+            400
+        )
+
+    if not player_in.is_called:
+        return error_response(
+            "La jugadora que entra debe estar convocada",
+            "PLAYER_NOT_CALLED",
+            400
+        )
+
+    if player_in.attendance_status not in PLAYABLE_MATCH_STATUSES:
+        return error_response(
+            "La jugadora que entra debe estar presente o haber llegado tarde",
+            "PLAYER_NOT_ELIGIBLE_FOR_SUBSTITUTION",
+            400
+        )
+
+    substitution = MatchSubstitution(
+        match_id=match.id,
+        set_number=set_number,
+        player_out_id=player_out.id,
+        player_in_id=player_in.id
+    )
+
+    player_out.is_on_court = False
+    player_in.is_on_court = True
+    player_in.did_play = True
+
+    match.match_step = max(match.match_step, 3)
+    
+    db.session.add(substitution)
+    db.session.commit()
+
+    return jsonify({
+        "message": "Cambio registrado correctamente",
+        "substitution": substitution.serialize()
+    }), 201
 
 @api.route("/matches/<string:match_id>/roster/participation", methods=["PUT"])
 @jwt_required()
@@ -2274,15 +2931,66 @@ def update_match_participation(match_id):
         )
 
     for item in players:
-        row = MatchPlayer.query.get(item.get("match_player_id"))
+        match_player_id = item.get("match_player_id")
+
+        if not match_player_id:
+            return error_response(
+                "Registro del partido requerido",
+                "MATCH_PLAYER_ID_REQUIRED",
+                400
+            )
+
+        row = MatchPlayer.query.get(match_player_id)
+
         if not row:
-            continue
+            return error_response(
+                "Registro del partido no encontrado",
+                "MATCH_PLAYER_NOT_FOUND",
+                404
+            )
 
-        if row.attendance_status != "present":
-            row.did_play = False
-            continue
+        if row.match_id != match.id:
+            return error_response(
+                "La jugadora no pertenece a este partido",
+                "MATCH_PLAYER_INVALID",
+                400
+            )
 
-        row.did_play = item.get("did_play", False)
+        if not row.is_called:
+            return error_response(
+                "La jugadora no está convocada para este partido",
+                "PLAYER_NOT_CALLED",
+                400
+            )
+
+        if row.attendance_status not in PLAYABLE_MATCH_STATUSES:
+            return error_response(
+                "La jugadora no puede marcar participación con ese estado",
+                "PLAYER_NOT_ELIGIBLE_FOR_PARTICIPATION",
+                400
+            )
+
+        did_play = bool(item.get("did_play", False))
+        position = (item.get("position") or row.player.main_position or "").strip().lower()
+
+        if did_play and not position:
+            return error_response(
+                "La posición es obligatoria si la jugadora participó",
+                "POSITION_REQUIRED",
+                400
+            )
+
+        if position and position not in ALLOWED_POSITIONS:
+            return error_response(
+                "Posición inválida",
+                "INVALID_POSITION",
+                400
+            )
+
+        row.did_play = did_play
+        row.position = position if did_play else None
+
+    match.match_step = max(match.match_step, 3)
 
     db.session.commit()
 
@@ -2311,7 +3019,11 @@ def save_match_stats(match_player_id):
             403
         )
 
-    if row.attendance_status != "present" or not row.did_play:
+    if (
+        not row.is_called or
+        row.attendance_status not in PLAYABLE_MATCH_STATUSES or
+        not row.did_play
+    ):
         return error_response(
             "La jugadora no puede registrar stats",
             "PLAYER_NOT_ELIGIBLE_FOR_STATS",
@@ -2319,6 +3031,15 @@ def save_match_stats(match_player_id):
         )
 
     body = request.get_json() or {}
+
+    validated_stats, error = validate_match_stats(body)
+
+    if error:
+        return error_response(
+            "Datos inválidos en estadísticas",
+            error,
+            400
+        )
 
     stat = PlayerMatchStat.query.filter_by(
         match_player_id=row.id
@@ -2328,21 +3049,46 @@ def save_match_stats(match_player_id):
         stat = PlayerMatchStat(match_player_id=row.id)
         db.session.add(stat)
 
-    stat.position = body.get("position")
-    stat.attacks_total = body.get("attacks_total", 0)
-    stat.attacks_positive = body.get("attacks_positive", 0)
-    stat.attacks_errors = body.get("attacks_errors", 0)
+    new_position = validated_stats.get("position")
 
-    stat.receptions_total = body.get("receptions_total", 0)
-    stat.receptions_positive = body.get("receptions_positive", 0)
-    stat.receptions_negative = body.get("receptions_negative", 0)
+    if new_position:
+        row.position = new_position
+    elif not row.position:
+        row.position = row.player.main_position
 
-    stat.serves_total = body.get("serves_total", 0)
-    stat.serves_aces = body.get("serves_aces", 0)
-    stat.serves_errors = body.get("serves_errors", 0)
+    stat.attacks_total = validated_stats.get("attacks_total")
+    stat.attacks_positive = validated_stats.get("attacks_positive")
+    stat.attacks_neutral = validated_stats.get("attacks_neutral")
+    stat.attacks_errors = validated_stats.get("attacks_errors")
 
-    stat.blocks_total = body.get("blocks_total", 0)
-    stat.blocks_points = body.get("blocks_points", 0)
+    stat.receptions_total = validated_stats.get("receptions_total")
+    stat.receptions_positive = validated_stats.get("receptions_positive")
+    stat.receptions_neutral = validated_stats.get("receptions_neutral")
+    stat.receptions_negative = validated_stats.get("receptions_negative")
+
+    stat.defenses_total = validated_stats.get("defenses_total")
+    stat.defenses_positive = validated_stats.get("defenses_positive")
+    stat.defenses_neutral = validated_stats.get("defenses_neutral")
+    stat.defenses_negative = validated_stats.get("defenses_negative")
+
+    stat.sets_total = validated_stats.get("sets_total")
+    stat.sets_positive = validated_stats.get("sets_positive")
+    stat.sets_neutral = validated_stats.get("sets_neutral")
+    stat.sets_errors = validated_stats.get("sets_errors")
+
+    stat.serves_total = validated_stats.get("serves_total")
+    stat.serves_in = validated_stats.get("serves_in")
+    stat.serves_aces = validated_stats.get("serves_aces")
+    stat.serves_errors = validated_stats.get("serves_errors")
+
+    stat.blocks_total = validated_stats.get("blocks_total")
+    stat.blocks_points = validated_stats.get("blocks_points")
+    stat.blocks_neutral = validated_stats.get("blocks_neutral")
+    stat.blocks_errors = validated_stats.get("blocks_errors")
+    
+
+    row.match.match_step = max(row.match.match_step, 4)
+   
 
     db.session.commit()
 
@@ -2376,11 +3122,299 @@ def get_match_stats(match_player_id):
         match_player_id=row.id
     ).first()
 
-    if not stats:
-        return jsonify({
-            "stats": None
-        }), 200
+    team = row.match.team
+    player = row.player
+    match = row.match
 
     return jsonify({
-        "stats": stats.serialize()
+        "context": {
+            "player": {
+                "id": player.id,
+                "first_name": player.first_name,
+                "last_name": player.last_name,
+                "player_number": row.player_number,
+                "sex": player.sex,
+                "main_position": player.main_position,
+            },
+            "team": {
+                "id": team.id,
+                "name": team.name,
+                "gender": team.gender
+            },
+            "match": {
+                "id": match.id,
+                "date": match.date.isoformat() if match.date else None,
+                "opponent_name": match.opponent_name,
+                "match_type": match.match_type,
+                "location": match.location,
+                "home_sets": match.home_sets,
+                "opponent_sets": match.opponent_sets,
+                "result": match.result,
+                "is_completed": match.is_completed
+            },
+            "match_player": {
+                "id": row.id,
+                "is_called": row.is_called,
+                "attendance_status": row.attendance_status,
+                "did_play": row.did_play,
+                "position": row.position or player.main_position
+                
+            }
+        },
+        "stats": stats.serialize() if stats else None
+    }), 200
+
+@api.route("/matches/<string:match_id>/result", methods=["PUT"])
+@jwt_required()
+def update_match_result(match_id):
+    user = get_current_user()
+
+    match = MatchSession.query.get(match_id)
+
+    if not match:
+        return error_response(
+            "Partido no encontrado",
+            "MATCH_NOT_FOUND",
+            404
+        )
+
+    if match.team.club_id != user.club_id:
+        return error_response("No tienes acceso", "FORBIDDEN", 403)
+
+    body = request.get_json() or {}
+
+    try:
+        home_sets = int(body.get("home_sets", 0))
+        opponent_sets = int(body.get("opponent_sets", 0))
+    except (TypeError, ValueError):
+        return error_response(
+            "Los sets deben ser números enteros",
+            "INVALID_MATCH_RESULT",
+            400
+        )
+
+    # ✅ VALIDACIÓN DE NEGATIVOS
+    if home_sets < 0 or opponent_sets < 0:
+        return error_response(
+            "Los sets no pueden ser negativos",
+            "INVALID_MATCH_RESULT",
+            400
+        )
+
+    # ✅ NADIE PUEDE PASAR DE 3
+    if home_sets > 3 or opponent_sets > 3:
+        return error_response(
+            "Ningún equipo puede superar 3 sets",
+            "INVALID_MATCH_RESULT",
+            400
+        )
+
+    # ✅ NO HAY EMPATE
+    if home_sets == opponent_sets:
+        return error_response(
+            "No puede haber empate en sets",
+            "INVALID_MATCH_RESULT",
+            400
+        )
+
+    # ✅ EL GANADOR DEBE TENER 3
+    if max(home_sets, opponent_sets) != 3:
+        return error_response(
+            "Uno de los equipos debe ganar 3 sets",
+            "INVALID_MATCH_RESULT",
+            400
+        )
+
+    # ✅ EL PERDEDOR SOLO PUEDE TENER 0,1,2
+    if min(home_sets, opponent_sets) > 2:
+        return error_response(
+            "El equipo perdedor no puede superar 2 sets",
+            "INVALID_MATCH_RESULT",
+            400
+        )
+
+    match.home_sets = home_sets
+    match.opponent_sets = opponent_sets
+    match.result = "win" if home_sets > opponent_sets else "loss"
+
+    if max(home_sets, opponent_sets) == 3:
+        match.is_completed = True
+
+    db.session.commit()
+
+    return jsonify({
+        "message": "Resultado guardado",
+        "match": match.serialize()
+    }), 200
+
+############################################ MATCH EVENTS #############################################
+
+
+VALID_EVENT_ACTIONS = [
+    "attack", "reception", "serve",
+    "block", "set", "defense"
+]
+
+VALID_EVENT_RESULTS_BY_ACTION = {
+    "attack": ["positive", "neutral", "error"],
+    "reception": ["positive", "neutral", "negative"],
+    "defense": ["positive", "neutral", "negative"],
+    "set": ["positive", "neutral", "error"],
+    "serve": ["in", "ace", "error"],
+    "block": ["point", "neutral", "error"],
+}
+
+
+@api.route("/match-events", methods=["POST"])
+@jwt_required()
+def create_match_event():
+    user = get_current_user()
+    body = request.get_json() or {}
+
+    match_id = body.get("match_id")
+    match_player_id = body.get("match_player_id")
+    action = body.get("action_type")
+    result = body.get("result")
+
+    try:
+        set_number = int(body.get("set_number", 1))
+    except (TypeError, ValueError):
+        return error_response(
+            "Set inválido",
+            "INVALID_SET_NUMBER",
+            400
+        )
+
+    if set_number < 1 or set_number > 5:
+        return error_response(
+            "El set debe estar entre 1 y 5",
+            "INVALID_SET_NUMBER",
+            400
+        )
+
+    
+    if not match_id or not match_player_id:
+        return error_response(
+            "Datos incompletos",
+            "MATCH_EVENT_REQUIRED",
+            400
+        )
+
+    if action not in VALID_EVENT_ACTIONS:
+        return error_response(
+            "Acción inválida",
+            "INVALID_EVENT_ACTION",
+            400
+        )
+
+    allowed_results = VALID_EVENT_RESULTS_BY_ACTION.get(action, [])
+
+    if result not in allowed_results:
+        return error_response(
+            "Resultado inválido para esta acción",
+            "INVALID_EVENT_RESULT",
+            400
+        )
+
+    match = MatchSession.query.get(match_id)
+
+    if not match:
+        return error_response(
+            "Partido no encontrado",
+            "MATCH_NOT_FOUND",
+            404
+        )
+
+    if match.team.club_id != user.club_id:
+        return error_response(
+            "No tienes acceso",
+            "FORBIDDEN",
+            403
+        )
+
+    # 🔒 Validar que el match_player pertenece a ese match
+    match_player = MatchPlayer.query.get(match_player_id)
+
+    if not match_player or match_player.match_id != match.id:
+        return error_response(
+            "Registro inválido",
+            "MATCH_PLAYER_INVALID",
+            400
+        )
+
+    if (
+        not match_player.is_called or
+        match_player.attendance_status not in PLAYABLE_MATCH_STATUSES or
+        not match_player.is_on_court
+    ):
+        return error_response(
+            "Solo puedes registrar acciones a jugadoras en cancha",
+            "PLAYER_NOT_ON_COURT",
+            400
+        )
+    
+    match_player.did_play = True
+    match_player.position = match_player.position or match_player.player.main_position
+    
+    event = MatchEvent(
+        match_id=match_id,
+        match_player_id=match_player_id,
+        action_type=action,
+        result=result,
+        set_number=set_number
+    )
+
+    db.session.add(event)
+    db.session.flush()
+
+    recalculate_player_match_stats(match_player_id)
+
+    db.session.commit()
+
+    return jsonify({
+        "message": "Evento registrado correctamente",
+        "event": event.serialize()
+    }), 201
+
+@api.route("/match-events/<string:event_id>", methods=["DELETE"])
+@jwt_required()
+def delete_match_event(event_id):
+    user = get_current_user()
+
+    event = MatchEvent.query.get(event_id)
+
+    if not event:
+        return error_response(
+            "Evento no encontrado",
+            "MATCH_EVENT_NOT_FOUND",
+            404
+        )
+
+    match = MatchSession.query.get(event.match_id)
+
+    if not match:
+        return error_response(
+            "Partido no encontrado",
+            "MATCH_NOT_FOUND",
+            404
+        )
+
+    if match.team.club_id != user.club_id:
+        return error_response(
+            "No tienes acceso",
+            "FORBIDDEN",
+            403
+        )
+
+    match_player_id = event.match_player_id
+
+    db.session.delete(event)
+    db.session.flush()
+
+    recalculate_player_match_stats(match_player_id)
+
+    db.session.commit()
+
+    return jsonify({
+        "message": "Evento eliminado correctamente"
     }), 200

@@ -152,3 +152,23 @@ export const validateTraining = ({ team_id, date, location }) => {
 
   return errors;
 };
+
+export const validateMatch = ({ opponent_name, date, match_type }) => {
+  const errors = {};
+
+  if (!opponent_name?.trim()) {
+    errors.OPPONENT_NAME_REQUIRED = true;
+  }
+
+  if (!date?.trim()) {
+    errors.MATCH_DATE_REQUIRED = true;
+  }
+
+  const allowedTypes = ["official", "friendly", "scrimmage"];
+
+  if (!allowedTypes.includes(match_type)) {
+    errors.INVALID_MATCH_TYPE = true;
+  }
+
+  return errors;
+};

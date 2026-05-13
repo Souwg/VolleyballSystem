@@ -3,7 +3,11 @@
 .app-shell {
   display: flex;
   min-height: 100vh;
-  background: var(--color-background);
+}
+
+.content-neutral {
+  background: var(--color-bg);
+  min-height: calc(100vh - 65px);
 }
 
 /* SIDEBAR */
@@ -106,4 +110,8 @@
 
 .content {
   padding: 20px;
+  width: 100%;
+  max-width: 100%;
+  min-width: 0;
+  overflow-x: hidden;
 }

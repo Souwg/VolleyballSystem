@@ -1,8 +1,7 @@
 import React, { useEffect, useContext, useState } from "react";
 import { Context } from "../../store/appContext";
-import { useParams } from "react-router-dom";
+import { useParams, useNavigate } from "react-router-dom";
 
-import { Container } from "../../component/ui/container";
 import { PageHeader } from "../../component/ui/pageHeader";
 import { Card } from "../../component/ui/card";
 import { Button } from "../../component/ui/button";
@@ -12,6 +11,7 @@ import "../../../styles/trainingDetail.css";
 export const TrainingDetail = () => {
   const { store, actions } = useContext(Context);
   const { training_id } = useParams();
+  const navigate = useNavigate();
 
   const [attendance, setAttendance] = useState({});
   const [loading, setLoading] = useState(true);
@@ -84,19 +84,21 @@ export const TrainingDetail = () => {
   const allMarked = markedCount === totalPlayers;
 
   if (loading) {
-    return (
-      <Container>
-        <p>Cargando asistencia...</p>
-      </Container>
-    );
+    return <p>Cargando asistencia...</p>;
   }
   return (
-    <Container>
-      <PageHeader title="Asistencia del entrenamiento" />
+    <div className="training-detail-page">
+      <PageHeader
+        variant="detail"
+        eyebrow="Entrenamiento"
+        title="Asistencia"
+        subtitle="Marca la asistencia de los deportistas convocados a esta sesión."
+        onBack={() => navigate("/trainings")}
+      />
 
       <Card>
         {store.players.length === 0 ? (
-          <p>No hay jugadores en este equipo.</p>
+          <p>No hay deportistas en esta categoría.</p>
         ) : (
           <div className="attendance-list">
             {store.players.map((player) => {
@@ -129,7 +131,7 @@ export const TrainingDetail = () => {
       <div className="attendance-sticky-bar">
         <div>
           <div className="attendance-progress">
-            {markedCount} / {totalPlayers} jugadoras marcadas
+            {markedCount} / {totalPlayers} deportistas marcados
           </div>
 
           <div className="attendance-summary">
@@ -151,6 +153,6 @@ export const TrainingDetail = () => {
             : "Sin cambios"}
         </Button>
       </div>
-    </Container>
+    </div>
   );
 };

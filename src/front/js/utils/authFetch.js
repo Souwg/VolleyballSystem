@@ -109,6 +109,10 @@ const FORM_ERRORS = [
   "TRAINING_LOCATION_REQUIRED",
   "PLAYER_REQUIRED",
   "INVALID_DATE_FORMAT",
+
+  //Matches
+  "OPPONENT_NAME_REQUIRED",
+  "MATCH_DATE_REQUIRED",
 ];
 
 export const parseResponse = async (resp) => {

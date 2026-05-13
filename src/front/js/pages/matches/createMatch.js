@@ -6,6 +6,7 @@ import { Card } from "../../component/ui/card";
 import { Input } from "../../component/ui/input";
 import { Button } from "../../component/ui/button";
 import { errorMessages } from "../../utils/errorMessages";
+import { validateMatch } from "../../utils/validators";
 
 export const CreateMatch = () => {
   const { actions } = useContext(Context);
@@ -20,98 +21,112 @@ export const CreateMatch = () => {
   const [errors, setErrors] = useState({});
   const [loading, setLoading] = useState(false);
 
-  const clearFieldError = (field) => {
-    if (!errors[field]) return;
+  const clearFieldError = (errorCode) => {
+    if (!errors[errorCode]) return;
 
     setErrors((prev) => ({
       ...prev,
-      [field]: null,
+      [errorCode]: false,
     }));
   };
 
   const handleSubmit = async () => {
-    const nextErrors = {};
+    const validationErrors = validateMatch({
+      opponent_name: opponentName,
+      date,
+      match_type: matchType,
+    });
 
-    if (!date) {
-      nextErrors.date =
-        errorMessages.MATCH_DATE_REQUIRED || "La fecha es obligatoria";
-    }
-
-    if (Object.keys(nextErrors).length > 0) {
-      setErrors(nextErrors);
+    if (Object.keys(validationErrors).length > 0) {
+      setErrors(validationErrors);
       return;
     }
-
+    setErrors({});
     setLoading(true);
 
     const result = await actions.createMatch({
       team_id,
-      opponent_name: opponentName,
+      opponent_name: opponentName.trim(),
       date,
       match_type: matchType,
-      location,
-      notes,
+      location: location.trim(),
+      notes: notes.trim(),
     });
 
     setLoading(false);
 
     if (!result.ok) {
-      setErrors({
-        general: errorMessages[result.code] || result.message,
-      });
+      setErrors({ [result.code]: true });
       return;
     }
 
     navigate(`/teams/${team_id}/matches`);
   };
-
   return (
     <div className="page-container">
       <PageHeader
+        variant="detail"
+        eyebrow="Partido"
         title="Crear partido"
-        subtitle="Prepara el contexto del match"
+        subtitle="Prepara la información básica del partido."
+        onBack={() => navigate(`/teams/${team_id}/matches`)}
       />
-
       <Card>
+        <label className="form-label">Rival</label>
         <Input
           label="Rival"
           value={opponentName}
+          className={errors.OPPONENT_NAME_REQUIRED ? "input-error" : ""}
           onChange={(e) => {
             setOpponentName(e.target.value);
-            clearFieldError("opponent_name");
+            clearFieldError("OPPONENT_NAME_REQUIRED");
           }}
-          placeholder="Ej: Eagles"
+          placeholder="Club Atlético, Escuela de Vóley..."
         />
-
+        {errors.OPPONENT_NAME_REQUIRED && (
+          <p className="form-error">{errorMessages.OPPONENT_NAME_REQUIRED}</p>
+        )}
+        <label className="form-label">Fecha</label>
         <Input
           label="Fecha"
           type="date"
           value={date}
+          className={errors.MATCH_DATE_REQUIRED ? "input-error" : ""}
           onChange={(e) => {
             setDate(e.target.value);
-            clearFieldError("date");
+            clearFieldError("MATCH_DATE_REQUIRED");
           }}
-          error={errors.date}
         />
+        {errors.MATCH_DATE_REQUIRED && (
+          <p className="form-error">{errorMessages.MATCH_DATE_REQUIRED}</p>
+        )}
 
         <label className="form-label">Tipo</label>
+
         <select
-          className="form-input"
+          className={`select ${errors.INVALID_MATCH_TYPE ? "input-error" : ""}`}
           value={matchType}
-          onChange={(e) => setMatchType(e.target.value)}
+          onChange={(e) => {
+            setMatchType(e.target.value);
+            clearFieldError("INVALID_MATCH_TYPE");
+          }}
         >
-          <option value="official">Official</option>
-          <option value="friendly">Friendly</option>
-          <option value="scrimmage">Scrimmage</option>
+          <option value="official">Oficial</option>
+          <option value="friendly">Amistoso</option>
+          <option value="scrimmage">Entrenamiento</option>
         </select>
 
+        {errors.INVALID_MATCH_TYPE && (
+          <p className="form-error">{errorMessages.INVALID_MATCH_TYPE}</p>
+        )}
+        <label className="form-label">Ubicación</label>
         <Input
           label="Ubicación"
           value={location}
           onChange={(e) => setLocation(e.target.value)}
           placeholder="Cancha principal"
         />
-
+        <label className="form-label">Notas</label>
         <Input
           label="Notas"
           value={notes}
@@ -119,10 +134,8 @@ export const CreateMatch = () => {
           placeholder="Semifinal, torneo local..."
         />
 
-        {errors.general && <p className="text-danger mt-2">{errors.general}</p>}
-
         <div className="mt-4">
-          <Button variant="primary" onClick={handleSubmit} disabled={loading}>
+          <Button onClick={handleSubmit} disabled={loading}>
             {loading ? "Creando..." : "Crear partido"}
           </Button>
         </div>

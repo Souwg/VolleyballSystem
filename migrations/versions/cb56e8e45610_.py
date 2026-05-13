@@ -1,8 +1,8 @@
 """empty message
 
-Revision ID: e987339be867
+Revision ID: cb56e8e45610
 Revises: 
-Create Date: 2026-04-09 03:47:18.096407
+Create Date: 2026-05-06 18:56:12.995811
 
 """
 from alembic import op
@@ -10,7 +10,7 @@ import sqlalchemy as sa
 
 
 # revision identifiers, used by Alembic.
-revision = 'e987339be867'
+revision = 'cb56e8e45610'
 down_revision = None
 branch_labels = None
 depends_on = None
@@ -39,6 +39,8 @@ def upgrade():
     sa.Column('last_name', sa.String(length=80), nullable=False),
     sa.Column('sex', sa.String(length=10), nullable=True),
     sa.Column('birth_date', sa.Date(), nullable=True),
+    sa.Column('main_position', sa.String(length=20), nullable=True),
+    sa.Column('is_active', sa.Boolean(), nullable=False),
     sa.Column('club_id', sa.String(length=36), nullable=False),
     sa.Column('created_at', sa.DateTime(), nullable=True),
     sa.ForeignKeyConstraint(['club_id'], ['clubs.id'], ),
@@ -74,8 +76,13 @@ def upgrade():
     sa.Column('team_id', sa.String(length=36), nullable=False),
     sa.Column('date', sa.Date(), nullable=False),
     sa.Column('opponent_name', sa.String(length=120), nullable=True),
-    sa.Column('match_type', sa.String(length=30), nullable=True),
+    sa.Column('match_type', sa.String(length=30), nullable=False),
     sa.Column('location', sa.String(length=255), nullable=True),
+    sa.Column('home_sets', sa.Integer(), nullable=False),
+    sa.Column('opponent_sets', sa.Integer(), nullable=False),
+    sa.Column('result', sa.String(length=20), nullable=True),
+    sa.Column('is_completed', sa.Boolean(), nullable=False),
+    sa.Column('match_step', sa.Integer(), nullable=False),
     sa.Column('notes', sa.Text(), nullable=True),
     sa.Column('created_by', sa.String(length=36), nullable=True),
     sa.Column('created_at', sa.DateTime(), nullable=True),
@@ -135,8 +142,11 @@ def upgrade():
     sa.Column('match_id', sa.String(length=36), nullable=False),
     sa.Column('player_id', sa.String(length=36), nullable=False),
     sa.Column('player_number', sa.Integer(), nullable=False),
+    sa.Column('is_called', sa.Boolean(), nullable=False),
     sa.Column('attendance_status', sa.String(length=20), nullable=True),
-    sa.Column('did_play', sa.Boolean(), nullable=True),
+    sa.Column('did_play', sa.Boolean(), nullable=False),
+    sa.Column('is_on_court', sa.Boolean(), nullable=True),
+    sa.Column('position', sa.String(length=20), nullable=True),
     sa.Column('created_at', sa.DateTime(), nullable=True),
     sa.ForeignKeyConstraint(['match_id'], ['match_sessions.id'], ),
     sa.ForeignKeyConstraint(['player_id'], ['players.id'], ),
@@ -154,21 +164,57 @@ def upgrade():
     sa.PrimaryKeyConstraint('id'),
     sa.UniqueConstraint('training_id', 'player_id', name='unique_player_per_training')
     )
+    op.create_table('match_events',
+    sa.Column('id', sa.String(length=36), nullable=False),
+    sa.Column('match_id', sa.String(length=36), nullable=False),
+    sa.Column('match_player_id', sa.String(length=36), nullable=False),
+    sa.Column('action_type', sa.String(length=30), nullable=False),
+    sa.Column('result', sa.String(length=30), nullable=False),
+    sa.Column('set_number', sa.Integer(), nullable=False),
+    sa.Column('created_at', sa.DateTime(), nullable=True),
+    sa.ForeignKeyConstraint(['match_id'], ['match_sessions.id'], ),
+    sa.ForeignKeyConstraint(['match_player_id'], ['match_players.id'], ),
+    sa.PrimaryKeyConstraint('id')
+    )
+    op.create_table('match_substitutions',
+    sa.Column('id', sa.String(length=36), nullable=False),
+    sa.Column('match_id', sa.String(length=36), nullable=False),
+    sa.Column('set_number', sa.Integer(), nullable=False),
+    sa.Column('player_out_id', sa.String(length=36), nullable=False),
+    sa.Column('player_in_id', sa.String(length=36), nullable=False),
+    sa.Column('created_at', sa.DateTime(), nullable=True),
+    sa.ForeignKeyConstraint(['match_id'], ['match_sessions.id'], ),
+    sa.ForeignKeyConstraint(['player_in_id'], ['match_players.id'], ),
+    sa.ForeignKeyConstraint(['player_out_id'], ['match_players.id'], ),
+    sa.PrimaryKeyConstraint('id')
+    )
     op.create_table('player_match_stats',
     sa.Column('id', sa.String(length=36), nullable=False),
     sa.Column('match_player_id', sa.String(length=36), nullable=False),
-    sa.Column('position', sa.String(length=10), nullable=True),
     sa.Column('attacks_total', sa.Integer(), nullable=True),
     sa.Column('attacks_positive', sa.Integer(), nullable=True),
+    sa.Column('attacks_neutral', sa.Integer(), nullable=True),
     sa.Column('attacks_errors', sa.Integer(), nullable=True),
     sa.Column('receptions_total', sa.Integer(), nullable=True),
     sa.Column('receptions_positive', sa.Integer(), nullable=True),
+    sa.Column('receptions_neutral', sa.Integer(), nullable=True),
     sa.Column('receptions_negative', sa.Integer(), nullable=True),
+    sa.Column('defenses_total', sa.Integer(), nullable=True),
+    sa.Column('defenses_positive', sa.Integer(), nullable=True),
+    sa.Column('defenses_neutral', sa.Integer(), nullable=True),
+    sa.Column('defenses_negative', sa.Integer(), nullable=True),
+    sa.Column('sets_total', sa.Integer(), nullable=True),
+    sa.Column('sets_positive', sa.Integer(), nullable=True),
+    sa.Column('sets_neutral', sa.Integer(), nullable=True),
+    sa.Column('sets_errors', sa.Integer(), nullable=True),
     sa.Column('serves_total', sa.Integer(), nullable=True),
+    sa.Column('serves_in', sa.Integer(), nullable=True),
     sa.Column('serves_aces', sa.Integer(), nullable=True),
     sa.Column('serves_errors', sa.Integer(), nullable=True),
-    sa.Column('blocks_total', sa.Integer(), nullable=True),
+    sa.Column('blocks_total', sa.Integer(), nullable=False),
     sa.Column('blocks_points', sa.Integer(), nullable=True),
+    sa.Column('blocks_neutral', sa.Integer(), nullable=False),
+    sa.Column('blocks_errors', sa.Integer(), nullable=False),
     sa.Column('created_at', sa.DateTime(), nullable=True),
     sa.ForeignKeyConstraint(['match_player_id'], ['match_players.id'], ),
     sa.PrimaryKeyConstraint('id'),
@@ -180,6 +226,8 @@ def upgrade():
 def downgrade():
     # ### commands auto generated by Alembic - please adjust! ###
     op.drop_table('player_match_stats')
+    op.drop_table('match_substitutions')
+    op.drop_table('match_events')
     op.drop_table('training_players')
     op.drop_table('match_players')
     op.drop_table('attendance')

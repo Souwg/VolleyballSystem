@@ -114,6 +114,9 @@ class Player(db.Model):
     last_name = db.Column(db.String(80), nullable=False)
     sex = db.Column(db.String(10))
     birth_date = db.Column(db.Date)
+    main_position = db.Column(db.String(20), nullable=True)
+
+    is_active = db.Column(db.Boolean(), default=True, nullable=False)
 
     club_id = db.Column(
         db.String(36),
@@ -135,6 +138,8 @@ class Player(db.Model):
             "last_name": self.last_name,
             "sex": self.sex,
             "birth_date": self.birth_date.isoformat() if self.birth_date else None,
+            "main_position": self.main_position,
+            "is_active": self.is_active,
             "club_id": self.club_id,
             "created_at": self.created_at.isoformat()
         }
@@ -360,12 +365,19 @@ class MatchSession(db.Model):
 
     match_type = db.Column(
         db.String(30),
-        default="official"
+        default="official", nullable=False
     )
 
     location = db.Column(db.String(255))
+    home_sets = db.Column(db.Integer, default=0, nullable=False)
+    opponent_sets = db.Column(db.Integer, default=0, nullable=False)
+    result = db.Column(db.String(20))
+    is_completed = db.Column(db.Boolean, default=False, nullable=False)
+    match_step = db.Column(db.Integer, default=0, nullable=False)
 
     notes = db.Column(db.Text)
+
+    
 
     created_by = db.Column(
         db.String(36),
@@ -391,8 +403,14 @@ class MatchSession(db.Model):
             "match_type": self.match_type,
             "location": self.location,
             "notes": self.notes,
+            "home_sets": self.home_sets,
+            "opponent_sets": self.opponent_sets,
+            "result": self.result,
+            "match_step": self.match_step,
+            "is_completed": self.is_completed,
             "created_by": self.created_by,
-            "created_at": self.created_at.isoformat()
+            "created_at": self.created_at.isoformat(),
+           
         }
     
 class MatchPlayer(db.Model):
@@ -426,15 +444,22 @@ class MatchPlayer(db.Model):
 
     player_number = db.Column(db.Integer, nullable=False)
 
+    is_called = db.Column(db.Boolean, default=False, nullable=False)
+
     attendance_status = db.Column(
         db.String(20),
-        default="present"
+        nullable=True,
     )
 
     did_play = db.Column(
         db.Boolean,
-        default=False
+        default=False,
+        nullable=False
     )
+
+    is_on_court = db.Column(db.Boolean(), default=False)
+
+    position = db.Column(db.String(20), nullable=True)
 
     created_at = db.Column(
         db.DateTime,
@@ -457,10 +482,106 @@ class MatchPlayer(db.Model):
             "match_id": self.match_id,
             "player_id": self.player_id,
             "player_number": self.player_number,
+            "is_called": self.is_called,
             "attendance_status": self.attendance_status,
             "did_play": self.did_play,
+            "is_on_court": self.is_on_court,
+            "position": self.position,
             "created_at": self.created_at.isoformat(),
             "player": self.player.serialize() if self.player else None
+        }
+class MatchSubstitution(db.Model):
+    __tablename__ = "match_substitutions"
+
+    id = db.Column(db.String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
+
+    match_id = db.Column(db.String(36), db.ForeignKey("match_sessions.id"), nullable=False)
+    set_number = db.Column(db.Integer, nullable=False)
+
+    player_out_id = db.Column(db.String(36), db.ForeignKey("match_players.id"), nullable=False)
+    player_in_id = db.Column(db.String(36), db.ForeignKey("match_players.id"), nullable=False)
+
+    created_at = db.Column(db.DateTime(), default=datetime.utcnow)
+
+    match = db.relationship("MatchSession", backref="substitutions")
+    player_out = db.relationship(
+        "MatchPlayer",
+        foreign_keys=[player_out_id]
+    )
+    player_in = db.relationship(
+        "MatchPlayer",
+        foreign_keys=[player_in_id]
+    )
+
+    def serialize(self):
+        return {
+            "id": self.id,
+            "match_id": self.match_id,
+            "set_number": self.set_number,
+            "player_out_id": self.player_out_id,
+            "player_in_id": self.player_in_id,
+            "created_at": self.created_at.isoformat() if self.created_at else None,
+        }
+    
+class MatchEvent(db.Model):
+    __tablename__ = "match_events"
+
+    id = db.Column(
+        db.String(36),
+        primary_key=True,
+        default=lambda: str(uuid.uuid4())
+    )
+
+    match_id = db.Column(
+        db.String(36),
+        db.ForeignKey("match_sessions.id"),
+        nullable=False
+    )
+
+    match_player_id = db.Column(
+        db.String(36),
+        db.ForeignKey("match_players.id"),
+        nullable=False
+    )
+
+    action_type = db.Column(
+        db.String(30),
+        nullable=False
+    )
+    # attack, reception, defense, set, serve, block
+
+    result = db.Column(
+        db.String(30),
+        nullable=False
+    )
+
+    set_number = db.Column(db.Integer, nullable=False, default=1)
+    # positive, neutral, negative, error, ace, in, point
+
+    created_at = db.Column(
+        db.DateTime,
+        default=datetime.utcnow
+    )
+
+    match = db.relationship(
+        "MatchSession",
+        backref=db.backref("events", lazy=True)
+    )
+
+    match_player = db.relationship(
+        "MatchPlayer",
+        backref=db.backref("events", lazy=True)
+    )
+
+    def serialize(self):
+        return {
+            "id": self.id,
+            "match_id": self.match_id,
+            "match_player_id": self.match_player_id,
+            "action_type": self.action_type,
+            "result": self.result,
+            "set_number": self.set_number,
+            "created_at": self.created_at.isoformat()
         }
     
 class PlayerMatchStat(db.Model):
@@ -479,22 +600,38 @@ class PlayerMatchStat(db.Model):
         unique=True
     )
 
-    position = db.Column(db.String(10))
+
 
     attacks_total = db.Column(db.Integer, default=0)
     attacks_positive = db.Column(db.Integer, default=0)
+    attacks_neutral = db.Column(db.Integer, default=0)
     attacks_errors = db.Column(db.Integer, default=0)
 
     receptions_total = db.Column(db.Integer, default=0)
     receptions_positive = db.Column(db.Integer, default=0)
+    receptions_neutral = db.Column(db.Integer, default=0)
     receptions_negative = db.Column(db.Integer, default=0)
 
+    defenses_total = db.Column(db.Integer, default=0)
+    defenses_positive = db.Column(db.Integer, default=0)
+    defenses_neutral = db.Column(db.Integer, default=0)
+    defenses_negative = db.Column(db.Integer, default=0)
+
+    sets_total = db.Column(db.Integer, default=0)
+    sets_positive = db.Column(db.Integer, default=0)
+    sets_neutral = db.Column(db.Integer, default=0)
+    sets_errors = db.Column(db.Integer, default=0)
+
     serves_total = db.Column(db.Integer, default=0)
+    serves_in = db.Column(db.Integer, default=0)
     serves_aces = db.Column(db.Integer, default=0)
     serves_errors = db.Column(db.Integer, default=0)
 
-    blocks_total = db.Column(db.Integer, default=0)
+    
+    blocks_total = db.Column(db.Integer, nullable=False, default=0)
     blocks_points = db.Column(db.Integer, default=0)
+    blocks_neutral = db.Column(db.Integer, nullable=False, default=0)
+    blocks_errors = db.Column(db.Integer, nullable=False, default=0)
 
     created_at = db.Column(
         db.DateTime,
@@ -510,18 +647,30 @@ class PlayerMatchStat(db.Model):
         return {
             "id": self.id,
             "match_player_id": self.match_player_id,
-            "position": self.position,
             "attacks_total": self.attacks_total,
             "attacks_positive": self.attacks_positive,
+            "attacks_neutral": self.attacks_neutral,
             "attacks_errors": self.attacks_errors,
             "receptions_total": self.receptions_total,
             "receptions_positive": self.receptions_positive,
+            "receptions_neutral": self.receptions_neutral,
             "receptions_negative": self.receptions_negative,
+            "defenses_total": self.defenses_total,
+            "defenses_positive": self.defenses_positive,
+            "defenses_neutral": self.defenses_neutral,
+            "defenses_negative": self.defenses_negative,
+            "sets_total": self.sets_total,
+            "sets_positive": self.sets_positive,
+            "sets_neutral": self.sets_neutral,
+            "sets_errors": self.sets_errors,
             "serves_total": self.serves_total,
+            "serves_in": self.serves_in,
             "serves_aces": self.serves_aces,
             "serves_errors": self.serves_errors,
             "blocks_total": self.blocks_total,
             "blocks_points": self.blocks_points,
+            "blocks_neutral": self.blocks_neutral,
+            "blocks_errors": self.blocks_errors,
             "created_at": self.created_at.isoformat()
         }
     

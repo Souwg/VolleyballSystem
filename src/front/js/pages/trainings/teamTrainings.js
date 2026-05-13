@@ -3,7 +3,6 @@ import { useState } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import { Context } from "../../store/appContext";
 
-import { Container } from "../../component/ui/container";
 import { PageHeader } from "../../component/ui/pageHeader";
 import { Card } from "../../component/ui/card";
 import { Button } from "../../component/ui/button";
@@ -41,21 +40,19 @@ export const TeamTrainings = () => {
   };
 
   if (loading) {
-    return (
-      <Container>
-        <p>Cargando entrenamientos...</p>
-      </Container>
-    );
+    return <p>Cargando entrenamientos...</p>;
   }
+
   return (
-    <Container>
+    <div className="team-trainings-page">
       <PageHeader
-        title="Entrenamientos del equipo"
-        subtitle="Gestiona y crea entrenamientos para este equipo"
+        variant="detail"
+        eyebrow="Categoría"
+        title="Entrenamientos"
+        subtitle="Consulta y crea sesiones para esta categoría."
+        onBack={() => navigate(`/teams/${team_id}`)}
         actions={
-          <Button className="button-primary" onClick={handleCreateTraining}>
-            + Crear entrenamiento
-          </Button>
+          <Button onClick={handleCreateTraining}>+ Crear entrenamiento</Button>
         }
       />
       <Card>
@@ -71,7 +68,7 @@ export const TeamTrainings = () => {
           store.trainings.map((training) => (
             <Card
               key={training.id}
-              className="training-card"
+              className="card-interactive"
               onClick={() => handleOpenTraining(training.id)}
             >
               <p>{formatDate(training.date)}</p>
@@ -80,6 +77,6 @@ export const TeamTrainings = () => {
           ))
         )}
       </Card>
-    </Container>
+    </div>
   );
 };

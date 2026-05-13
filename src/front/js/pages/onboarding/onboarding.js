@@ -14,6 +14,8 @@ import { errorMessages } from "../../utils/errorMessages";
 import { StepIndicator } from "../../component/ui/stepIndicator";
 import { Input } from "../../component/ui/input";
 import { Button } from "../../component/ui/button";
+import { FormField } from "../../component/ui/formField";
+import { Select } from "../../component/ui/select";
 
 export const Onboarding = () => {
   const { store, actions } = useContext(Context);
@@ -22,7 +24,6 @@ export const Onboarding = () => {
   const [location, setLocation] = useState("");
   const [firstName, setFirstName] = useState("");
   const [lastName, setLastName] = useState("");
-  const [birthDate, setBirthDate] = useState("");
   const [number, setNumber] = useState("");
   const [sex, setSex] = useState("");
   const [teamName, setTeamName] = useState("");
@@ -103,7 +104,6 @@ export const Onboarding = () => {
       first_name: firstName,
       last_name: lastName,
       sex,
-      birth_date: birthDate,
     });
 
     const assignmentErrors = validatePlayerAssignment({
@@ -126,7 +126,6 @@ export const Onboarding = () => {
     const result = await actions.createPlayer({
       first_name: firstName.trim(),
       last_name: lastName.trim(),
-      birth_date: birthDate || null,
       sex,
       team_id: selectedTeam,
       player_number: Number(number),
@@ -188,29 +187,36 @@ export const Onboarding = () => {
               <p className="onboarding-greeting">
                 Bienvenido a <strong>{store.club?.name || "tu club"}</strong> 👋
               </p>
-              <Input
-                type="text"
-                value={store.club?.name || ""}
-                disabled
-                className="input-readonly"
-              />
-              <Input
-                type="text"
-                placeholder="Ubicación del club"
-                value={location}
-                className={errors.LOCATION_REQUIRED ? "input-error" : ""}
-                onChange={(e) => {
-                  setLocation(e.target.value);
-                  setErrors((prev) => ({
-                    ...prev,
-                    LOCATION_REQUIRED: false,
-                  }));
-                }}
-              />
-
-              {errors.LOCATION_REQUIRED && (
-                <p className="form-error">{errorMessages.LOCATION_REQUIRED}</p>
-              )}
+              <FormField label="Nombre del club">
+                <Input
+                  type="text"
+                  value={store.club?.name || ""}
+                  disabled
+                  className="input-readonly"
+                />
+              </FormField>
+              <FormField
+                label="Ubicación del club"
+                error={
+                  errors.LOCATION_REQUIRED
+                    ? errorMessages.LOCATION_REQUIRED
+                    : null
+                }
+              >
+                <Input
+                  type="text"
+                  placeholder="Ej: Caracas, Maracay..."
+                  value={location}
+                  className={errors.LOCATION_REQUIRED ? "input-error" : ""}
+                  onChange={(e) => {
+                    setLocation(e.target.value);
+                    setErrors((prev) => ({
+                      ...prev,
+                      LOCATION_REQUIRED: false,
+                    }));
+                  }}
+                />
+              </FormField>
 
               <Button type="submit" disabled={savingClub}>
                 {savingClub ? "Guardando..." : "Continuar"}
@@ -225,59 +231,60 @@ export const Onboarding = () => {
           subtitle: "Aquí comienza la organización de tu club",
           form: (
             <form className="auth-form" onSubmit={handleCreateTeam}>
-              <Input
-                type="text"
-                placeholder="Nombre de la categoría"
-                value={teamName}
-                className={
-                  errors.TEAM_NAME_REQUIRED || errors.TEAM_ALREADY_EXISTS
-                    ? "input-error"
-                    : ""
+              <FormField
+                label="Nombre de la categoría"
+                error={
+                  errors.TEAM_NAME_REQUIRED
+                    ? errorMessages.TEAM_NAME_REQUIRED
+                    : errors.TEAM_ALREADY_EXISTS
+                    ? errorMessages.TEAM_ALREADY_EXISTS
+                    : null
                 }
-                onChange={(e) => {
-                  setTeamName(e.target.value);
-                  setErrors((prev) => ({
-                    ...prev,
-                    TEAM_NAME_REQUIRED: false,
-                    TEAM_ALREADY_EXISTS: false,
-                  }));
-                }}
-              />
-
-              {errors.TEAM_NAME_REQUIRED && (
-                <p className="form-error">{errorMessages.TEAM_NAME_REQUIRED}</p>
-              )}
-
-              {errors.TEAM_ALREADY_EXISTS && (
-                <p className="form-error">
-                  {errorMessages.TEAM_ALREADY_EXISTS}
-                </p>
-              )}
-
-              <select
-                className={`select ${
-                  errors.INVALID_TEAM_GENDER ? "input-error" : ""
-                }`}
-                value={teamGender}
-                onChange={(e) => {
-                  setTeamGender(e.target.value);
-                  setErrors((prev) => ({
-                    ...prev,
-                    INVALID_TEAM_GENDER: false,
-                  }));
-                }}
               >
-                <option value="">Selecciona la rama</option>
-                <option value="female">Femenino</option>
-                <option value="male">Masculino</option>
-                <option value="mixed">Mixto</option>
-              </select>
-
-              {errors.INVALID_TEAM_GENDER && (
-                <p className="form-error">
-                  {errorMessages.INVALID_TEAM_GENDER}
-                </p>
-              )}
+                <Input
+                  type="text"
+                  placeholder="Ej: Iniciación, Juvenil, Superior..."
+                  value={teamName}
+                  className={
+                    errors.TEAM_NAME_REQUIRED || errors.TEAM_ALREADY_EXISTS
+                      ? "input-error"
+                      : ""
+                  }
+                  onChange={(e) => {
+                    setTeamName(e.target.value);
+                    setErrors((prev) => ({
+                      ...prev,
+                      TEAM_NAME_REQUIRED: false,
+                      TEAM_ALREADY_EXISTS: false,
+                    }));
+                  }}
+                />
+              </FormField>
+              <FormField
+                label="Género"
+                error={
+                  errors.INVALID_TEAM_GENDER
+                    ? errorMessages.INVALID_TEAM_GENDER
+                    : null
+                }
+              >
+                <Select
+                  className={errors.INVALID_TEAM_GENDER ? "input-error" : ""}
+                  value={teamGender}
+                  onChange={(e) => {
+                    setTeamGender(e.target.value);
+                    setErrors((prev) => ({
+                      ...prev,
+                      INVALID_TEAM_GENDER: false,
+                    }));
+                  }}
+                >
+                  <option value="">Selecciona el género</option>
+                  <option value="female">Femenino</option>
+                  <option value="male">Masculino</option>
+                  <option value="mixed">Mixto</option>
+                </Select>
+              </FormField>
               <Button type="submit" disabled={creatingTeam}>
                 {creatingTeam ? "Creando..." : "Continuar"}
               </Button>
@@ -287,11 +294,18 @@ export const Onboarding = () => {
 
       case 3:
         return {
-          title: "Agrega tu primer jugador",
-          subtitle: "Empieza a construir tu equipo",
+          title: "Agrega tu primer deportista",
+          subtitle: "Empieza a construir el roster de tu club",
           form: (
             <form className="auth-form" onSubmit={handleCreatePlayer}>
-              <div>
+              <FormField
+                label="Nombre"
+                error={
+                  errors.FIRST_NAME_REQUIRED
+                    ? errorMessages.FIRST_NAME_REQUIRED
+                    : null
+                }
+              >
                 <Input
                   type="text"
                   placeholder="Nombre"
@@ -305,14 +319,15 @@ export const Onboarding = () => {
                     }));
                   }}
                 />
-
-                {errors.FIRST_NAME_REQUIRED && (
-                  <p className="form-error">
-                    {errorMessages.FIRST_NAME_REQUIRED}
-                  </p>
-                )}
-              </div>
-              <div>
+              </FormField>
+              <FormField
+                label="Apellido"
+                error={
+                  errors.LAST_NAME_REQUIRED
+                    ? errorMessages.LAST_NAME_REQUIRED
+                    : null
+                }
+              >
                 <Input
                   type="text"
                   placeholder="Apellido"
@@ -326,37 +341,23 @@ export const Onboarding = () => {
                     }));
                   }}
                 />
+              </FormField>
 
-                {errors.LAST_NAME_REQUIRED && (
-                  <p className="form-error">
-                    {errorMessages.LAST_NAME_REQUIRED}
-                  </p>
-                )}
-              </div>
-              <div>
-                <Input
-                  type="date"
-                  value={birthDate}
-                  className={errors.INVALID_BIRTH_DATE ? "input-error" : ""}
-                  onChange={(e) => {
-                    setBirthDate(e.target.value);
-                    setErrors((prev) => ({
-                      ...prev,
-                      INVALID_BIRTH_DATE: false,
-                    }));
-                  }}
-                />
-
-                {errors.INVALID_BIRTH_DATE && (
-                  <p className="form-error">
-                    {errorMessages.INVALID_BIRTH_DATE}
-                  </p>
-                )}
-              </div>
-              <div>
+              <FormField
+                label="Número en la categoría"
+                error={
+                  errors.PLAYER_NUMBER_REQUIRED
+                    ? errorMessages.PLAYER_NUMBER_REQUIRED
+                    : errors.INVALID_PLAYER_NUMBER
+                    ? errorMessages.INVALID_PLAYER_NUMBER
+                    : errors.PLAYER_NUMBER_DUPLICATED
+                    ? errorMessages.PLAYER_NUMBER_DUPLICATED
+                    : null
+                }
+              >
                 <Input
                   type="number"
-                  placeholder="Número del jugador"
+                  placeholder="Ej: 10"
                   value={number}
                   className={
                     errors.PLAYER_NUMBER_REQUIRED ||
@@ -366,7 +367,24 @@ export const Onboarding = () => {
                       : ""
                   }
                   onChange={(e) => {
-                    setNumber(e.target.value);
+                    const value = e.target.value;
+
+                    if (value === "") {
+                      setNumber("");
+                      setErrors((prev) => ({
+                        ...prev,
+                        PLAYER_NUMBER_REQUIRED: false,
+                        INVALID_PLAYER_NUMBER: false,
+                        PLAYER_NUMBER_DUPLICATED: false,
+                      }));
+                      return;
+                    }
+
+                    if (value.length > 2) return;
+                    if (Number(value) <= 0) return;
+
+                    setNumber(value);
+
                     setErrors((prev) => ({
                       ...prev,
                       PLAYER_NUMBER_REQUIRED: false,
@@ -375,62 +393,51 @@ export const Onboarding = () => {
                     }));
                   }}
                 />
-                {errors.PLAYER_NUMBER_REQUIRED && (
-                  <p className="form-error">
-                    {errorMessages.PLAYER_NUMBER_REQUIRED}
-                  </p>
-                )}
-                {errors.INVALID_PLAYER_NUMBER && (
-                  <p className="form-error">
-                    {errorMessages.INVALID_PLAYER_NUMBER}
-                  </p>
-                )}
+              </FormField>
 
-                {errors.PLAYER_NUMBER_DUPLICATED && (
-                  <p className="form-error">
-                    {errorMessages.PLAYER_NUMBER_DUPLICATED}
-                  </p>
-                )}
-              </div>
-
-              <div>
-                {selectedTeamData?.gender === "mixed" && (
-                  <>
-                    <select
-                      className={`select ${
-                        errors.INVALID_SEX || errors.SEX_REQUIRED
-                          ? "input-error"
-                          : ""
-                      }`}
-                      value={sex}
-                      onChange={(e) => {
-                        setSex(e.target.value);
-                        setErrors((prev) => ({
-                          ...prev,
-                          INVALID_SEX: false,
-                          SEX_REQUIRED: false,
-                        }));
-                      }}
-                    >
-                      <option value="">Sexo</option>
-                      <option value="male">Masculino</option>
-                      <option value="female">Femenino</option>
-                    </select>
-                    {errors.SEX_REQUIRED && (
-                      <p className="form-error">{errorMessages.SEX_REQUIRED}</p>
-                    )}
-
-                    {errors.INVALID_SEX && (
-                      <p className="form-error">{errorMessages.INVALID_SEX}</p>
-                    )}
-                  </>
-                )}
-              </div>
-              <div>
-                <select
-                  className={`select ${
-                    errors.TEAM_ID_REQUIRED ? "input-error" : ""
-                  }`}
+              {selectedTeamData?.gender === "mixed" && (
+                <FormField
+                  label="Sexo"
+                  error={
+                    errors.SEX_REQUIRED
+                      ? errorMessages.SEX_REQUIRED
+                      : errors.INVALID_SEX
+                      ? errorMessages.INVALID_SEX
+                      : null
+                  }
+                >
+                  <Select
+                    className={
+                      errors.INVALID_SEX || errors.SEX_REQUIRED
+                        ? "input-error"
+                        : ""
+                    }
+                    value={sex}
+                    onChange={(e) => {
+                      setSex(e.target.value);
+                      setErrors((prev) => ({
+                        ...prev,
+                        INVALID_SEX: false,
+                        SEX_REQUIRED: false,
+                      }));
+                    }}
+                  >
+                    <option value="">Selecciona sexo</option>
+                    <option value="male">Masculino</option>
+                    <option value="female">Femenino</option>
+                  </Select>
+                </FormField>
+              )}
+              <FormField
+                label="Categoría"
+                error={
+                  errors.TEAM_ID_REQUIRED
+                    ? errorMessages.TEAM_ID_REQUIRED
+                    : null
+                }
+              >
+                <Select
+                  className={errors.TEAM_ID_REQUIRED ? "input-error" : ""}
                   value={selectedTeam}
                   onChange={(e) => {
                     setSelectedTeam(e.target.value);
@@ -443,14 +450,16 @@ export const Onboarding = () => {
                   <option value="">Selecciona una categoría</option>
                   {store.teams?.map((team) => (
                     <option key={team.id} value={team.id}>
-                      {team.name}
+                      {team.name} ·{" "}
+                      {team.gender === "mixed"
+                        ? "Mixto"
+                        : team.gender === "male"
+                        ? "Masculino"
+                        : "Femenino"}
                     </option>
                   ))}
-                </select>
-                {errors.TEAM_ID_REQUIRED && (
-                  <p className="form-error">{errorMessages.TEAM_ID_REQUIRED}</p>
-                )}
-              </div>
+                </Select>
+              </FormField>
               <Button type="submit" disabled={creatingPlayer}>
                 {creatingPlayer ? "Creando..." : "Finalizar configuración"}
               </Button>
@@ -485,7 +494,7 @@ export const Onboarding = () => {
       <p className="onboarding-progress-label">
         {step === 1 && "Configurando tu club"}
         {step === 2 && "Creando tu primera categoría"}
-        {step === 3 && "Agregando jugador"}
+        {step === 3 && "Agregando tu primer deportista"}
         {step === 4 && "Todo listo"}
       </p>
       {content.form}

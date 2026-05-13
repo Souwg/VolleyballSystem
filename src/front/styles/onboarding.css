@@ -17,19 +17,3 @@
 .step.active {
   background: #2563eb;
 }
-
-/* onboarding forms */
-
-.form {
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
-  margin-top: 20px;
-}
-
-.form select {
-  width: 100%;
-  padding: 12px;
-  border-radius: 8px;
-  border: 1px solid #ddd;
-}

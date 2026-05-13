@@ -8,12 +8,13 @@ import {
 } from "../../utils/validators";
 import { errorMessages } from "../../utils/errorMessages";
 import { useToast } from "../../../../context/toastContext";
-
-import { Container } from "../../component/ui/container";
 import { PageHeader } from "../../component/ui/pageHeader";
 import { Input } from "../../component/ui/input";
+import { FormField } from "../../component/ui/formField";
+import { Select } from "../../component/ui/select";
 import { Button } from "../../component/ui/button";
 import { Card } from "../../component/ui/card";
+import "../../../styles/teamDetails.css";
 
 export const TeamDetail = () => {
   const { actions } = useContext(Context);
@@ -187,7 +188,7 @@ export const TeamDetail = () => {
     setPlayerNumber("");
     setSex(team?.gender === "mixed" ? "" : team.gender);
 
-    await loadTeamPlayers();
+    setPlayers((prev) => [...prev, result.data.player]);
 
     setLoadingSubmit(false);
     setShowForm(false);
@@ -222,20 +223,18 @@ export const TeamDetail = () => {
     const result = await actions.removePlayerFromTeam(team_id, player.id);
 
     if (!result.ok) {
-      showToast("No se pudo quitar la jugadora", "error");
+      showToast("No se pudo quitar el deportista", "error");
       return;
     }
 
-    await loadTeamPlayers();
-
-    await actions.getPlayers();
+    setPlayers((prev) => prev.filter((p) => p.id !== player.id));
   };
 
   const handleLoadExistingPlayers = async () => {
     const result = await actions.getPlayers();
 
     if (!result.ok || !result.data.players.length) {
-      showToast("No hay jugadores existentes en el club", "info");
+      showToast("No hay deportistas existentes en el club", "info");
       return;
     }
 
@@ -244,11 +243,16 @@ export const TeamDetail = () => {
 
       const validGender = team.gender === "mixed" || p.sex === team.gender;
 
-      return !alreadyInTeam && validGender;
+      const isActive = p.is_active === true;
+
+      return !alreadyInTeam && validGender && isActive;
     });
 
     if (!filteredPlayers.length) {
-      showToast("Todos los jugadores ya están en este equipo", "info");
+      showToast(
+        "Todos los deportistas disponibles ya están en esta categoría",
+        "info",
+      );
       return;
     }
 
@@ -262,57 +266,65 @@ export const TeamDetail = () => {
   }, [team_id]);
 
   if (loading) {
-    return <p>Loading team...</p>;
+    return <p>Cargando categoría...</p>;
   }
 
   return (
-    <>
+    <div className="team-detail-page">
       <PageHeader
+        variant="detail"
+        eyebrow="Categoría"
         title={team.name}
-        subtitle={`Categoría ${
+        subtitle={`${
           team.gender === "female"
             ? "Femenina"
             : team.gender === "male"
             ? "Masculina"
             : "Mixta"
-        }`}
+        } • ${players.length} deportistas`}
+        onBack={() => navigate("/teams")}
         actions={
-          <>
+          <div className="team-detail-header-actions">
+            {!showAddOptions &&
+              !showForm &&
+              availablePlayers.length === 0 &&
+              !selectedExistingPlayer && (
+                <Button
+                  onClick={() => {
+                    setShowAddOptions(true);
+                    setShowForm(false);
+                    setAvailablePlayers([]);
+                    setSelectedExistingPlayer(null);
+                    setExistingPlayerNumber("");
+                    setErrors({});
+                  }}
+                >
+                  + Añadir deportista
+                </Button>
+              )}
+
             <Button
-              className="button-primary"
-              onClick={() => {
-                setShowAddOptions(true);
-                setErrors({});
-              }}
-            >
-              + Añadir jugador
-            </Button>
-            <Button
-              className="button-secondary"
+              variant="secondary"
               onClick={() => navigate(`/teams/${team_id}/trainings`)}
             >
-              Trainings
+              Entrenamientos
             </Button>
+
             <Button
               variant="secondary"
               onClick={() => navigate(`/teams/${team.id}/matches`)}
             >
-              Match Sessions
+              Partidos
             </Button>
-            <div className="team-actions">
-              <Button className="button-danger" onClick={handleDeleteTeam}>
-                Eliminar categoría
-              </Button>
-            </div>
-          </>
+          </div>
         }
       />
       {showAddOptions && (
         <Card className="add-player-options">
-          <h4>Añadir jugador</h4>
+          <h4>Añadir deportista</h4>
 
           <Button
-            className="button-secondary"
+            variant="secondary"
             onClick={() => {
               setShowAddOptions(false);
               setAvailablePlayers([]);
@@ -321,27 +333,19 @@ export const TeamDetail = () => {
               setShowForm(true);
             }}
           >
-            Crear jugador nuevo
+            Crear deportista nuevo
           </Button>
 
-          <Button
-            className="button-primary"
-            onClick={handleLoadExistingPlayers}
-          >
-            Agregar existente
-          </Button>
+          <Button onClick={handleLoadExistingPlayers}>Agregar existente</Button>
 
-          <Button
-            className="button-secondary"
-            onClick={() => setShowAddOptions(false)}
-          >
+          <Button variant="secondary" onClick={() => setShowAddOptions(false)}>
             Cancelar
           </Button>
         </Card>
       )}
       {availablePlayers.length > 0 && (
         <Card>
-          <h4>Selecciona jugador</h4>
+          <h4>Selecciona deportista</h4>
 
           <div className="players-list">
             {availablePlayers.map((player) => (
@@ -368,7 +372,8 @@ export const TeamDetail = () => {
           </div>
 
           <Button
-            className="button-secondary"
+            className="mt-2"
+            variant="secondary"
             onClick={() => setAvailablePlayers([])}
           >
             Cancelar
@@ -387,42 +392,66 @@ export const TeamDetail = () => {
 
               {selectedExistingPlayer.teams.map((team) => (
                 <div key={team.id} className="team-pill">
-                  {team.name} · #{team.player_number}
+                  {team.name} ·{" "}
+                  {team.gender === "female"
+                    ? "Femenina"
+                    : team.gender === "male"
+                    ? "Masculina"
+                    : "Mixta"}{" "}
+                  · #{team.player_number}
                 </div>
               ))}
             </div>
           )}
-          <Input
-            type="number"
-            placeholder="Número en este equipo"
-            value={existingPlayerNumber}
-            onChange={(e) => {
-              const value = e.target.value;
-
-              if (value === "") {
-                setExistingPlayerNumber("");
-                return;
+          <FormField
+            label="Número en la categoría"
+            error={
+              errors.PLAYER_NUMBER_REQUIRED
+                ? errorMessages.PLAYER_NUMBER_REQUIRED
+                : errors.PLAYER_NUMBER_DUPLICATED
+                ? errorMessages.PLAYER_NUMBER_DUPLICATED
+                : null
+            }
+          >
+            <Input
+              type="number"
+              placeholder="número del jugador en esta categoría"
+              value={existingPlayerNumber}
+              className={
+                errors.PLAYER_NUMBER_REQUIRED || errors.PLAYER_NUMBER_DUPLICATED
+                  ? "input-error"
+                  : ""
               }
+              onChange={(e) => {
+                const value = e.target.value;
 
-              if (value.length > 2) return;
-              if (Number(value) <= 0) return;
+                if (value === "") {
+                  setExistingPlayerNumber("");
+                  setErrors((prev) => ({
+                    ...prev,
+                    PLAYER_NUMBER_REQUIRED: false,
+                    PLAYER_NUMBER_DUPLICATED: false,
+                  }));
+                  return;
+                }
 
-              setExistingPlayerNumber(value);
-            }}
-          />
-          {errors.PLAYER_NUMBER_REQUIRED && (
-            <p className="form-error">{errorMessages.PLAYER_NUMBER_REQUIRED}</p>
-          )}
+                if (value.length > 2) return;
+                if (Number(value) <= 0) return;
 
-          {errors.PLAYER_NUMBER_DUPLICATED && (
-            <p className="form-error">
-              {errorMessages.PLAYER_NUMBER_DUPLICATED}
-            </p>
-          )}
+                setExistingPlayerNumber(value);
 
-          <div className="form-actions">
+                setErrors((prev) => ({
+                  ...prev,
+                  PLAYER_NUMBER_REQUIRED: false,
+                  PLAYER_NUMBER_DUPLICATED: false,
+                }));
+              }}
+            />
+          </FormField>
+
+          <div className="form-actions mt-2">
             <Button
-              className="button-secondary"
+              variant="secondary"
               onClick={() => {
                 setSelectedExistingPlayer(null);
                 setExistingPlayerNumber("");
@@ -432,7 +461,6 @@ export const TeamDetail = () => {
             </Button>
 
             <Button
-              className="button-primary"
               onClick={async () => {
                 if (!existingPlayerNumber) {
                   setErrors({ PLAYER_NUMBER_REQUIRED: true });
@@ -449,9 +477,20 @@ export const TeamDetail = () => {
                   return;
                 }
 
+                setPlayers((prev) => [
+                  ...prev,
+                  {
+                    id: selectedExistingPlayer.id,
+                    first_name: selectedExistingPlayer.first_name,
+                    last_name: selectedExistingPlayer.last_name,
+                    sex: selectedExistingPlayer.sex,
+                    player_number: Number(existingPlayerNumber),
+                    status: "active",
+                  },
+                ]);
+
                 setSelectedExistingPlayer(null);
                 setExistingPlayerNumber("");
-                await loadTeamPlayers();
               }}
             >
               Guardar
@@ -459,126 +498,144 @@ export const TeamDetail = () => {
           </div>
         </Card>
       )}
+
       {showForm && (
         <Card>
-          <h4>Nuevo jugador</h4>
+          <h4>Nuevo deportista</h4>
 
           <form onSubmit={registerPlayer} className="form">
-            <Input
-              value={firstName}
-              className={errors.FIRST_NAME_REQUIRED ? "input-error" : ""}
-              placeholder="Nombre"
-              onChange={(e) => {
-                setFirstName(e.target.value);
-                setErrors((prev) => ({
-                  ...prev,
-                  FIRST_NAME_REQUIRED: false,
-                }));
-              }}
-            />
-
-            {errors.FIRST_NAME_REQUIRED && (
-              <p className="form-error">{errorMessages.FIRST_NAME_REQUIRED}</p>
-            )}
-
-            <Input
-              value={lastName}
-              className={errors.LAST_NAME_REQUIRED ? "input-error" : ""}
-              placeholder="Apellido"
-              onChange={(e) => {
-                setLastName(e.target.value);
-                setErrors((prev) => ({
-                  ...prev,
-                  LAST_NAME_REQUIRED: false,
-                }));
-              }}
-            />
-
-            {errors.LAST_NAME_REQUIRED && (
-              <p className="form-error">{errorMessages.LAST_NAME_REQUIRED}</p>
-            )}
-
-            <Input
-              type="number"
-              min="1"
-              max="99"
-              value={playerNumber}
-              className={
-                errors.PLAYER_NUMBER_REQUIRED ||
-                errors.INVALID_PLAYER_NUMBER ||
-                errors.PLAYER_NUMBER_DUPLICATED
-                  ? "input-error"
-                  : ""
+            <FormField
+              label="Nombre"
+              error={
+                errors.FIRST_NAME_REQUIRED
+                  ? errorMessages.FIRST_NAME_REQUIRED
+                  : null
               }
-              placeholder="Número de jugador"
-              onChange={(e) => {
-                const value = e.target.value;
+            >
+              <Input
+                value={firstName}
+                className={errors.FIRST_NAME_REQUIRED ? "input-error" : ""}
+                placeholder="Nombre"
+                onChange={(e) => {
+                  setFirstName(e.target.value);
+                  setErrors((prev) => ({
+                    ...prev,
+                    FIRST_NAME_REQUIRED: false,
+                  }));
+                }}
+              />
+            </FormField>
+            <FormField
+              label="Apellido"
+              error={
+                errors.LAST_NAME_REQUIRED
+                  ? errorMessages.LAST_NAME_REQUIRED
+                  : null
+              }
+            >
+              <Input
+                value={lastName}
+                className={errors.LAST_NAME_REQUIRED ? "input-error" : ""}
+                placeholder="Apellido"
+                onChange={(e) => {
+                  setLastName(e.target.value);
+                  setErrors((prev) => ({
+                    ...prev,
+                    LAST_NAME_REQUIRED: false,
+                  }));
+                }}
+              />
+            </FormField>
+            <FormField
+              label="Número en la categoría"
+              error={
+                errors.PLAYER_NUMBER_REQUIRED
+                  ? errorMessages.PLAYER_NUMBER_REQUIRED
+                  : errors.INVALID_PLAYER_NUMBER
+                  ? errorMessages.INVALID_PLAYER_NUMBER
+                  : errors.PLAYER_NUMBER_DUPLICATED
+                  ? errorMessages.PLAYER_NUMBER_DUPLICATED
+                  : null
+              }
+            >
+              <Input
+                type="number"
+                min="1"
+                max="99"
+                value={playerNumber}
+                className={
+                  errors.PLAYER_NUMBER_REQUIRED ||
+                  errors.INVALID_PLAYER_NUMBER ||
+                  errors.PLAYER_NUMBER_DUPLICATED
+                    ? "input-error"
+                    : ""
+                }
+                placeholder="número del jugador en esta categoría"
+                onChange={(e) => {
+                  const value = e.target.value;
 
-                if (value === "") {
-                  setPlayerNumber("");
+                  if (value === "") {
+                    setPlayerNumber("");
+                    setErrors((prev) => ({
+                      ...prev,
+                      PLAYER_NUMBER_REQUIRED: false,
+                      INVALID_PLAYER_NUMBER: false,
+                      PLAYER_NUMBER_DUPLICATED: false,
+                    }));
+                    return;
+                  }
+
+                  if (value.length > 2) return;
+
+                  setPlayerNumber(value);
+
                   setErrors((prev) => ({
                     ...prev,
                     PLAYER_NUMBER_REQUIRED: false,
                     INVALID_PLAYER_NUMBER: false,
                     PLAYER_NUMBER_DUPLICATED: false,
                   }));
-                  return;
-                }
-
-                if (value.length > 2) return;
-
-                setPlayerNumber(value);
-
-                setErrors((prev) => ({
-                  ...prev,
-                  PLAYER_NUMBER_REQUIRED: false,
-                  INVALID_PLAYER_NUMBER: false,
-                  PLAYER_NUMBER_DUPLICATED: false,
-                }));
-              }}
-            />
-            {errors.PLAYER_NUMBER_REQUIRED && (
-              <p className="form-error">
-                {errorMessages.PLAYER_NUMBER_REQUIRED}
-              </p>
-            )}
-            {errors.INVALID_PLAYER_NUMBER && (
-              <p className="form-error">
-                {errorMessages.INVALID_PLAYER_NUMBER}
-              </p>
-            )}
-            {errors.PLAYER_NUMBER_DUPLICATED && (
-              <p className="form-error">
-                {errorMessages.PLAYER_NUMBER_DUPLICATED}
-              </p>
-            )}
-            {team?.gender === "mixed" && (
-              <select
-                className={`select ${
-                  errors.SEX_REQUIRED || errors.INVALID_SEX ? "input-error" : ""
-                }`}
-                value={sex}
-                onChange={(e) => {
-                  setSex(e.target.value);
-                  setErrors((prev) => ({
-                    ...prev,
-                    SEX_REQUIRED: false,
-                    INVALID_SEX: false,
-                  }));
                 }}
+              />
+            </FormField>
+            {team?.gender === "mixed" && (
+              <FormField
+                label="Sexo"
+                error={
+                  errors.SEX_REQUIRED
+                    ? errorMessages.SEX_REQUIRED
+                    : errors.INVALID_SEX
+                    ? errorMessages.INVALID_SEX
+                    : null
+                }
               >
-                <option value="">Selecciona sexo</option>
-                <option value="male">Masculino</option>
-                <option value="female">Femenino</option>
-              </select>
+                <Select
+                  value={sex}
+                  className={
+                    errors.SEX_REQUIRED || errors.INVALID_SEX
+                      ? "input-error"
+                      : ""
+                  }
+                  onChange={(e) => {
+                    setSex(e.target.value);
+                    setErrors((prev) => ({
+                      ...prev,
+                      SEX_REQUIRED: false,
+                      INVALID_SEX: false,
+                    }));
+                  }}
+                >
+                  <option value="">Selecciona sexo</option>
+                  <option value="male">Masculino</option>
+                  <option value="female">Femenino</option>
+                </Select>
+              </FormField>
             )}
-            {errors.SEX_REQUIRED && (
-              <p className="form-error">{errorMessages.SEX_REQUIRED}</p>
-            )}
+
             <div className="form-actions">
               <Button
                 type="button"
-                className="button-secondary"
+                variant="secondary"
                 onClick={() => {
                   setShowForm(false);
                   setErrors({});
@@ -587,11 +644,7 @@ export const TeamDetail = () => {
                 Cancelar
               </Button>
 
-              <Button
-                type="submit"
-                className="button-primary"
-                disabled={loadingSubmit}
-              >
+              <Button type="submit" disabled={loadingSubmit}>
                 {loadingSubmit ? "Guardando..." : "Guardar"}
               </Button>
             </div>
@@ -601,10 +654,10 @@ export const TeamDetail = () => {
 
       {/* LISTA DE JUGADORES */}
       <Card>
-        <h4>Jugadores</h4>
+        <h4>Deportistas</h4>
 
         {players.length === 0 ? (
-          <p>No hay jugadores registrados en esta categoría.</p>
+          <p>No hay deportistas registrados en esta categoría.</p>
         ) : (
           <div className="players-list">
             {players.map((player) => (
@@ -613,144 +666,132 @@ export const TeamDetail = () => {
                   {editingPlayerId === player.id ? (
                     //MODO EDICIÓN
                     <div className="player-edit">
-                      <Input
-                        value={editData.first_name}
-                        className={
-                          errors.FIRST_NAME_REQUIRED ? "input-error" : ""
+                      <FormField
+                        label="Nombre"
+                        error={
+                          errors.FIRST_NAME_REQUIRED
+                            ? errorMessages.FIRST_NAME_REQUIRED
+                            : null
                         }
-                        onChange={(e) => {
-                          setEditData({
-                            ...editData,
-                            first_name: e.target.value,
-                          });
-                          setErrors((prev) => ({
-                            ...prev,
-                            FIRST_NAME_REQUIRED: false,
-                          }));
-                        }}
-                      />
-                      {errors.FIRST_NAME_REQUIRED && (
-                        <p className="form-error">
-                          {errorMessages.FIRST_NAME_REQUIRED}
-                        </p>
-                      )}
-
-                      <Input
-                        value={editData.last_name}
-                        className={
-                          errors.LAST_NAME_REQUIRED ? "input-error" : ""
-                        }
-                        onChange={(e) => {
-                          setEditData({
-                            ...editData,
-                            last_name: e.target.value,
-                          });
-                          setErrors((prev) => ({
-                            ...prev,
-                            LAST_NAME_REQUIRED: false,
-                          }));
-                        }}
-                      />
-                      {errors.LAST_NAME_REQUIRED && (
-                        <p className="form-error">
-                          {errorMessages.LAST_NAME_REQUIRED}
-                        </p>
-                      )}
-                      <Input
-                        type="number"
-                        value={editData.player_number}
-                        className={
-                          errors.PLAYER_NUMBER_REQUIRED ||
-                          errors.INVALID_PLAYER_NUMBER
-                            ? "input-error"
-                            : ""
-                        }
-                        onChange={(e) => {
-                          const value = e.target.value;
-
-                          if (value === "") {
+                      >
+                        <Input
+                          value={editData.first_name}
+                          className={
+                            errors.FIRST_NAME_REQUIRED ? "input-error" : ""
+                          }
+                          onChange={(e) => {
                             setEditData({
                               ...editData,
-                              player_number: "",
+                              first_name: e.target.value,
                             });
+                            setErrors((prev) => ({
+                              ...prev,
+                              FIRST_NAME_REQUIRED: false,
+                            }));
+                          }}
+                        />
+                      </FormField>
+
+                      <FormField
+                        label="Apellido"
+                        error={
+                          errors.LAST_NAME_REQUIRED
+                            ? errorMessages.LAST_NAME_REQUIRED
+                            : null
+                        }
+                      >
+                        <Input
+                          value={editData.last_name}
+                          className={
+                            errors.LAST_NAME_REQUIRED ? "input-error" : ""
+                          }
+                          onChange={(e) => {
+                            setEditData({
+                              ...editData,
+                              last_name: e.target.value,
+                            });
+                            setErrors((prev) => ({
+                              ...prev,
+                              LAST_NAME_REQUIRED: false,
+                            }));
+                          }}
+                        />
+                      </FormField>
+                      <FormField
+                        label="Número en la categoría"
+                        error={
+                          errors.PLAYER_NUMBER_REQUIRED
+                            ? errorMessages.PLAYER_NUMBER_REQUIRED
+                            : errors.INVALID_PLAYER_NUMBER
+                            ? errorMessages.INVALID_PLAYER_NUMBER
+                            : errors.PLAYER_NUMBER_DUPLICATED
+                            ? errorMessages.PLAYER_NUMBER_DUPLICATED
+                            : null
+                        }
+                      >
+                        <Input
+                          type="number"
+                          value={editData.player_number}
+                          className={
+                            errors.PLAYER_NUMBER_REQUIRED ||
+                            errors.INVALID_PLAYER_NUMBER ||
+                            errors.PLAYER_NUMBER_DUPLICATED
+                              ? "input-error"
+                              : ""
+                          }
+                          onChange={(e) => {
+                            const value = e.target.value;
+
+                            if (value === "") {
+                              setEditData({
+                                ...editData,
+                                player_number: "",
+                              });
+                              setErrors((prev) => ({
+                                ...prev,
+                                PLAYER_NUMBER_REQUIRED: false,
+                                INVALID_PLAYER_NUMBER: false,
+                                PLAYER_NUMBER_DUPLICATED: false,
+                              }));
+                              return;
+                            }
+
+                            const num = Number(value);
+
+                            if (num <= 0) return;
+                            if (value.length > 2) return;
+
+                            setEditData({
+                              ...editData,
+                              player_number: value,
+                            });
+
                             setErrors((prev) => ({
                               ...prev,
                               PLAYER_NUMBER_REQUIRED: false,
                               INVALID_PLAYER_NUMBER: false,
-                            }));
-                            return;
-                          }
-
-                          const num = Number(value);
-
-                          if (num <= 0) return;
-                          if (value.length > 2) return;
-
-                          setEditData({
-                            ...editData,
-                            player_number: value,
-                          });
-
-                          setErrors((prev) => ({
-                            ...prev,
-                            PLAYER_NUMBER_REQUIRED: false,
-                            INVALID_PLAYER_NUMBER: false,
-                          }));
-                        }}
-                      />
-                      {errors.PLAYER_NUMBER_REQUIRED && (
-                        <p className="form-error">
-                          {errorMessages.PLAYER_NUMBER_REQUIRED}
-                        </p>
-                      )}
-
-                      {errors.INVALID_PLAYER_NUMBER && (
-                        <p className="form-error">
-                          {errorMessages.INVALID_PLAYER_NUMBER}
-                        </p>
-                      )}
-                      {team?.gender === "mixed" && (
-                        <select
-                          value={editData.sex}
-                          className={errors.SEX_REQUIRED ? "input-error" : ""}
-                          onChange={(e) => {
-                            setEditData({ ...editData, sex: e.target.value });
-                            setErrors((prev) => ({
-                              ...prev,
-                              SEX_REQUIRED: false,
+                              PLAYER_NUMBER_DUPLICATED: false,
                             }));
                           }}
-                        >
-                          <option value="male">Masculino</option>
-                          <option value="female">Femenino</option>
-                        </select>
-                      )}
-                      {errors.SEX_REQUIRED && (
-                        <p className="form-error">
-                          {errorMessages.SEX_REQUIRED}
-                        </p>
-                      )}
-                      <Button className="button-primary" onClick={saveEdit}>
-                        💾
-                      </Button>
+                        />
+                      </FormField>
+
+                      <Button onClick={saveEdit}>Guardar</Button>
 
                       <Button
-                        className="button-secondary"
+                        variant="secondary"
                         onClick={() => {
                           setEditingPlayerId(null);
                           setErrors({});
                         }}
                       >
-                        ❌
+                        Cancelar
                       </Button>
                     </div>
                   ) : (
                     //MODO NORMAL
                     <>
-                      <div
-                        className="player-header"
-                        onClick={() => startEdit(player)}
-                      >
+                      <div className="player-header">
                         <div className="player-info">
                           <p className="player-name">
                             {player.first_name} {player.last_name}
@@ -761,9 +802,29 @@ export const TeamDetail = () => {
                           </p>
                         </div>
 
-                        <div className="player-status">{player.status}</div>
+                        <span
+                          className={`status-badge ${
+                            player.status === "active"
+                              ? "status-success"
+                              : player.status === "injured"
+                              ? "status-warning"
+                              : "status-muted"
+                          }`}
+                        >
+                          {player.status === "active"
+                            ? "Activo"
+                            : player.status === "injured"
+                            ? "Lesionado"
+                            : "Inactivo"}
+                        </span>
                         <Button
-                          className="button-danger button-small"
+                          variant="secondary"
+                          onClick={() => startEdit(player)}
+                        >
+                          Editar
+                        </Button>
+                        <Button
+                          variant="danger"
                           onClick={(e) => handleRemovePlayer(e, player)}
                         >
                           Quitar
@@ -777,6 +838,29 @@ export const TeamDetail = () => {
           </div>
         )}
       </Card>
-    </>
+      <Card className="danger-zone">
+        <h4>Zona peligrosa</h4>
+
+        {players.length > 0 ? (
+          <p>
+            No puedes eliminar esta categoría porque todavía tiene miembros
+            asignados. Primero quítalos o reasígnalos.
+          </p>
+        ) : (
+          <p>
+            Esta categoría no tiene miembros asignados. Puedes eliminarla si ya
+            no forma parte de la organización del club.
+          </p>
+        )}
+
+        <Button
+          variant="danger"
+          onClick={handleDeleteTeam}
+          disabled={players.length > 0}
+        >
+          Eliminar categoría
+        </Button>
+      </Card>
+    </div>
   );
 };

@@ -1,13 +1,12 @@
-/******************* responsive *************************/
-
-@media (min-width: 768px) {
-  .teams-grid {
-    grid-template-columns: 1fr 1fr;
-  }
+/* ===== TEAMS ===== */
+.team-card {
+  cursor: pointer;
+  margin-bottom: 2px;
 }
 
-@media (min-width: 1024px) {
-  .teams-grid {
-    grid-template-columns: 1fr 1fr 1fr;
-  }
+.team-card-title {
+  font-size: var(--font-size-base);
+  font-weight: var(--font-weight-bold);
+  color: var(--color-text);
+  margin-bottom: 4px;
 }

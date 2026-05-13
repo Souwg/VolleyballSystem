@@ -148,8 +148,9 @@ export const Clients = () => {
       <form onSubmit={createClient}>
         <div>
           <div>
+            <label>Nombre Completo</label>
             <Input
-              placeholder="Full name"
+              placeholder="Nombre Completo"
               value={fullName}
               className={errors.FULL_NAME_REQUIRED ? "input-error" : ""}
               onChange={(e) => {
@@ -167,8 +168,9 @@ export const Clients = () => {
           </div>
 
           <div>
+            <label>Correo electrónico</label>
             <Input
-              placeholder="Email"
+              placeholder="Correo electrónico"
               value={email}
               className={
                 errors.CLIENT_ALREADY_EXISTS ||
@@ -203,8 +205,9 @@ export const Clients = () => {
           </div>
 
           <div>
+            <label>Nombre del club</label>
             <Input
-              placeholder="Club name"
+              placeholder="Nombre del club"
               value={clubName}
               className={errors.CLUB_NAME_REQUIRED ? "input-error" : ""}
               onChange={(e) => {

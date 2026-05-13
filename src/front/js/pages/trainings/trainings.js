@@ -2,7 +2,6 @@ import React, { useEffect, useContext, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { Context } from "../../store/appContext";
 
-import { Container } from "../../component/ui/container";
 import { PageHeader } from "../../component/ui/pageHeader";
 import { Card } from "../../component/ui/card";
 import { Button } from "../../component/ui/button";
@@ -43,28 +42,22 @@ export const Trainings = () => {
   return (
     <>
       <PageHeader
+        eyebrow="Gestión deportiva"
         title="Entrenamientos"
-        subtitle="Gestiona todos los entrenamientos del club"
+        subtitle="Organiza sesiones, consulta el historial y registra la asistencia del club."
         actions={
-          <Button className="button-primary" onClick={handleCreateTraining}>
-            + Crear entrenamiento
-          </Button>
+          <Button onClick={handleCreateTraining}>+ Crear entrenamiento</Button>
         }
       />
-
       {store.trainings.length === 0 ? (
         <Card>
           <h4>No hay entrenamientos aún</h4>
           <p>Crea tu primer entrenamiento para empezar</p>
-
-          <Button className="button-primary" onClick={handleCreateTraining}>
-            Crear entrenamiento
-          </Button>
         </Card>
       ) : (
         <Card>
           <h4>Entrenamientos del club</h4>
-          <p>Lista global de entrenamientos</p>
+          <p>Historial de sesiones registradas en el club.</p>
 
           <table>
             <thead>

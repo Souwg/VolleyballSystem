@@ -1,0 +1,13 @@
+.player-detail-page {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.player-detail-page .page-actions {
+  width: 100%;
+}
+
+.player-detail-page .page-actions .button {
+  width: 100%;
+}
