@@ -330,7 +330,7 @@ export const PlayerMatchStats = () => {
   const showBlock = !isLibero;
 
   return (
-    <div className="page-container">
+    <>
       <PageHeader
         title="Ajustar estadísticas"
         subtitle={
@@ -575,6 +575,6 @@ export const PlayerMatchStats = () => {
           {loading ? "Guardando..." : "Guardar stats"}
         </Button>
       </div>
-    </div>
+    </>
   );
 };

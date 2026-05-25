@@ -73,7 +73,7 @@ export const MatchSessions = () => {
   }
 
   return (
-    <div className="page-container">
+    <>
       <PageHeader
         variant="detail"
         eyebrow="Categoría"
@@ -106,7 +106,7 @@ export const MatchSessions = () => {
             >
               <div className="match-card-header">
                 <div className="match-card-main">
-                  <h3>vs {match.opponent_name || "Scrimmage interno"}</h3>
+                  <h3>vs {match.opponent_name || "Partido interno"}</h3>
 
                   <p className="match-card-meta">
                     {match.date} ·{" "}
@@ -114,7 +114,7 @@ export const MatchSessions = () => {
                       ? "Oficial"
                       : match.match_type === "friendly"
                       ? "Amistoso"
-                      : "Scrimmage"}
+                      : "Partido interno"}
                   </p>
                 </div>
 
@@ -136,6 +136,6 @@ export const MatchSessions = () => {
           );
         })
       )}
-    </div>
+    </>
   );
 };

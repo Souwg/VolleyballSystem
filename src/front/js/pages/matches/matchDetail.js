@@ -4,7 +4,10 @@ import { Context } from "../../store/appContext";
 import { PageHeader } from "../../component/ui/pageHeader";
 import { Card } from "../../component/ui/card";
 import { Button } from "../../component/ui/button";
+import { Select } from "../../component/ui/select";
+import { FormField } from "../../component/ui/formField";
 import { errorMessages } from "../../utils/errorMessages";
+import "../../../styles/matchDetail.css";
 
 const STEPS = ["Convocadas", "Estado"];
 const MATCH_STATUS_LABELS = {
@@ -287,17 +290,20 @@ export const MatchDetail = () => {
 
   if (loading) {
     return (
-      <div className="page-container">
+      <>
         <PageHeader title="Partido" subtitle="Cargando partido..." />
-      </div>
+      </>
     );
   }
 
   return (
-    <div className="page-container">
+    <>
       <PageHeader
-        title={`vs ${match?.opponent_name || "Scrimmage"}`}
+        variant="detail"
+        eyebrow="Partido"
+        title={`vs ${match?.opponent_name || "Partido interno"}`}
         subtitle={match?.date}
+        onBack={() => navigate(`/teams/${match?.team_id}/matches`)}
       />
       <Card className="mb-4">
         <div className="d-flex justify-content-between align-items-center gap-3">
@@ -515,10 +521,8 @@ export const MatchDetail = () => {
               </h3>
 
               {PLAYABLE_STATUSES.includes(player.attendance_status) ? (
-                <>
-                  <p className="mb-1">Posición hoy:</p>
-
-                  <select
+                <FormField label="Posición hoy">
+                  <Select
                     value={player.position || player.main_position || ""}
                     onClick={(e) => e.stopPropagation()}
                     onChange={(e) => {
@@ -530,13 +534,14 @@ export const MatchDetail = () => {
                     }}
                   >
                     <option value="">Sin definir</option>
+
                     {POSITION_OPTIONS.map((pos) => (
                       <option key={pos.value} value={pos.value}>
                         {pos.label}
                       </option>
                     ))}
-                  </select>
-                </>
+                  </Select>
+                </FormField>
               ) : (
                 <p className="text-muted mb-1">
                   Posición:{" "}
@@ -565,15 +570,6 @@ export const MatchDetail = () => {
       {/* Footer CTA */}
       {/* Footer CTA */}
       <div className="mt-4 d-flex gap-2">
-        {currentStep > 0 && (
-          <Button
-            variant="secondary"
-            onClick={() => setCurrentStep((prev) => prev - 1)}
-          >
-            Atrás
-          </Button>
-        )}
-
         {currentStep === 0 ? (
           <Button
             variant="primary"
@@ -584,7 +580,14 @@ export const MatchDetail = () => {
           </Button>
         ) : currentStep === 1 ? (
           statusSaved && !statusDirty ? (
-            <p className="text-success mb-0">✅ Estado guardado</p>
+            <div className="match-status-saved">
+              <div className="match-status-saved-icon">✓</div>
+
+              <div className="match-status-saved-content">
+                <strong>Estado guardado</strong>
+                <span>La preparación del partido está lista.</span>
+              </div>
+            </div>
           ) : (
             <Button
               variant="primary"
@@ -600,6 +603,6 @@ export const MatchDetail = () => {
           )
         ) : null}
       </div>
-    </div>
+    </>
   );
 };

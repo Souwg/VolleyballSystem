@@ -1,14 +1,16 @@
 import React from "react";
-import { Button } from "../ui/button";
+import logo from "../../../img/sportflow-logo.svg";
 
-export const Topbar = ({ title, openMenu }) => {
+export const Topbar = ({ title, openMenu, isDetailPage = false }) => {
   return (
-    <header className="topbar">
-      <Button variant="secondary" className="menu-button" onClick={openMenu}>
+    <header className={`topbar ${isDetailPage ? "topbar-neutral" : ""}`}>
+      <button className="topbar-menu-button" onClick={openMenu}>
         ☰
-      </Button>
+      </button>
 
-      <h4>{title}</h4>
+      <div className="topbar-brand">
+        <img src={logo} alt={title} className="topbar-logo" />
+      </div>
     </header>
   );
 };

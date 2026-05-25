@@ -42,8 +42,10 @@ class User(db.Model):
             "is_active": self.is_active,
             "first_login": self.first_login,
             "subscription_status": self.subscription_status,
+            "club_id": self.club_id,
+            "club": self.club.serialize() if self.club else None,
             "created_at": self.created_at.isoformat()
-        }
+            }
 
 class Club(db.Model):
     __tablename__ = "clubs"
@@ -51,6 +53,7 @@ class Club(db.Model):
     id = db.Column(db.String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
     name = db.Column(db.String(120), nullable=False)
     location = db.Column(db.String(255))
+    image_url = db.Column(db.String(500), nullable=True)
     owner_id = db.Column(db.String(36), nullable=False)
     created_at = db.Column(db.DateTime(), default=datetime.utcnow)
 
@@ -62,6 +65,7 @@ class Club(db.Model):
             "id": self.id,
             "name": self.name,
             "location": self.location,
+            "image_url": self.image_url,
             "owner_id": self.owner_id,
             "created_at": self.created_at.isoformat()
         }

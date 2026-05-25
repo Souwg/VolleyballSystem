@@ -26,7 +26,7 @@ export const AdminShell = () => {
       {menuOpen && <div className="sidebar-overlay" onClick={closeMenu} />}
 
       <Sidebar
-        title="Admin Panel"
+        title="SportFlow Admin"
         navItems={navItems}
         menuOpen={menuOpen}
         closeMenu={closeMenu}

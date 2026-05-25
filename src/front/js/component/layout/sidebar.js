@@ -8,12 +8,42 @@ export const Sidebar = ({
   navItems,
   handleLogout,
   title,
+  club,
 }) => {
   const location = useLocation();
 
+  const getInitials = (value = "") => {
+    return value
+      .split(" ")
+      .filter(Boolean)
+      .slice(0, 2)
+      .map((word) => word.charAt(0))
+      .join("")
+      .toUpperCase();
+  };
+
   return (
     <aside className={`sidebar ${menuOpen ? "open" : ""}`}>
-      <div className="sidebar-title">{title}</div>
+      <Link to="/dashboard" onClick={closeMenu} className="sidebar-title">
+        {title}
+      </Link>
+
+      {club && (
+        <Link to="/dashboard" onClick={closeMenu} className="sidebar-club">
+          <div className="sidebar-club-avatar">
+            {club.image_url ? (
+              <img src={club.image_url} alt={club.name} />
+            ) : (
+              <span>{getInitials(club.name)}</span>
+            )}
+          </div>
+
+          <div className="sidebar-club-info">
+            <strong>{club.name}</strong>
+            <span>Club activo</span>
+          </div>
+        </Link>
+      )}
 
       <nav className="sidebar-nav">
         {navItems.map((item) => {

@@ -1,10 +1,15 @@
 import React, { useState, useContext } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { Context } from "../../store/appContext";
+
 import { PageHeader } from "../../component/ui/pageHeader";
 import { Card } from "../../component/ui/card";
 import { Input } from "../../component/ui/input";
+import { Select } from "../../component/ui/select";
+import { Textarea } from "../../component/ui/textarea";
+import { FormField } from "../../component/ui/formField";
 import { Button } from "../../component/ui/button";
+
 import { errorMessages } from "../../utils/errorMessages";
 import { validateMatch } from "../../utils/validators";
 
@@ -30,7 +35,11 @@ export const CreateMatch = () => {
     }));
   };
 
-  const handleSubmit = async () => {
+  const handleSubmit = async (e) => {
+    e.preventDefault();
+
+    if (loading) return;
+
     const validationErrors = validateMatch({
       opponent_name: opponentName,
       date,
@@ -41,6 +50,7 @@ export const CreateMatch = () => {
       setErrors(validationErrors);
       return;
     }
+
     setErrors({});
     setLoading(true);
 
@@ -62,8 +72,9 @@ export const CreateMatch = () => {
 
     navigate(`/teams/${team_id}/matches`);
   };
+
   return (
-    <div className="page-container">
+    <>
       <PageHeader
         variant="detail"
         eyebrow="Partido"
@@ -71,75 +82,98 @@ export const CreateMatch = () => {
         subtitle="Prepara la información básica del partido."
         onBack={() => navigate(`/teams/${team_id}/matches`)}
       />
+
       <Card>
-        <label className="form-label">Rival</label>
-        <Input
-          label="Rival"
-          value={opponentName}
-          className={errors.OPPONENT_NAME_REQUIRED ? "input-error" : ""}
-          onChange={(e) => {
-            setOpponentName(e.target.value);
-            clearFieldError("OPPONENT_NAME_REQUIRED");
-          }}
-          placeholder="Club Atlético, Escuela de Vóley..."
-        />
-        {errors.OPPONENT_NAME_REQUIRED && (
-          <p className="form-error">{errorMessages.OPPONENT_NAME_REQUIRED}</p>
-        )}
-        <label className="form-label">Fecha</label>
-        <Input
-          label="Fecha"
-          type="date"
-          value={date}
-          className={errors.MATCH_DATE_REQUIRED ? "input-error" : ""}
-          onChange={(e) => {
-            setDate(e.target.value);
-            clearFieldError("MATCH_DATE_REQUIRED");
-          }}
-        />
-        {errors.MATCH_DATE_REQUIRED && (
-          <p className="form-error">{errorMessages.MATCH_DATE_REQUIRED}</p>
-        )}
+        <form className="form" onSubmit={handleSubmit}>
+          <FormField
+            label="Rival"
+            error={
+              errors.OPPONENT_NAME_REQUIRED
+                ? errorMessages.OPPONENT_NAME_REQUIRED
+                : null
+            }
+          >
+            <Input
+              value={opponentName}
+              className={errors.OPPONENT_NAME_REQUIRED ? "input-error" : ""}
+              onChange={(e) => {
+                setOpponentName(e.target.value);
+                clearFieldError("OPPONENT_NAME_REQUIRED");
+              }}
+              placeholder="Club Atlético, Escuela de vóley..."
+            />
+          </FormField>
 
-        <label className="form-label">Tipo</label>
+          <FormField
+            label="Fecha"
+            error={
+              errors.MATCH_DATE_REQUIRED
+                ? errorMessages.MATCH_DATE_REQUIRED
+                : null
+            }
+          >
+            <Input
+              type="date"
+              value={date}
+              className={errors.MATCH_DATE_REQUIRED ? "input-error" : ""}
+              onChange={(e) => {
+                setDate(e.target.value);
+                clearFieldError("MATCH_DATE_REQUIRED");
+              }}
+            />
+          </FormField>
 
-        <select
-          className={`select ${errors.INVALID_MATCH_TYPE ? "input-error" : ""}`}
-          value={matchType}
-          onChange={(e) => {
-            setMatchType(e.target.value);
-            clearFieldError("INVALID_MATCH_TYPE");
-          }}
-        >
-          <option value="official">Oficial</option>
-          <option value="friendly">Amistoso</option>
-          <option value="scrimmage">Entrenamiento</option>
-        </select>
+          <FormField
+            label="Tipo de partido"
+            error={
+              errors.INVALID_MATCH_TYPE
+                ? errorMessages.INVALID_MATCH_TYPE
+                : null
+            }
+          >
+            <Select
+              value={matchType}
+              className={errors.INVALID_MATCH_TYPE ? "input-error" : ""}
+              onChange={(e) => {
+                setMatchType(e.target.value);
+                clearFieldError("INVALID_MATCH_TYPE");
+              }}
+            >
+              <option value="official">Oficial</option>
+              <option value="friendly">Amistoso</option>
+              <option value="scrimmage">Scrimmage</option>
+            </Select>
+          </FormField>
 
-        {errors.INVALID_MATCH_TYPE && (
-          <p className="form-error">{errorMessages.INVALID_MATCH_TYPE}</p>
-        )}
-        <label className="form-label">Ubicación</label>
-        <Input
-          label="Ubicación"
-          value={location}
-          onChange={(e) => setLocation(e.target.value)}
-          placeholder="Cancha principal"
-        />
-        <label className="form-label">Notas</label>
-        <Input
-          label="Notas"
-          value={notes}
-          onChange={(e) => setNotes(e.target.value)}
-          placeholder="Semifinal, torneo local..."
-        />
+          <FormField
+            label="Ubicación"
+            helper="Opcional. Puedes escribir la cancha, gimnasio o sede."
+          >
+            <Input
+              value={location}
+              onChange={(e) => setLocation(e.target.value)}
+              placeholder="Cancha principal"
+            />
+          </FormField>
 
-        <div className="mt-4">
-          <Button onClick={handleSubmit} disabled={loading}>
-            {loading ? "Creando..." : "Crear partido"}
-          </Button>
-        </div>
+          <FormField
+            label="Notas"
+            helper="Opcional. Agrega contexto del partido."
+          >
+            <Textarea
+              value={notes}
+              onChange={(e) => setNotes(e.target.value)}
+              placeholder="Semifinal, torneo local, indicaciones para el equipo..."
+            />
+          </FormField>
+
+          <div className="form-actions">
+            <Button type="submit" disabled={loading}>
+              {loading ? "Creando..." : "Crear partido"}
+            </Button>
+          </div>
+        </form>
       </Card>
-    </div>
+    </>
   );
 };

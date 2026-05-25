@@ -115,8 +115,10 @@ export const Dashboard = () => {
       <PageHeader
         className="dashboard-header"
         eyebrow="Panel del club"
-        title={<>{store.club?.name}</>}
+        title={store.club?.name}
         subtitle="Resumen operativo del club"
+        avatar={store.club?.image_url}
+        fallback={store.club?.name}
       />
       {store.nextMatch && (
         <Card className="dashboard-feature-card dashboard-feature-match">

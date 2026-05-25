@@ -689,15 +689,24 @@ def update_club():
     body = request.get_json() or {}
 
     location = body.get("location")
+    image_url = body.get("image_url")
 
-    if not location:
-        return error_response(
-            "La ubicación es obligatoria",
-            "LOCATION_REQUIRED",
-            400
-        )
+    if location is not None:
+        location = str(location).strip()
 
-    club.location = location
+        if not location:
+            return error_response(
+                "La ubicación es obligatoria",
+                "LOCATION_REQUIRED",
+                400
+            )
+
+        club.location = location
+
+    if image_url is not None:
+        image_url = str(image_url).strip()
+
+        club.image_url = image_url or None
 
     db.session.commit()
 

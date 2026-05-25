@@ -9,15 +9,23 @@ import { Container } from "./ui/container";
 export const AppShell = () => {
   const [menuOpen, setMenuOpen] = useState(false);
 
-  const { actions } = useContext(Context);
+  const { store, actions } = useContext(Context);
   const navigate = useNavigate();
   const location = useLocation();
 
   const isDetailPage =
     /^\/players\/[^/]+$/.test(location.pathname) ||
+    /^\/players\/[^/]+\/edit$/.test(location.pathname) ||
     /^\/teams\/[^/]+$/.test(location.pathname) ||
+    /^\/teams\/[^/]+\/trainings$/.test(location.pathname) ||
+    /^\/teams\/[^/]+\/trainings\/new$/.test(location.pathname) ||
+    /^\/teams\/[^/]+\/matches$/.test(location.pathname) ||
+    /^\/teams\/[^/]+\/matches\/new$/.test(location.pathname) ||
     /^\/trainings\/[^/]+$/.test(location.pathname) ||
-    /^\/matches\/[^/]+$/.test(location.pathname);
+    /^\/matches\/[^/]+$/.test(location.pathname) ||
+    /^\/matches\/[^/]+\/live$/.test(location.pathname) ||
+    /^\/matches\/[^/]+\/stats$/.test(location.pathname) ||
+    /^\/match-players\/[^/]+\/stats$/.test(location.pathname);
 
   const navItems = [
     { name: "Panel", path: "/dashboard" },
@@ -33,12 +41,15 @@ export const AppShell = () => {
 
   const closeMenu = () => setMenuOpen(false);
 
+  const club = store.club || store.user?.club;
+
   return (
     <div className="app-shell">
       {menuOpen && <div className="sidebar-overlay" onClick={closeMenu} />}
 
       <Sidebar
-        title="Volleyball System"
+        title="SportFlow"
+        club={club}
         navItems={navItems}
         menuOpen={menuOpen}
         closeMenu={closeMenu}
@@ -46,7 +57,11 @@ export const AppShell = () => {
       />
 
       <div className="main">
-        <Topbar title="Volleyball System" openMenu={() => setMenuOpen(true)} />
+        <Topbar
+          title="SportFlow"
+          openMenu={() => setMenuOpen(true)}
+          isDetailPage={isDetailPage}
+        />
 
         <main className={`content ${isDetailPage ? "content-neutral" : ""}`}>
           <Container>

@@ -40,26 +40,31 @@ export const MatchStatsAdjust = () => {
 
   if (loading) {
     return (
-      <div className="page-container">
+      <>
         <PageHeader
+          variant="detail"
+          eyebrow="Partido"
           title="Ajustar estadísticas"
-          subtitle="Cargando jugadoras..."
+          subtitle="Cargando deportistas..."
+          onBack={() => navigate(`/matches/${match_id}`)}
         />
-      </div>
+      </>
     );
   }
 
   return (
-    <div className="page-container">
+    <>
       <PageHeader
+        variant="detail"
+        eyebrow="Estadísticas"
         title="Ajustar estadísticas"
-        subtitle="Selecciona una jugadora para corregir sus datos"
+        subtitle="Selecciona un deportista para corregir sus datos."
+        onBack={() => navigate(`/matches/${match_id}`)}
       />
-
       {players.length === 0 ? (
         <Card>
           <p className="mb-0">
-            No hay jugadoras disponibles para ajustar estadísticas.
+            No hay deportistas disponibles para ajustar estadísticas.
           </p>
         </Card>
       ) : (
@@ -70,7 +75,7 @@ export const MatchStatsAdjust = () => {
             </h3>
 
             <p className="text-muted mb-3">
-              Revisa o corrige las estadísticas manuales de esta jugadora.
+              Revisa o corrige las estadísticas manuales de este deportista.
             </p>
 
             <Button
@@ -84,6 +89,6 @@ export const MatchStatsAdjust = () => {
           </Card>
         ))
       )}
-    </div>
+    </>
   );
 };

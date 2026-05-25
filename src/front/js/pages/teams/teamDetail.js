@@ -269,6 +269,9 @@ export const TeamDetail = () => {
     return <p>Cargando categoría...</p>;
   }
 
+  const playerCountLabel =
+    players.length === 1 ? "1 deportista" : `${players.length} deportistas`;
+
   return (
     <div className="team-detail-page">
       <PageHeader
@@ -281,7 +284,7 @@ export const TeamDetail = () => {
             : team.gender === "male"
             ? "Masculina"
             : "Mixta"
-        } • ${players.length} deportistas`}
+        } • ${playerCountLabel}`}
         onBack={() => navigate("/teams")}
         actions={
           <div className="team-detail-header-actions">

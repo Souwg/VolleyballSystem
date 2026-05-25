@@ -2,7 +2,6 @@ import React, { useEffect, useContext, useState } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import { Context } from "../../store/appContext";
 
-import { Container } from "../../component/ui/container";
 import { PageHeader } from "../../component/ui/pageHeader";
 import { Card } from "../../component/ui/card";
 import { Input } from "../../component/ui/input";
@@ -97,23 +96,15 @@ export const EditPlayer = () => {
   };
 
   if (loading) {
-    return (
-      <Container>
-        <p>Cargando jugadora...</p>
-      </Container>
-    );
+    return <p>Cargando jugadora...</p>;
   }
 
   if (!player) {
-    return (
-      <Container>
-        <p>No se pudo cargar la jugadora.</p>
-      </Container>
-    );
+    return <p>No se pudo cargar la jugadora.</p>;
   }
 
   return (
-    <Container>
+    <>
       <PageHeader
         title="Editar perfil"
         subtitle={`${player.first_name} ${player.last_name}`}
@@ -248,6 +239,6 @@ export const EditPlayer = () => {
           </div>
         </form>
       </Card>
-    </Container>
+    </>
   );
 };

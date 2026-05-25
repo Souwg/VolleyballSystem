@@ -1,9 +1,8 @@
 import React, { useEffect, useState, useContext } from "react";
-import { useParams } from "react-router-dom";
+import { useParams, useNavigate } from "react-router-dom";
 import { Context } from "../../store/appContext";
-import { PageHeader } from "../../component/ui/pageHeader";
 import { Button } from "../../component/ui/button";
-import { Card } from "../../component/ui/card";
+import "../../../styles/liveMatch.css";
 
 const ACTIONS = [
   { value: "attack", label: "Ataque" },
@@ -62,6 +61,7 @@ const POSITION_LABELS = {
 export const LiveMatch = () => {
   const { actions } = useContext(Context);
   const { match_id } = useParams();
+  const navigate = useNavigate();
 
   const [roster, setRoster] = useState([]);
   const [showSubstitutionPanel, setShowSubstitutionPanel] = useState(false);
@@ -74,6 +74,7 @@ export const LiveMatch = () => {
   const [undoing, setUndoing] = useState(false);
   const [currentSet, setCurrentSet] = useState(1);
   const [setMessage, setSetMessage] = useState("");
+  const [showSetPicker, setShowSetPicker] = useState(false);
   const [selectedStartingPlayers, setSelectedStartingPlayers] = useState([]);
   const [savingLineup, setSavingLineup] = useState(false);
   const [lineupError, setLineupError] = useState("");
@@ -252,148 +253,156 @@ export const LiveMatch = () => {
   };
 
   return (
-    <div className="page-container">
-      <PageHeader title="Modo en vivo" subtitle="Registro rápido" />
+    <div className="live-match-page">
+      <div className="live-topbar">
+        <button
+          type="button"
+          className="live-back-button"
+          onClick={() => navigate(`/matches/${match_id}`)}
+        >
+          ← Volver
+        </button>
+
+        <span className="live-topbar-label">Partido en vivo</span>
+      </div>
 
       {!hasStartingLineup && (
-        <div className="mb-4 p-3 border rounded">
-          <h3 className="mb-2">Selecciona 6 iniciales</h3>
+        <section className="live-lineup-card">
+          <div className="live-section">
+            <div>
+              <h3 className="live-section-title">Selecciona 6 iniciales</h3>
+              <p className="live-section-helper">
+                Antes de iniciar el modo en vivo, selecciona las 6 deportistas
+                que están en cancha.
+              </p>
+            </div>
 
-          <p className="text-muted">
-            Antes de iniciar el modo en vivo, selecciona las 6 jugadoras que
-            están en cancha.
-          </p>
+            <span className="live-lineup-counter">
+              {selectedStartingPlayers.length}/6 seleccionadas
+            </span>
 
-          <p>
-            Seleccionadas: <strong>{selectedStartingPlayers.length}/6</strong>
-          </p>
-          {lineupError && <p className="form-error">{lineupError}</p>}
-          <div className="mb-3">
+            {lineupError && <p className="form-error">{lineupError}</p>}
+          </div>
+
+          <div className="live-section mt-3">
             <h4>Seleccionadas</h4>
 
             {selectedStartingPlayersData.length === 0 ? (
-              <p className="text-muted mb-2">
-                Todavía no has seleccionado jugadoras.
+              <p className="live-section-helper">
+                Todavía no has seleccionado deportistas.
               </p>
             ) : (
-              <div className="d-flex flex-wrap gap-2 mb-3">
+              <div className="live-grid">
                 {selectedStartingPlayersData.map((player) => (
                   <button
                     key={player.match_player_id}
                     type="button"
-                    className="chip active"
+                    className="live-chip active"
                     onClick={() => toggleStartingPlayer(player)}
                   >
                     #{player.player_number} {player.first_name}
                     {player.position && (
-                      <small className="d-block text-muted">
-                        {POSITION_LABELS[player.position]}
-                      </small>
+                      <small>{POSITION_LABELS[player.position]}</small>
                     )}
                   </button>
                 ))}
               </div>
             )}
+          </div>
 
+          <div className="live-section mt-3">
             <h4>Disponibles</h4>
 
-            <div className="d-flex flex-wrap gap-2">
+            <div className="live-grid">
               {availableStartingPlayers.map((player) => (
                 <button
                   key={player.match_player_id}
                   type="button"
-                  className="chip"
+                  className="live-chip"
                   onClick={() => toggleStartingPlayer(player)}
                   disabled={selectedStartingPlayers.length >= 6}
                 >
                   #{player.player_number} {player.first_name}
                   {player.position && (
-                    <small className="d-block text-muted">
-                      {POSITION_LABELS[player.position]}
-                    </small>
+                    <small>{POSITION_LABELS[player.position]}</small>
                   )}
                 </button>
               ))}
             </div>
           </div>
 
-          <Button
-            variant="primary"
-            onClick={saveStartingLineup}
-            disabled={selectedStartingPlayers.length !== 6 || savingLineup}
-          >
-            {savingLineup ? "Guardando..." : "Guardar 6 iniciales"}
-          </Button>
-        </div>
-      )}
-
-      {hasStartingLineup && (
-        <Card className="mb-4">
-          <small className="text-muted d-block mb-1">Capturando</small>
-
-          <h2 className="mb-2">Set {currentSet}</h2>
-
-          <p className="text-muted mb-3">
-            Todas las acciones que registres ahora se guardarán en el Set{" "}
-            {currentSet}.
-          </p>
-
-          {setMessage && <p className="text-success mb-3">✅ {setMessage}</p>}
-
-          <div className="d-flex gap-2 flex-wrap">
-            {[1, 2, 3, 4, 5].map((set) => (
-              <Button
-                key={set}
-                variant={currentSet === set ? "primary" : "secondary"}
-                onClick={() => handleSetChange(set)}
-              >
-                Set {set}
-              </Button>
-            ))}
+          <div className="mt-3">
+            <Button
+              variant="primary"
+              onClick={saveStartingLineup}
+              disabled={selectedStartingPlayers.length !== 6 || savingLineup}
+            >
+              {savingLineup ? "Guardando..." : "Guardar 6 iniciales"}
+            </Button>
           </div>
-        </Card>
+        </section>
       )}
-
-      {lastAction && (
-        <div className="mb-4 p-3 border rounded">
-          <p className="mb-2">
-            Última acción:{" "}
-            <strong>
-              #{lastAction.player_number} {lastAction.player_name} ·{" "}
-              {getActionLabel(lastAction.action_type)} ·{" "}
-              {lastAction.result_label}
-            </strong>
-          </p>
-
-          <Button variant="secondary" onClick={handleUndo} disabled={undoing}>
-            {undoing ? "Deshaciendo..." : "Deshacer"}
-          </Button>
-        </div>
-      )}
-
       {hasStartingLineup && (
-        <div className="mb-4">
-          <Button
-            variant="secondary"
-            onClick={() => setShowSubstitutionPanel((prev) => !prev)}
-          >
-            {showSubstitutionPanel ? "Cerrar cambios" : "Cambiar jugadora"}
-          </Button>
-        </div>
+        <section className="live-capture-bar">
+          <div className="live-capture-main">
+            <span className="live-capture-label">Capturando</span>
+            <strong>Set {currentSet}</strong>
+          </div>
+
+          <div className="live-capture-actions">
+            <button
+              type="button"
+              className="live-mini-button"
+              onClick={() => setShowSetPicker((prev) => !prev)}
+            >
+              {showSetPicker ? "Cerrar" : "Cambiar Set"}
+            </button>
+
+            <button
+              type="button"
+              className="live-mini-button"
+              onClick={() => setShowSubstitutionPanel((prev) => !prev)}
+            >
+              {showSubstitutionPanel ? "Cerrar" : "Cambio de Jugador"}
+            </button>
+          </div>
+
+          {showSetPicker && (
+            <div className="live-set-picker">
+              {[1, 2, 3, 4, 5].map((set) => (
+                <button
+                  key={set}
+                  type="button"
+                  className={`live-set-pill ${
+                    currentSet === set ? "active" : ""
+                  }`}
+                  onClick={() => {
+                    handleSetChange(set);
+                    setShowSetPicker(false);
+                  }}
+                >
+                  {set}
+                </button>
+              ))}
+            </div>
+          )}
+
+          {setMessage && <p className="live-set-message">✅ {setMessage}</p>}
+        </section>
       )}
 
       {hasStartingLineup && showSubstitutionPanel && (
-        <div className="mb-4 p-3 border rounded">
+        <section className="live-substitution-card">
           <h3 className="mb-3">Cambio en vivo</h3>
 
           <p className="mb-2">1. Selecciona quién sale</p>
 
-          <div className="d-flex flex-wrap gap-2 mb-4">
+          <div className="live-grid">
             {courtPlayers.map((player) => (
               <button
                 key={player.match_player_id}
                 type="button"
-                className={`chip ${
+                className={`live-chip ${
                   selectedOutPlayer?.match_player_id === player.match_player_id
                     ? "active"
                     : ""
@@ -402,27 +411,25 @@ export const LiveMatch = () => {
               >
                 Sale #{player.player_number} {player.first_name}
                 {player.position && (
-                  <small className="d-block text-muted">
-                    {POSITION_LABELS[player.position]}
-                  </small>
+                  <small>{POSITION_LABELS[player.position]}</small>
                 )}
               </button>
             ))}
           </div>
 
-          <p className="mb-2">2. Selecciona quién entra</p>
+          <p className="mb-2 mt-3">2. Selecciona quién entra</p>
 
           {benchPlayers.length === 0 ? (
             <p className="text-muted mb-0">
               No hay jugadoras disponibles en banca.
             </p>
           ) : (
-            <div className="d-flex flex-wrap gap-2">
+            <div className="live-grid">
               {benchPlayers.map((player) => (
                 <button
                   key={player.match_player_id}
                   type="button"
-                  className="chip"
+                  className="live-chip"
                   disabled={savingParticipation}
                   onClick={() => {
                     if (!selectedOutPlayer) return;
@@ -431,9 +438,7 @@ export const LiveMatch = () => {
                 >
                   Entra #{player.player_number} {player.first_name}
                   {player.position && (
-                    <small className="d-block text-muted">
-                      {POSITION_LABELS[player.position]}
-                    </small>
+                    <small>{POSITION_LABELS[player.position]}</small>
                   )}
                 </button>
               ))}
@@ -445,18 +450,19 @@ export const LiveMatch = () => {
               Primero selecciona quién sale y luego quién entra.
             </small>
           )}
-        </div>
+        </section>
       )}
 
       {hasStartingLineup && (
-        <>
-          <h3 className="mb-2">Jugadoras en cancha</h3>
+        <section className="live-section">
+          <h3 className="live-section-title">Jugadoras en cancha</h3>
 
-          <div className="grid mb-4">
+          <div className="live-grid">
             {courtPlayers.map((p) => (
               <button
                 key={p.match_player_id}
-                className={`chip ${
+                type="button"
+                className={`live-chip ${
                   selectedPlayer?.match_player_id === p.match_player_id
                     ? "active"
                     : ""
@@ -464,22 +470,18 @@ export const LiveMatch = () => {
                 onClick={() => setSelectedPlayer(p)}
               >
                 #{p.player_number} {p.first_name}
-                {p.position && (
-                  <small className="d-block text-muted">
-                    {POSITION_LABELS[p.position]}
-                  </small>
-                )}
+                {p.position && <small>{POSITION_LABELS[p.position]}</small>}
               </button>
             ))}
           </div>
-        </>
+        </section>
       )}
 
       {(selectedPlayer || selectedAction) && (
-        <div className="mb-3">
+        <section className="live-current-selection">
           {selectedPlayer && (
-            <p className="mb-1">
-              Jugadora:{" "}
+            <p>
+              Deportista:{" "}
               <strong>
                 #{selectedPlayer.player_number} {selectedPlayer.first_name}
               </strong>
@@ -487,40 +489,76 @@ export const LiveMatch = () => {
           )}
 
           {selectedAction && (
-            <p className="mb-0">
+            <p>
               Acción: <strong>{getActionLabel(selectedAction)}</strong>
             </p>
           )}
-        </div>
+        </section>
       )}
-
       {hasStartingLineup && (
         <>
-          <div className="d-flex flex-wrap gap-2 mb-4">
-            {ACTIONS.map((action) => (
-              <Button
-                key={action.value}
-                variant={
-                  selectedAction === action.value ? "primary" : "secondary"
-                }
-                onClick={() => setSelectedAction(action.value)}
-              >
-                {action.label}
-              </Button>
-            ))}
-          </div>
+          <section className="live-section">
+            <h3 className="live-section-title">Acción</h3>
 
-          <div className="d-flex gap-2 flex-wrap">
-            {(RESULTS_BY_ACTION[selectedAction] || []).map((result) => (
+            <div className="live-actions-grid">
+              {ACTIONS.map((action) => (
+                <Button
+                  key={action.value}
+                  className="live-action-button"
+                  variant={
+                    selectedAction === action.value ? "primary" : "secondary"
+                  }
+                  onClick={() => setSelectedAction(action.value)}
+                >
+                  {action.label}
+                </Button>
+              ))}
+            </div>
+          </section>
+
+          <section className="live-section">
+            <h3 className="live-section-title">Resultado</h3>
+
+            {!selectedAction ? (
+              <p className="live-section-helper">
+                Primero selecciona una acción para ver sus resultados.
+              </p>
+            ) : (
+              <div className="live-results-grid">
+                {(RESULTS_BY_ACTION[selectedAction] || []).map((result) => (
+                  <Button
+                    key={result.value}
+                    className={`live-result-button live-result-${result.value}`}
+                    disabled={!selectedPlayer || !selectedAction || saving}
+                    onClick={() => handleRegister(result.value)}
+                  >
+                    {result.label}
+                  </Button>
+                ))}
+              </div>
+            )}
+          </section>
+
+          {lastAction && (
+            <section className="live-last-action">
+              <p>
+                Última acción:{" "}
+                <strong>
+                  #{lastAction.player_number} {lastAction.player_name} ·{" "}
+                  {getActionLabel(lastAction.action_type)} ·{" "}
+                  {lastAction.result_label}
+                </strong>
+              </p>
+
               <Button
-                key={result.value}
-                disabled={!selectedPlayer || !selectedAction || saving}
-                onClick={() => handleRegister(result.value)}
+                variant="secondary"
+                onClick={handleUndo}
+                disabled={undoing}
               >
-                {result.label}
+                {undoing ? "Deshaciendo..." : "Deshacer"}
               </Button>
-            ))}
-          </div>
+            </section>
+          )}
         </>
       )}
     </div>

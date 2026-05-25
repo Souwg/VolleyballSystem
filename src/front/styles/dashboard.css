@@ -29,30 +29,43 @@
   justify-content: center;
 }
 /* ===== DASHBOARD HEADER ===== */
-
 .dashboard-header {
-  padding-bottom: 18px;
+  position: relative;
+  padding: 18px;
+  margin-bottom: 18px;
+  border-radius: var(--radius-lg);
+  background: rgba(255, 255, 255, 0.42);
+  border: 1px solid rgba(255, 255, 255, 0.55);
+  box-shadow: 0 10px 28px rgba(15, 23, 42, 0.04);
+  backdrop-filter: blur(10px);
 }
 
 .dashboard-header .page-eyebrow {
+  display: inline-flex;
+  align-items: center;
   color: var(--color-primary);
+  font-size: var(--font-size-xs);
+  font-weight: var(--font-weight-extrabold);
   letter-spacing: 0.12em;
+  text-transform: uppercase;
 }
 
 .dashboard-header h1 {
   max-width: 360px;
   font-size: 30px;
-  font-weight: 800;
+  font-weight: var(--font-weight-extrabold);
   line-height: 1.02;
   letter-spacing: -0.055em;
   color: var(--color-primary-dark);
+  margin-bottom: 0;
 }
 
 .dashboard-header p {
   max-width: 360px;
   margin-top: 8px;
-  font-size: 14px;
+  font-size: var(--font-size-md);
   color: var(--color-muted);
+  margin-bottom: 0;
 }
 
 .dashboard-feature-card {

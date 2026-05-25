@@ -16,12 +16,15 @@ import { Input } from "../../component/ui/input";
 import { Button } from "../../component/ui/button";
 import { FormField } from "../../component/ui/formField";
 import { Select } from "../../component/ui/select";
+import { FaRegHandPaper } from "react-icons/fa";
+import "../../../styles/onboarding.css";
 
 export const Onboarding = () => {
   const { store, actions } = useContext(Context);
   const navigate = useNavigate();
 
   const [location, setLocation] = useState("");
+  const [imageUrl, setImageUrl] = useState("");
   const [firstName, setFirstName] = useState("");
   const [lastName, setLastName] = useState("");
   const [number, setNumber] = useState("");
@@ -41,6 +44,16 @@ export const Onboarding = () => {
 
   const step = store.onboardingStep;
 
+  useEffect(() => {
+    if (step !== 4) return;
+
+    const timeout = setTimeout(() => {
+      navigate("/dashboard");
+    }, 1800);
+
+    return () => clearTimeout(timeout);
+  }, [step, navigate]);
+
   const handleSaveClub = async (e) => {
     e.preventDefault();
     if (savingClub) return;
@@ -55,7 +68,10 @@ export const Onboarding = () => {
 
     setSavingClub(true);
 
-    const result = await actions.updateClub(location.trim());
+    const result = await actions.updateClub({
+      location: location.trim(),
+      image_url: imageUrl.trim(),
+    });
 
     if (!result?.ok) {
       setErrors({ [result.code]: true });
@@ -139,18 +155,9 @@ export const Onboarding = () => {
   };
 
   useEffect(() => {
-    if (step !== 4) return;
-
-    const timeout = setTimeout(() => {
-      navigate("/dashboard");
-    }, 2000);
-
-    return () => clearTimeout(timeout);
-  }, [step, navigate]);
-
-  useEffect(() => {
-    if (store.club?.location) {
+    if (store.club) {
       setLocation(store.club.location?.trim() || "");
+      setImageUrl(store.club.image_url?.trim() || "");
     }
   }, [store.club]);
 
@@ -185,7 +192,11 @@ export const Onboarding = () => {
           form: (
             <form className="auth-form" onSubmit={handleSaveClub}>
               <p className="onboarding-greeting">
-                Bienvenido a <strong>{store.club?.name || "tu club"}</strong> 👋
+                <span>
+                  Bienvenido a <strong>{store.club?.name || "tu club"}</strong>
+                </span>
+
+                <FaRegHandPaper className="onboarding-greeting-icon" />
               </p>
               <FormField label="Nombre del club">
                 <Input
@@ -215,6 +226,18 @@ export const Onboarding = () => {
                       LOCATION_REQUIRED: false,
                     }));
                   }}
+                />
+              </FormField>
+
+              <FormField
+                label="Escudo o avatar del club"
+                helper="Opcional. Pega una URL de imagen para personalizar tu panel."
+              >
+                <Input
+                  type="text"
+                  placeholder="Ej: https://..."
+                  value={imageUrl}
+                  onChange={(e) => setImageUrl(e.target.value)}
                 />
               </FormField>
 
@@ -469,18 +492,38 @@ export const Onboarding = () => {
 
       case 4:
         return {
-          title: "Todo listo 🚀",
+          title: "Todo listo",
           subtitle: "Tu club ya está configurado",
           form: (
             <div className="onboarding-success">
-              <div className="onboarding-success-icon">🎉</div>
-              <h3>¡Listo para comenzar!</h3>
-              <p>Tu club está preparado para empezar a trabajar.</p>
-              <span>Redirigiendo al panel...</span>
+              <div className="onboarding-success-icon">✓</div>
+
+              <div className="onboarding-success-content">
+                <h3>Listo para comenzar</h3>
+                <p>
+                  Ya puedes gestionar categorías, deportistas, entrenamientos y
+                  partidos desde tu panel.
+                </p>
+              </div>
+
+              <div className="onboarding-success-summary">
+                <div>
+                  <span>Club</span>
+                  <strong>{store.club?.name || "Configurado"}</strong>
+                </div>
+
+                <div>
+                  <span>Categorías</span>
+                  <strong>{store.teams?.length || 1}</strong>
+                </div>
+              </div>
+
+              <p className="onboarding-redirect-text">
+                Redirigiendo al panel...
+              </p>
             </div>
           ),
         };
-
       default:
         return {};
     }
@@ -489,13 +532,16 @@ export const Onboarding = () => {
   const content = getContent();
 
   return (
-    <AuthLayout title={content.title} subtitle={content.subtitle}>
+    <AuthLayout
+      variant={step === 4 || step === 2 || step === 1 ? "center" : "top"}
+      title={content.title}
+      subtitle={content.subtitle}
+    >
       <StepIndicator step={step} total={4} />
       <p className="onboarding-progress-label">
         {step === 1 && "Configurando tu club"}
         {step === 2 && "Creando tu primera categoría"}
         {step === 3 && "Agregando tu primer deportista"}
-        {step === 4 && "Todo listo"}
       </p>
       {content.form}
     </AuthLayout>

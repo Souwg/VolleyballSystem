@@ -404,16 +404,14 @@ const getState = ({ getStore, getActions, setStore }) => {
         }
       },
 
-      updateClub: async (location) => {
+      updateClub: async (clubData) => {
         try {
           const resp = await authFetch("/api/club", {
             method: "PUT",
             headers: {
               "Content-Type": "application/json",
             },
-            body: JSON.stringify({
-              location: location,
-            }),
+            body: JSON.stringify(clubData),
           });
 
           const result = await parseResponse(resp);
@@ -423,6 +421,7 @@ const getState = ({ getStore, getActions, setStore }) => {
           const actions = getActions();
 
           await actions.getOnboardingStatus();
+          await actions.getDashboard();
 
           return successResponse(result.data);
         } catch (error) {

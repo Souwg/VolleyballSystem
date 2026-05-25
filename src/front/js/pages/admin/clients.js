@@ -4,7 +4,7 @@ import { Input } from "../../component/ui/input";
 import { Card } from "../../component/ui/card";
 import { Button } from "../../component/ui/button";
 import { PageHeader } from "../../component/ui/pageHeader";
-import { Container } from "../../component/ui/container";
+
 import { useToast } from "../../../../context/toastContext";
 import { validateClient } from "../../utils/validators";
 import { errorMessages } from "../../utils/errorMessages";
@@ -94,7 +94,7 @@ export const Clients = () => {
   };
 
   return (
-    <Container>
+    <>
       {createdCredentials && (
         <div className="card success-card">
           <h3>✅ Cliente creado correctamente</h3>
@@ -253,6 +253,6 @@ export const Clients = () => {
           </Card>
         ))}
       </div>
-    </Container>
+    </>
   );
 };

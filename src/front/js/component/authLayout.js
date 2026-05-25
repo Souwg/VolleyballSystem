@@ -2,9 +2,17 @@ import React from "react";
 import "../../styles/auth.css";
 import hero from "../../img/volleyball-hero.jpg";
 
-export const AuthLayout = ({ title, subtitle, children }) => {
+export const AuthLayout = ({
+  title,
+  subtitle,
+  children,
+  variant = "center",
+}) => {
   return (
-    <div className="auth-page" style={{ "--auth-hero-image": `url(${hero})` }}>
+    <div
+      className={`auth-page auth-page-${variant}`}
+      style={{ "--auth-hero-image": `url(${hero})` }}
+    >
       <div className="auth-hero">
         <div className="auth-hero-content">
           <span className="auth-badge">SPORTFLOW</span>
