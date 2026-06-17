@@ -54,6 +54,7 @@ export const TeamDetail = () => {
       player_number: player.player_number,
       sex: team?.gender === "mixed" ? player.sex : team.gender,
     });
+    setErrors({});
   };
 
   const saveEdit = async () => {
@@ -108,6 +109,7 @@ export const TeamDetail = () => {
     );
 
     setEditingPlayerId(null);
+    setErrors({});
     setLoadingSubmit(false);
   };
 
@@ -196,7 +198,7 @@ export const TeamDetail = () => {
 
   const handleDeleteTeam = async () => {
     const confirmed = window.confirm(
-      `¿Seguro que deseas eliminar la categoría ${team.name}?`,
+      `¿Seguro que deseas eliminar el equipo ${team.name}?`,
     );
 
     if (!confirmed) return;
@@ -204,11 +206,13 @@ export const TeamDetail = () => {
     const result = await actions.deleteTeam(team_id);
 
     if (!result.ok) {
-      showToast("No se pudo eliminar la categoría", "error");
+      showToast(
+        errorMessages[result.code] || "No se pudo eliminar el equipo",
+        "error",
+      );
       return;
     }
-
-    navigate("/teams");
+    navigate("/categories");
   };
 
   const handleRemovePlayer = async (e, player) => {
@@ -223,11 +227,23 @@ export const TeamDetail = () => {
     const result = await actions.removePlayerFromTeam(team_id, player.id);
 
     if (!result.ok) {
-      showToast("No se pudo quitar el deportista", "error");
+      showToast(
+        errorMessages[result.code] || "No se pudo quitar el deportista",
+        "error",
+      );
       return;
     }
 
     setPlayers((prev) => prev.filter((p) => p.id !== player.id));
+  };
+
+  const handleOpenPlayer = (playerId) => {
+    navigate(`/players/${playerId}`, {
+      state: {
+        from: `/teams/${team_id}`,
+        fromLabel: team?.name || "Equipo",
+      },
+    });
   };
 
   const handleLoadExistingPlayers = async () => {
@@ -250,7 +266,7 @@ export const TeamDetail = () => {
 
     if (!filteredPlayers.length) {
       showToast(
-        "Todos los deportistas disponibles ya están en esta categoría",
+        "Todos los deportistas disponibles ya están en este equipo",
         "info",
       );
       return;
@@ -266,7 +282,7 @@ export const TeamDetail = () => {
   }, [team_id]);
 
   if (loading) {
-    return <p>Cargando categoría...</p>;
+    return <p>Cargando equipo...</p>;
   }
 
   const playerCountLabel =
@@ -276,7 +292,7 @@ export const TeamDetail = () => {
     <div className="team-detail-page">
       <PageHeader
         variant="detail"
-        eyebrow="Categoría"
+        eyebrow="Equipo"
         title={team.name}
         subtitle={`${
           team.gender === "female"
@@ -285,7 +301,7 @@ export const TeamDetail = () => {
             ? "Masculina"
             : "Mixta"
         } • ${playerCountLabel}`}
-        onBack={() => navigate("/teams")}
+        onBack={() => navigate(`/categories/${team.category_id}`)}
         actions={
           <div className="team-detail-header-actions">
             {!showAddOptions &&
@@ -407,21 +423,33 @@ export const TeamDetail = () => {
             </div>
           )}
           <FormField
-            label="Número en la categoría"
+            label="Número en el equipo"
             error={
               errors.PLAYER_NUMBER_REQUIRED
                 ? errorMessages.PLAYER_NUMBER_REQUIRED
+                : errors.INVALID_PLAYER_NUMBER
+                ? errorMessages.INVALID_PLAYER_NUMBER
                 : errors.PLAYER_NUMBER_DUPLICATED
                 ? errorMessages.PLAYER_NUMBER_DUPLICATED
+                : errors.PLAYER_INACTIVE
+                ? errorMessages.PLAYER_INACTIVE
+                : errors.PLAYER_ALREADY_IN_TEAM
+                ? errorMessages.PLAYER_ALREADY_IN_TEAM
+                : errors.PLAYER_GENDER_MISMATCH
+                ? errorMessages.PLAYER_GENDER_MISMATCH
+                : errors.PLAYER_NOT_FOUND
+                ? errorMessages.PLAYER_NOT_FOUND
                 : null
             }
           >
             <Input
               type="number"
-              placeholder="número del jugador en esta categoría"
+              placeholder="número del jugador en este equipo"
               value={existingPlayerNumber}
               className={
-                errors.PLAYER_NUMBER_REQUIRED || errors.PLAYER_NUMBER_DUPLICATED
+                errors.PLAYER_NUMBER_REQUIRED ||
+                errors.INVALID_PLAYER_NUMBER ||
+                errors.PLAYER_NUMBER_DUPLICATED
                   ? "input-error"
                   : ""
               }
@@ -433,7 +461,12 @@ export const TeamDetail = () => {
                   setErrors((prev) => ({
                     ...prev,
                     PLAYER_NUMBER_REQUIRED: false,
+                    INVALID_PLAYER_NUMBER: false,
                     PLAYER_NUMBER_DUPLICATED: false,
+                    PLAYER_INACTIVE: false,
+                    PLAYER_ALREADY_IN_TEAM: false,
+                    PLAYER_GENDER_MISMATCH: false,
+                    PLAYER_NOT_FOUND: false,
                   }));
                   return;
                 }
@@ -447,6 +480,11 @@ export const TeamDetail = () => {
                   ...prev,
                   PLAYER_NUMBER_REQUIRED: false,
                   PLAYER_NUMBER_DUPLICATED: false,
+                  INVALID_PLAYER_NUMBER: false,
+                  PLAYER_INACTIVE: false,
+                  PLAYER_ALREADY_IN_TEAM: false,
+                  PLAYER_GENDER_MISMATCH: false,
+                  PLAYER_NOT_FOUND: false,
                 }));
               }}
             />
@@ -779,9 +817,12 @@ export const TeamDetail = () => {
                         />
                       </FormField>
 
-                      <Button onClick={saveEdit}>Guardar</Button>
+                      <Button type="button" onClick={saveEdit}>
+                        Guardar
+                      </Button>
 
                       <Button
+                        type="button"
                         variant="secondary"
                         onClick={() => {
                           setEditingPlayerId(null);
@@ -794,45 +835,49 @@ export const TeamDetail = () => {
                   ) : (
                     //MODO NORMAL
                     <>
-                      <div className="player-header">
+                      <div
+                        className="player-header player-header-clickable"
+                        onClick={() => handleOpenPlayer(player.id)}
+                      >
                         <div className="player-info">
                           <p className="player-name">
                             {player.first_name} {player.last_name}
                           </p>
+
                           <p className="player-meta">
                             #{player.player_number} ·{" "}
                             {player.sex === "female" ? "Femenino" : "Masculino"}
                           </p>
                         </div>
 
-                        <span
-                          className={`status-badge ${
-                            player.status === "active"
-                              ? "status-success"
+                        <div className="player-card-side">
+                          <span
+                            className={`status-badge ${
+                              player.status === "active"
+                                ? "status-success"
+                                : player.status === "injured"
+                                ? "status-warning"
+                                : "status-muted"
+                            }`}
+                          >
+                            {player.status === "active"
+                              ? "Activo"
                               : player.status === "injured"
-                              ? "status-warning"
-                              : "status-muted"
-                          }`}
-                        >
-                          {player.status === "active"
-                            ? "Activo"
-                            : player.status === "injured"
-                            ? "Lesionado"
-                            : "Inactivo"}
-                        </span>
-                        <Button
-                          variant="secondary"
-                          onClick={() => startEdit(player)}
-                        >
-                          Editar
-                        </Button>
-                        <Button
-                          variant="danger"
-                          onClick={(e) => handleRemovePlayer(e, player)}
-                        >
-                          Quitar
-                        </Button>
+                              ? "Lesionado"
+                              : "Inactivo"}
+                          </span>
+
+                          <span className="player-card-arrow">→</span>
+                        </div>
                       </div>
+
+                      <button
+                        type="button"
+                        className="player-remove-link"
+                        onClick={(e) => handleRemovePlayer(e, player)}
+                      >
+                        Quitar
+                      </button>
                     </>
                   )}
                 </div>
@@ -846,13 +891,13 @@ export const TeamDetail = () => {
 
         {players.length > 0 ? (
           <p>
-            No puedes eliminar esta categoría porque todavía tiene miembros
+            No puedes eliminar este equipo porque todavía tiene miembros
             asignados. Primero quítalos o reasígnalos.
           </p>
         ) : (
           <p>
-            Esta categoría no tiene miembros asignados. Puedes eliminarla si ya
-            no forma parte de la organización del club.
+            Este equipo no tiene miembros asignados. Puedes eliminarlo si ya no
+            forma parte de la organización del club.
           </p>
         )}
 
@@ -861,7 +906,7 @@ export const TeamDetail = () => {
           onClick={handleDeleteTeam}
           disabled={players.length > 0}
         >
-          Eliminar categoría
+          Eliminar equipo
         </Button>
       </Card>
     </div>

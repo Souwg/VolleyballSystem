@@ -10,30 +10,21 @@
   gap: 10px;
 }
 
-/* Player list inside team detail */
-
-.players-list {
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
+.player-remove-link {
+  display: inline-flex;
+  width: fit-content;
+  margin-top: 12px;
+  padding: 0;
+  border: none;
+  background: transparent;
+  color: var(--color-danger);
+  font-size: var(--font-size-sm);
+  font-weight: var(--font-weight-semibold);
+  cursor: pointer;
 }
 
-.player-card {
-  padding: 14px;
-}
-
-.player-header {
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
-}
-
-.player-info {
-  min-width: 0;
-}
-
-.player-header .button {
-  width: 100%;
+.player-remove-link:hover {
+  text-decoration: underline;
 }
 
 /* Add player options */
@@ -62,18 +53,6 @@
 
 .player-edit .button {
   width: 100%;
-}
-
-.player-row {
-  width: 100%;
-}
-
-.selectable-player {
-  cursor: pointer;
-}
-
-.selectable-player:hover {
-  border-color: var(--color-primary);
 }
 
 .player-team-history {
@@ -129,7 +108,9 @@
   color: var(--color-muted);
   border: 1px solid var(--color-border);
 }
+
 /* Mobile */
+
 @media (max-width: 767px) {
   .team-detail-header-actions {
     width: 100%;
@@ -138,5 +119,9 @@
 
   .team-detail-header-actions .button {
     width: 100%;
+  }
+
+  .player-remove-link {
+    margin-top: 10px;
   }
 }

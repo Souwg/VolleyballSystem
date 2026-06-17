@@ -52,7 +52,7 @@ const RESULTS_BY_ACTION = {
 };
 
 const POSITION_LABELS = {
-  setter: "Armadora",
+  setter: "Armador",
   outside: "Punta",
   middle: "Central",
   opposite: "Opuesto",
@@ -78,6 +78,7 @@ export const LiveMatch = () => {
   const [selectedStartingPlayers, setSelectedStartingPlayers] = useState([]);
   const [savingLineup, setSavingLineup] = useState(false);
   const [lineupError, setLineupError] = useState("");
+  const [liveError, setLiveError] = useState("");
 
   const loadRoster = async () => {
     const result = await actions.getMatchRoster(match_id);
@@ -110,6 +111,7 @@ export const LiveMatch = () => {
   const saveStartingLineup = async () => {
     if (selectedStartingPlayers.length !== 6 || savingLineup) return;
 
+    setLineupError("");
     setSavingLineup(true);
 
     const result = await actions.saveStartingLineup(
@@ -119,7 +121,12 @@ export const LiveMatch = () => {
 
     setSavingLineup(false);
 
-    if (!result?.ok) return;
+    if (!result?.ok) {
+      setLineupError(
+        result.message || "No se pudo guardar la alineación inicial",
+      );
+      return;
+    }
 
     setSelectedStartingPlayers([]);
     setLineupError("");
@@ -155,6 +162,7 @@ export const LiveMatch = () => {
   const handleSubstitution = async (incomingPlayer) => {
     if (!selectedOutPlayer || savingParticipation) return;
 
+    setLiveError("");
     setSavingParticipation(true);
 
     const result = await actions.createMatchSubstitution(match_id, {
@@ -165,7 +173,10 @@ export const LiveMatch = () => {
 
     setSavingParticipation(false);
 
-    if (!result?.ok) return;
+    if (!result?.ok) {
+      setLiveError(result.message || "No se pudo registrar el cambio");
+      return;
+    }
 
     navigator.vibrate?.(50);
 
@@ -189,6 +200,7 @@ export const LiveMatch = () => {
   const handleRegister = async (result) => {
     if (!selectedPlayer || !selectedAction || saving) return;
 
+    setLiveError("");
     setSaving(true);
 
     const res = await actions.createMatchEvent({
@@ -201,7 +213,10 @@ export const LiveMatch = () => {
 
     setSaving(false);
 
-    if (!res?.ok) return;
+    if (!res?.ok) {
+      setLiveError(res.message || "No se pudo registrar la acción");
+      return;
+    }
 
     const resultLabel =
       RESULTS_BY_ACTION[selectedAction]?.find((item) => item.value === result)
@@ -225,13 +240,17 @@ export const LiveMatch = () => {
   const handleUndo = async () => {
     if (!lastAction?.id || undoing) return;
 
+    setLiveError("");
     setUndoing(true);
 
     const res = await actions.deleteMatchEvent(lastAction.id);
 
     setUndoing(false);
 
-    if (!res?.ok) return;
+    if (!res?.ok) {
+      setLiveError(res.message || "No se pudo deshacer la acción");
+      return;
+    }
 
     navigator.vibrate?.(30);
     setLastAction(null);
@@ -390,7 +409,7 @@ export const LiveMatch = () => {
           {setMessage && <p className="live-set-message">✅ {setMessage}</p>}
         </section>
       )}
-
+      {liveError && <p className="form-error">{liveError}</p>}
       {hasStartingLineup && showSubstitutionPanel && (
         <section className="live-substitution-card">
           <h3 className="mb-3">Cambio en vivo</h3>
@@ -467,7 +486,10 @@ export const LiveMatch = () => {
                     ? "active"
                     : ""
                 }`}
-                onClick={() => setSelectedPlayer(p)}
+                onClick={() => {
+                  setSelectedPlayer(p);
+                  setLiveError("");
+                }}
               >
                 #{p.player_number} {p.first_name}
                 {p.position && <small>{POSITION_LABELS[p.position]}</small>}
@@ -508,7 +530,10 @@ export const LiveMatch = () => {
                   variant={
                     selectedAction === action.value ? "primary" : "secondary"
                   }
-                  onClick={() => setSelectedAction(action.value)}
+                  onClick={() => {
+                    setSelectedAction(action.value);
+                    setLiveError("");
+                  }}
                 >
                   {action.label}
                 </Button>

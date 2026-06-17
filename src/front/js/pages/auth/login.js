@@ -82,6 +82,7 @@ export const Login = () => {
                 INVALID_EMAIL: false,
                 INVALID_CREDENTIALS: false,
                 ACCOUNT_DISABLED: false,
+                NETWORK_ERROR: false,
               }));
             }}
           />
@@ -117,6 +118,7 @@ export const Login = () => {
                   PASSWORD_REQUIRED: false,
                   INVALID_CREDENTIALS: false,
                   ACCOUNT_DISABLED: false,
+                  NETWORK_ERROR: false,
                 }));
               }}
             />
@@ -133,16 +135,18 @@ export const Login = () => {
           {errors.PASSWORD_REQUIRED && (
             <p className="form-error">{errorMessages.PASSWORD_REQUIRED}</p>
           )}
-
-          {errors.INVALID_CREDENTIALS && (
-            <p className="form-error">{errorMessages.INVALID_CREDENTIALS}</p>
-          )}
-
-          {errors.ACCOUNT_DISABLED && (
-            <p className="form-error">{errorMessages.ACCOUNT_DISABLED}</p>
-          )}
         </div>
-
+        {(errors.INVALID_CREDENTIALS ||
+          errors.ACCOUNT_DISABLED ||
+          errors.NETWORK_ERROR) && (
+          <p className="form-error">
+            {errors.INVALID_CREDENTIALS
+              ? errorMessages.INVALID_CREDENTIALS
+              : errors.ACCOUNT_DISABLED
+              ? errorMessages.ACCOUNT_DISABLED
+              : errorMessages.NETWORK_ERROR}
+          </p>
+        )}
         <Button type="submit" disabled={loading}>
           {loading ? "Ingresando..." : "Ingresar"}
         </Button>

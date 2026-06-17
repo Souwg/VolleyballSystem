@@ -4,12 +4,14 @@ import { Context } from "../../store/appContext";
 import { AuthLayout } from "../../component/authLayout";
 import {
   validateClubLocation,
+  validateCategory,
   validateTeam,
   validatePlayerProfile,
   validatePlayerAssignment,
 } from "../../utils/validators";
 
 import { errorMessages } from "../../utils/errorMessages";
+import { getAssetUrl } from "../../utils/getAssetUrl";
 
 import { StepIndicator } from "../../component/ui/stepIndicator";
 import { Input } from "../../component/ui/input";
@@ -24,28 +26,43 @@ export const Onboarding = () => {
   const navigate = useNavigate();
 
   const [location, setLocation] = useState("");
+  const [clubState, setClubState] = useState("");
   const [imageUrl, setImageUrl] = useState("");
+  const [clubImageFile, setClubImageFile] = useState(null);
+  const [clubImagePreview, setClubImagePreview] = useState("");
+  const [uploadingImage, setUploadingImage] = useState(false);
   const [firstName, setFirstName] = useState("");
   const [lastName, setLastName] = useState("");
   const [number, setNumber] = useState("");
   const [sex, setSex] = useState("");
+  const [categoryName, setCategoryName] = useState("");
+  const [categoryDescription, setCategoryDescription] = useState("");
+  const [selectedCategory, setSelectedCategory] = useState("");
   const [teamName, setTeamName] = useState("");
   const [teamGender, setTeamGender] = useState("");
   const [selectedTeam, setSelectedTeam] = useState("");
   const [errors, setErrors] = useState({});
   const [savingClub, setSavingClub] = useState(false);
+  const [creatingCategory, setCreatingCategory] = useState(false);
   const [creatingTeam, setCreatingTeam] = useState(false);
   const [creatingPlayer, setCreatingPlayer] = useState(false);
 
   useEffect(() => {
     actions.getOnboardingStatus();
+    actions.getCategories();
     actions.getTeams();
   }, []);
+
+  useEffect(() => {
+    if (store.categories?.length === 1) {
+      setSelectedCategory(store.categories[0].id);
+    }
+  }, [store.categories]);
 
   const step = store.onboardingStep;
 
   useEffect(() => {
-    if (step !== 4) return;
+    if (step !== 5) return;
 
     const timeout = setTimeout(() => {
       navigate("/dashboard");
@@ -56,7 +73,9 @@ export const Onboarding = () => {
 
   const handleSaveClub = async (e) => {
     e.preventDefault();
-    if (savingClub) return;
+
+    if (savingClub || uploadingImage) return;
+
     setErrors({});
 
     const newErrors = validateClubLocation(location);
@@ -68,24 +87,94 @@ export const Onboarding = () => {
 
     setSavingClub(true);
 
+    let finalImageUrl = imageUrl.trim();
+
+    if (clubImageFile) {
+      setUploadingImage(true);
+
+      const uploadResult = await actions.uploadClubImage(clubImageFile);
+
+      setUploadingImage(false);
+
+      if (!uploadResult?.ok) {
+        setErrors({ [uploadResult.code]: true });
+        setSavingClub(false);
+        return;
+      }
+
+      finalImageUrl = uploadResult.data.image_url;
+    }
+
     const result = await actions.updateClub({
       location: location.trim(),
-      image_url: imageUrl.trim(),
+      image_url: finalImageUrl,
     });
 
     if (!result?.ok) {
       setErrors({ [result.code]: true });
+      setSavingClub(false);
+      return;
     }
+
+    await actions.getOnboardingStatus();
 
     setSavingClub(false);
   };
 
   const selectedTeamData = store.teams?.find((t) => t.id === selectedTeam);
 
+  const selectedCategoryData = store.categories?.find(
+    (category) => category.id === selectedCategory,
+  );
+
+  const handleCreateCategory = async (e) => {
+    e.preventDefault();
+
+    if (creatingCategory) return;
+
+    setErrors({});
+
+    const newErrors = validateCategory({
+      name: categoryName,
+    });
+
+    if (Object.keys(newErrors).length > 0) {
+      setErrors(newErrors);
+      return;
+    }
+    setCreatingCategory(true);
+
+    const result = await actions.createCategory({
+      name: categoryName.trim(),
+      description: categoryDescription.trim(),
+    });
+
+    if (!result?.ok) {
+      setErrors({ [result.code]: true });
+      setCreatingCategory(false);
+      return;
+    }
+
+    setCategoryName("");
+    setCategoryDescription("");
+
+    await actions.getCategories();
+    await actions.getOnboardingStatus();
+
+    setCreatingCategory(false);
+  };
+
   const handleCreateTeam = async (e) => {
     e.preventDefault();
+
     if (creatingTeam) return;
+
     setErrors({});
+
+    if (!selectedCategory) {
+      setErrors({ CATEGORY_ID_REQUIRED: true });
+      return;
+    }
 
     const newErrors = validateTeam({
       name: teamName,
@@ -99,19 +188,29 @@ export const Onboarding = () => {
 
     setCreatingTeam(true);
 
-    const result = await actions.createTeam({
+    const result = await actions.createTeamInCategory(selectedCategory, {
       name: teamName.trim(),
       gender: teamGender,
     });
 
     if (!result?.ok) {
       setErrors({ [result.code]: true });
+      setCreatingTeam(false);
+      return;
     }
+
+    setTeamName("");
+    setTeamGender("");
+
+    await actions.getTeams();
+    await actions.getOnboardingStatus();
 
     setCreatingTeam(false);
   };
+
   const handleCreatePlayer = async (e) => {
     e.preventDefault();
+
     if (creatingPlayer) return;
 
     setErrors({});
@@ -149,7 +248,16 @@ export const Onboarding = () => {
 
     if (!result?.ok) {
       setErrors({ [result.code]: true });
+      setCreatingPlayer(false);
+      return;
     }
+
+    setFirstName("");
+    setLastName("");
+    setNumber("");
+    setSex("");
+
+    await actions.getOnboardingStatus();
 
     setCreatingPlayer(false);
   };
@@ -157,6 +265,7 @@ export const Onboarding = () => {
   useEffect(() => {
     if (store.club) {
       setLocation(store.club.location?.trim() || "");
+      setClubState(store.club.state?.trim() || "");
       setImageUrl(store.club.image_url?.trim() || "");
     }
   }, [store.club]);
@@ -191,14 +300,14 @@ export const Onboarding = () => {
           subtitle: "Vamos a dejar todo listo para comenzar",
           form: (
             <form className="auth-form" onSubmit={handleSaveClub}>
-              <p className="onboarding-greeting">
-                <span>
-                  Bienvenido a <strong>{store.club?.name || "tu club"}</strong>
-                </span>
-
-                <FaRegHandPaper className="onboarding-greeting-icon" />
-              </p>
-              <FormField label="Nombre del club">
+              <FormField
+                label={
+                  <span className="onboarding-label-with-icon">
+                    <FaRegHandPaper className="onboarding-greeting-icon" />
+                    Este es tu club
+                  </span>
+                }
+              >
                 <Input
                   type="text"
                   value={store.club?.name || ""}
@@ -206,8 +315,16 @@ export const Onboarding = () => {
                   className="input-readonly"
                 />
               </FormField>
+              <FormField label="Estado">
+                <Input
+                  type="text"
+                  value={clubState || "Sin definir"}
+                  disabled
+                  className="input-readonly"
+                />
+              </FormField>
               <FormField
-                label="Ubicación del club"
+                label="Ciudad"
                 error={
                   errors.LOCATION_REQUIRED
                     ? errorMessages.LOCATION_REQUIRED
@@ -216,7 +333,7 @@ export const Onboarding = () => {
               >
                 <Input
                   type="text"
-                  placeholder="Ej: Caracas, Maracay..."
+                  placeholder="Ej: Cagua, Caracas, Valencia..."
                   value={location}
                   className={errors.LOCATION_REQUIRED ? "input-error" : ""}
                   onChange={(e) => {
@@ -229,20 +346,74 @@ export const Onboarding = () => {
                 />
               </FormField>
 
-              <FormField
-                label="Escudo o avatar del club"
-                helper="Opcional. Pega una URL de imagen para personalizar tu panel."
-              >
-                <Input
-                  type="text"
-                  placeholder="Ej: https://..."
-                  value={imageUrl}
-                  onChange={(e) => setImageUrl(e.target.value)}
-                />
-              </FormField>
+              <FormField label="Escudo del club">
+                <div className="club-image-picker">
+                  <div className="club-image-preview">
+                    {clubImagePreview || imageUrl ? (
+                      <img
+                        src={clubImagePreview || getAssetUrl(imageUrl)}
+                        alt="Escudo del club"
+                      />
+                    ) : (
+                      <span>
+                        {(store.club?.name || "Club")
+                          .split(" ")
+                          .filter(Boolean)
+                          .slice(0, 2)
+                          .map((word) => word.charAt(0))
+                          .join("")
+                          .toUpperCase()}
+                      </span>
+                    )}
+                  </div>
 
-              <Button type="submit" disabled={savingClub}>
-                {savingClub ? "Guardando..." : "Continuar"}
+                  <div className="club-image-actions">
+                    <label className="button button-secondary club-image-button">
+                      Subir imagen
+                      <input
+                        type="file"
+                        accept="image/png,image/jpeg,image/jpg,image/webp"
+                        hidden
+                        onChange={(e) => {
+                          const file = e.target.files?.[0];
+
+                          if (!file) return;
+
+                          setClubImageFile(file);
+                          setClubImagePreview(URL.createObjectURL(file));
+                          setErrors((prev) => ({
+                            ...prev,
+                            IMAGE_TOO_LARGE: false,
+                            INVALID_IMAGE_FORMAT: false,
+                            IMAGE_REQUIRED: false,
+                          }));
+                        }}
+                      />
+                    </label>
+
+                    <small className="form-helper">
+                      Opcional. Puedes subir un escudo o avatar desde tu
+                      galería.
+                    </small>
+                  </div>
+                </div>
+              </FormField>
+              {errors.IMAGE_TOO_LARGE && (
+                <p className="form-error">{errorMessages.IMAGE_TOO_LARGE}</p>
+              )}
+
+              {errors.INVALID_IMAGE_FORMAT && (
+                <p className="form-error">
+                  {errorMessages.INVALID_IMAGE_FORMAT}
+                </p>
+              )}
+
+              {errors.IMAGE_REQUIRED && (
+                <p className="form-error">{errorMessages.IMAGE_REQUIRED}</p>
+              )}
+
+              <Button type="submit" disabled={savingClub || uploadingImage}>
+                {savingClub || uploadingImage ? "Guardando..." : "Continuar"}
               </Button>
             </form>
           ),
@@ -251,11 +422,91 @@ export const Onboarding = () => {
       case 2:
         return {
           title: "Crea tu primera categoría",
-          subtitle: "Aquí comienza la organización de tu club",
+          subtitle: "Organiza tu club por edad, etapa o nivel deportivo",
           form: (
-            <form className="auth-form" onSubmit={handleCreateTeam}>
+            <form className="auth-form" onSubmit={handleCreateCategory}>
               <FormField
                 label="Nombre de la categoría"
+                error={
+                  errors.CATEGORY_NAME_REQUIRED
+                    ? "El nombre de la categoría es obligatorio"
+                    : errors.CATEGORY_ALREADY_EXISTS
+                    ? "Ya existe una categoría con ese nombre"
+                    : null
+                }
+              >
+                <Input
+                  type="text"
+                  placeholder="Ej: Iniciación, U12, U14, Juvenil..."
+                  value={categoryName}
+                  className={
+                    errors.CATEGORY_NAME_REQUIRED ||
+                    errors.CATEGORY_ALREADY_EXISTS
+                      ? "input-error"
+                      : ""
+                  }
+                  onChange={(e) => {
+                    setCategoryName(e.target.value);
+                    setErrors((prev) => ({
+                      ...prev,
+                      CATEGORY_NAME_REQUIRED: false,
+                      CATEGORY_ALREADY_EXISTS: false,
+                    }));
+                  }}
+                />
+              </FormField>
+
+              <Button type="submit" disabled={creatingCategory}>
+                {creatingCategory ? "Creando..." : "Continuar"}
+              </Button>
+            </form>
+          ),
+        };
+
+      case 3:
+        return {
+          title: "Crea tu primer equipo",
+          subtitle:
+            "Este será el grupo donde agregarás deportistas y entrenamientos",
+          form: (
+            <form className="auth-form" onSubmit={handleCreateTeam}>
+              {store.categories?.length > 1 && (
+                <FormField
+                  label="Categoría"
+                  error={
+                    errors.CATEGORY_ID_REQUIRED
+                      ? "Selecciona una categoría"
+                      : null
+                  }
+                >
+                  <Select
+                    className={errors.CATEGORY_ID_REQUIRED ? "input-error" : ""}
+                    value={selectedCategory}
+                    onChange={(e) => {
+                      setSelectedCategory(e.target.value);
+                      setErrors((prev) => ({
+                        ...prev,
+                        CATEGORY_ID_REQUIRED: false,
+                      }));
+                    }}
+                  >
+                    <option value="">Selecciona una categoría</option>
+                    {store.categories?.map((category) => (
+                      <option key={category.id} value={category.id}>
+                        {category.name}
+                      </option>
+                    ))}
+                  </Select>
+                </FormField>
+              )}
+              {store.categories?.length === 1 && selectedCategoryData && (
+                <div className="onboarding-context-card">
+                  <span>Este equipo se creará dentro de la categoría</span>
+                  <strong>{selectedCategoryData.name}</strong>
+                </div>
+              )}
+              <FormField
+                label="Nombre del equipo"
                 error={
                   errors.TEAM_NAME_REQUIRED
                     ? errorMessages.TEAM_NAME_REQUIRED
@@ -266,7 +517,7 @@ export const Onboarding = () => {
               >
                 <Input
                   type="text"
-                  placeholder="Ej: Iniciación, Juvenil, Superior..."
+                  placeholder="Ej: Iniciación A, U14 Femenino..."
                   value={teamName}
                   className={
                     errors.TEAM_NAME_REQUIRED || errors.TEAM_ALREADY_EXISTS
@@ -283,8 +534,9 @@ export const Onboarding = () => {
                   }}
                 />
               </FormField>
+
               <FormField
-                label="Género"
+                label="Género del equipo"
                 error={
                   errors.INVALID_TEAM_GENDER
                     ? errorMessages.INVALID_TEAM_GENDER
@@ -308,6 +560,7 @@ export const Onboarding = () => {
                   <option value="mixed">Mixto</option>
                 </Select>
               </FormField>
+
               <Button type="submit" disabled={creatingTeam}>
                 {creatingTeam ? "Creando..." : "Continuar"}
               </Button>
@@ -315,10 +568,10 @@ export const Onboarding = () => {
           ),
         };
 
-      case 3:
+      case 4:
         return {
           title: "Agrega tu primer deportista",
-          subtitle: "Empieza a construir el roster de tu club",
+          subtitle: "Empieza a construir el roster de tu equipo",
           form: (
             <form className="auth-form" onSubmit={handleCreatePlayer}>
               <FormField
@@ -343,6 +596,7 @@ export const Onboarding = () => {
                   }}
                 />
               </FormField>
+
               <FormField
                 label="Apellido"
                 error={
@@ -367,7 +621,7 @@ export const Onboarding = () => {
               </FormField>
 
               <FormField
-                label="Número en la categoría"
+                label="Número en el equipo"
                 error={
                   errors.PLAYER_NUMBER_REQUIRED
                     ? errorMessages.PLAYER_NUMBER_REQUIRED
@@ -451,8 +705,9 @@ export const Onboarding = () => {
                   </Select>
                 </FormField>
               )}
+
               <FormField
-                label="Categoría"
+                label="Equipo"
                 error={
                   errors.TEAM_ID_REQUIRED
                     ? errorMessages.TEAM_ID_REQUIRED
@@ -470,7 +725,7 @@ export const Onboarding = () => {
                     }));
                   }}
                 >
-                  <option value="">Selecciona una categoría</option>
+                  <option value="">Selecciona un equipo</option>
                   {store.teams?.map((team) => (
                     <option key={team.id} value={team.id}>
                       {team.name} ·{" "}
@@ -483,6 +738,12 @@ export const Onboarding = () => {
                   ))}
                 </Select>
               </FormField>
+              {errors.PLAYER_GENDER_MISMATCH && (
+                <p className="form-error">
+                  {errorMessages.PLAYER_GENDER_MISMATCH}
+                </p>
+              )}
+
               <Button type="submit" disabled={creatingPlayer}>
                 {creatingPlayer ? "Creando..." : "Finalizar configuración"}
               </Button>
@@ -490,7 +751,7 @@ export const Onboarding = () => {
           ),
         };
 
-      case 4:
+      case 5:
         return {
           title: "Todo listo",
           subtitle: "Tu club ya está configurado",
@@ -501,8 +762,8 @@ export const Onboarding = () => {
               <div className="onboarding-success-content">
                 <h3>Listo para comenzar</h3>
                 <p>
-                  Ya puedes gestionar categorías, deportistas, entrenamientos y
-                  partidos desde tu panel.
+                  Ya puedes gestionar categorías, equipos, deportistas,
+                  entrenamientos y partidos desde tu panel.
                 </p>
               </div>
 
@@ -514,6 +775,11 @@ export const Onboarding = () => {
 
                 <div>
                   <span>Categorías</span>
+                  <strong>{store.categories?.length || 1}</strong>
+                </div>
+
+                <div>
+                  <span>Equipos</span>
                   <strong>{store.teams?.length || 1}</strong>
                 </div>
               </div>
@@ -533,15 +799,18 @@ export const Onboarding = () => {
 
   return (
     <AuthLayout
-      variant={step === 4 || step === 2 || step === 1 ? "center" : "top"}
+      variant={
+        step === 5 || step === 2 || step === 3 || step === 1 ? "center" : "top"
+      }
       title={content.title}
       subtitle={content.subtitle}
     >
-      <StepIndicator step={step} total={4} />
+      <StepIndicator step={step} total={5} />
       <p className="onboarding-progress-label">
         {step === 1 && "Configurando tu club"}
         {step === 2 && "Creando tu primera categoría"}
-        {step === 3 && "Agregando tu primer deportista"}
+        {step === 3 && "Creando tu primer equipo"}
+        {step === 4 && "Agregando tu primer deportista"}
       </p>
       {content.form}
     </AuthLayout>

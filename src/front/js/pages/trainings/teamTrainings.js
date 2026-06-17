@@ -6,6 +6,7 @@ import { Context } from "../../store/appContext";
 import { PageHeader } from "../../component/ui/pageHeader";
 import { Card } from "../../component/ui/card";
 import { Button } from "../../component/ui/button";
+import "../../../styles/trainings.css";
 
 const formatDate = (date) => {
   return new Date(date).toLocaleDateString("es-ES", {
@@ -55,28 +56,47 @@ export const TeamTrainings = () => {
           <Button onClick={handleCreateTraining}>+ Crear entrenamiento</Button>
         }
       />
-      <Card>
-        {store.trainings.length === 0 ? (
+
+      {store.trainings.length === 0 ? (
+        <Card>
           <div className="empty-state">
             <h4>No hay entrenamientos aún</h4>
-            <p>Crea el primer entrenamiento para este equipo</p>
-            <Button className="button-primary" onClick={handleCreateTraining}>
-              Crear entrenamiento
-            </Button>
+            <p>
+              Cuando crees una sesión, aparecerá aquí el historial de
+              entrenamientos de esta categoría.
+            </p>
           </div>
-        ) : (
-          store.trainings.map((training) => (
-            <Card
-              key={training.id}
-              className="card-interactive"
-              onClick={() => handleOpenTraining(training.id)}
-            >
-              <p>{formatDate(training.date)}</p>
-              <p>{training.location}</p>
-            </Card>
-          ))
-        )}
-      </Card>
+        </Card>
+      ) : (
+        <Card>
+          <div className="section-header">
+            <h4>Entrenamientos de la categoría</h4>
+            <p>Sesiones registradas para este equipo.</p>
+          </div>
+
+          <div className="trainings-list">
+            {store.trainings.map((training) => (
+              <Card
+                key={training.id}
+                className="training-card card-interactive"
+                onClick={() => handleOpenTraining(training.id)}
+              >
+                <div className="training-card-content">
+                  <div className="training-card-main">
+                    <span className="training-card-label">Sesión</span>
+
+                    <h3>{formatDate(training.date)}</h3>
+
+                    <p>{training.location || "Sin ubicación"}</p>
+                  </div>
+
+                  <span className="training-card-arrow">→</span>
+                </div>
+              </Card>
+            ))}
+          </div>
+        </Card>
+      )}
     </div>
   );
 };

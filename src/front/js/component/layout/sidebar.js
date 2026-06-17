@@ -1,6 +1,8 @@
 import React from "react";
 import { Link, useLocation } from "react-router-dom";
 import { Button } from "../ui/button";
+import { getAssetUrl } from "../../utils/getAssetUrl";
+import sportflowLogo from "../../../img/sportflow-logo.svg";
 
 export const Sidebar = ({
   menuOpen,
@@ -22,17 +24,25 @@ export const Sidebar = ({
       .toUpperCase();
   };
 
+  const clubPlace =
+    [club?.location, club?.state].filter(Boolean).join(", ") ||
+    "Ubicación sin definir";
+
   return (
     <aside className={`sidebar ${menuOpen ? "open" : ""}`}>
-      <Link to="/dashboard" onClick={closeMenu} className="sidebar-title">
-        {title}
+      <Link to="/dashboard" onClick={closeMenu} className="sidebar-brand">
+        <img
+          src={sportflowLogo}
+          alt={title || "SportFlow"}
+          className="sidebar-logo"
+        />
       </Link>
 
       {club && (
-        <Link to="/dashboard" onClick={closeMenu} className="sidebar-club">
+        <Link to="/club/profile" onClick={closeMenu} className="sidebar-club">
           <div className="sidebar-club-avatar">
             {club.image_url ? (
-              <img src={club.image_url} alt={club.name} />
+              <img src={getAssetUrl(club.image_url)} alt={club.name} />
             ) : (
               <span>{getInitials(club.name)}</span>
             )}
@@ -40,7 +50,7 @@ export const Sidebar = ({
 
           <div className="sidebar-club-info">
             <strong>{club.name}</strong>
-            <span>Club activo</span>
+            <span>{clubPlace}</span>
           </div>
         </Link>
       )}

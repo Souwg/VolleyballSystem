@@ -2,6 +2,9 @@ import React from "react";
 import "../../styles/auth.css";
 import hero from "../../img/volleyball-hero.jpg";
 
+import isotipo from "../../img/isotipo-sportflow.svg";
+import sportflowLogo from "../../img/sportflow-logo.svg";
+
 export const AuthLayout = ({
   title,
   subtitle,
@@ -15,16 +18,27 @@ export const AuthLayout = ({
     >
       <div className="auth-hero">
         <div className="auth-hero-content">
-          <span className="auth-badge">SPORTFLOW</span>
+          <div className="auth-brand">
+            <img className="auth-brand-icon" src={isotipo} alt="SportFlow" />
 
-          <h1>Volleyball System</h1>
+            <img
+              className="auth-brand-wordmark"
+              src={sportflowLogo}
+              alt="SportFlow"
+            />
+          </div>
 
-          <p>Plataforma inteligente de gestión de clubes deportivos.</p>
+          <h1>Gestión deportiva simple y moderna</h1>
+
+          <p>
+            Plataforma inteligente para organizar clubes, equipos, deportistas,
+            entrenamientos, partidos y pagos.
+          </p>
 
           <div className="auth-tags">
-            <span>Jugadoras</span>
+            <span>Deportistas</span>
             <span>Equipos</span>
-            <span>Estadísticas</span>
+            <span>Pagos</span>
           </div>
         </div>
       </div>
@@ -32,8 +46,17 @@ export const AuthLayout = ({
       <div className="auth-panel">
         <div className="auth-card">
           <div className="auth-mobile-brand">
-            <span>SPORTFLOW</span>
-            <strong>Volleyball System</strong>
+            <img
+              className="auth-mobile-brand-icon"
+              src={isotipo}
+              alt="SportFlow"
+            />
+
+            <img
+              className="auth-mobile-brand-wordmark"
+              src={sportflowLogo}
+              alt="SportFlow"
+            />
           </div>
 
           <h2>{title}</h2>

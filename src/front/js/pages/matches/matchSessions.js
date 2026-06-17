@@ -20,16 +20,12 @@ export const MatchSessions = () => {
   const loadMatches = async () => {
     setLoading(true);
 
-    const result = await actions.getTeamMatches(team_id);
-
-    if (!result.ok) {
+    try {
+      await actions.getTeamMatches(team_id);
+    } finally {
       setLoading(false);
-      return;
     }
-
-    setLoading(false);
   };
-
   const getMatchStatusText = (match) => {
     if (match.is_completed) {
       if (match.result === "win") return "Victoria";
@@ -72,13 +68,34 @@ export const MatchSessions = () => {
     return <p>Cargando partidos...</p>;
   }
 
+  const matches = store.matches || [];
+  const team = store.matchTeam;
+
+  const categoryName = team?.category?.name || "Sin categoría";
+  const teamName = team?.name || "Equipo";
+
+  const teamGender =
+    team?.gender === "female"
+      ? "Femenino"
+      : team?.gender === "male"
+      ? "Masculino"
+      : team?.gender === "mixed"
+      ? "Mixto"
+      : "";
+
   return (
     <>
       <PageHeader
         variant="detail"
-        eyebrow="Categoría"
+        eyebrow="Equipo"
         title="Partidos"
-        subtitle="Gestiona partidos, preparación y rendimiento."
+        subtitle={
+          team
+            ? `${categoryName} · ${teamName}${
+                teamGender ? ` · ${teamGender}` : ""
+              }`
+            : "Gestiona partidos, preparación y rendimiento."
+        }
         onBack={() => navigate(`/teams/${team_id}`)}
         actions={
           <Button onClick={() => navigate(`/teams/${team_id}/matches/new`)}>
@@ -87,12 +104,12 @@ export const MatchSessions = () => {
         }
       />
 
-      {store.matches.length === 0 ? (
+      {matches.length === 0 ? (
         <Card>
           <p>No hay partidos creados todavía</p>
         </Card>
       ) : (
-        store.matches.map((match) => {
+        matches.map((match) => {
           const hasScore =
             match.is_completed ||
             (match.home_sets ?? 0) > 0 ||
@@ -102,7 +119,14 @@ export const MatchSessions = () => {
             <Card
               key={match.id}
               className="match-card card-interactive"
-              onClick={() => navigate(`/matches/${match.id}`)}
+              onClick={() =>
+                navigate(`/matches/${match.id}`, {
+                  state: {
+                    from: "teamMatches",
+                    teamId: team_id,
+                  },
+                })
+              }
             >
               <div className="match-card-header">
                 <div className="match-card-main">
@@ -126,8 +150,14 @@ export const MatchSessions = () => {
                   </span>
 
                   {hasScore && (
-                    <span className="match-score">
-                      {match.home_sets ?? 0} - {match.opponent_sets ?? 0}
+                    <span
+                      className="match-score"
+                      aria-label="Resultado en sets"
+                    >
+                      <span className="match-score-label">Sets</span>
+                      <strong>
+                        {match.home_sets ?? 0} - {match.opponent_sets ?? 0}
+                      </strong>
                     </span>
                   )}
                 </div>

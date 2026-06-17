@@ -27,11 +27,15 @@ export const CreateMatch = () => {
   const [loading, setLoading] = useState(false);
 
   const clearFieldError = (errorCode) => {
-    if (!errors[errorCode]) return;
-
     setErrors((prev) => ({
       ...prev,
       [errorCode]: false,
+      TEAM_ID_REQUIRED: false,
+      TEAM_NOT_FOUND: false,
+      FORBIDDEN: false,
+      CLUB_REQUIRED: false,
+      SESSION_EXPIRED: false,
+      NETWORK_ERROR: false,
     }));
   };
 
@@ -166,7 +170,26 @@ export const CreateMatch = () => {
               placeholder="Semifinal, torneo local, indicaciones para el equipo..."
             />
           </FormField>
-
+          {(errors.TEAM_ID_REQUIRED ||
+            errors.TEAM_NOT_FOUND ||
+            errors.FORBIDDEN ||
+            errors.CLUB_REQUIRED ||
+            errors.SESSION_EXPIRED ||
+            errors.NETWORK_ERROR) && (
+            <p className="form-error">
+              {errors.TEAM_ID_REQUIRED
+                ? errorMessages.TEAM_ID_REQUIRED
+                : errors.TEAM_NOT_FOUND
+                ? errorMessages.TEAM_NOT_FOUND
+                : errors.FORBIDDEN
+                ? errorMessages.FORBIDDEN
+                : errors.CLUB_REQUIRED
+                ? errorMessages.CLUB_REQUIRED
+                : errors.SESSION_EXPIRED
+                ? errorMessages.SESSION_EXPIRED
+                : errorMessages.NETWORK_ERROR}
+            </p>
+          )}
           <div className="form-actions">
             <Button type="submit" disabled={loading}>
               {loading ? "Creando..." : "Crear partido"}

@@ -1,13 +1,16 @@
 export const errorMessages = {
   NETWORK_ERROR: "Error de conexión. Intenta nuevamente.",
+  SESSION_EXPIRED: "Tu sesión expiró. Inicia sesión nuevamente.",
 
+  // CLIENTS / GENERAL FORM
   FULL_NAME_REQUIRED: "El nombre es obligatorio",
   EMAIL_REQUIRED: "El email es obligatorio",
   INVALID_EMAIL: "Email inválido",
   CLIENT_ALREADY_EXISTS: "Ya existe un cliente con ese email",
   CLUB_NAME_REQUIRED: "El nombre del club es obligatorio",
+  STATE_REQUIRED: "El estado es obligatorio",
 
-  // LOGIN
+  // LOGIN / PASSWORD
   PASSWORD_REQUIRED: "La contraseña es obligatoria",
   PASSWORD_TOO_SHORT: "Debe tener al menos 8 caracteres",
   CONFIRM_PASSWORD_REQUIRED: "Confirma tu contraseña",
@@ -15,11 +18,36 @@ export const errorMessages = {
   INVALID_CREDENTIALS: "Email o contraseña incorrectos",
   ACCOUNT_DISABLED: "Tu cuenta está desactivada. Contacta al administrador.",
 
-  // ONBOARDING / TEAMS / PLAYERS
-  LOCATION_REQUIRED: "La ubicación es obligatoria",
+  // CLUB
+  LOCATION_REQUIRED: "La ciudad es obligatoria",
+  CLUB_NOT_FOUND: "Club no encontrado",
+  CLUB_REQUIRED: "El usuario no pertenece a ningún club",
+  FORBIDDEN: "No tienes permisos para realizar esta acción",
+  INVALID_DEFAULT_ENROLLMENT_FEE:
+    "El monto de inscripción debe ser un número válido",
+  INVALID_DEFAULT_MONTHLY_FEE:
+    "El monto de mensualidad debe ser un número válido",
+
+  // CATEGORIES
+  CATEGORY_NAME_REQUIRED: "Ingresa un nombre para la categoría",
+  CATEGORY_ALREADY_EXISTS: "Ya existe una categoría con ese nombre",
+  CATEGORY_ID_REQUIRED: "Selecciona una categoría",
+  CATEGORY_NOT_FOUND: "Categoría no encontrada",
+  CATEGORY_HAS_TEAMS: "No puedes eliminar una categoría que tiene equipos.",
+
+  // TEAMS
   TEAM_NAME_REQUIRED: "Ingresa un nombre para el equipo",
   TEAM_ALREADY_EXISTS: "Ya existe un equipo con ese nombre",
   INVALID_TEAM_GENDER: "Selecciona el género",
+  TEAM_ID_REQUIRED: "Selecciona un equipo",
+  TEAM_NOT_FOUND: "Equipo no encontrado",
+  TEAM_HAS_PLAYERS: "No puedes eliminar este equipo porque tiene jugadores.",
+  TEAM_HAS_TRAININGS:
+    "No puedes eliminar este equipo porque tiene entrenamientos históricos.",
+  TEAM_GENDER_HAS_PLAYERS:
+    "No puedes cambiar el género del equipo porque tiene deportistas incompatibles.",
+
+  // PLAYERS
   FIRST_NAME_REQUIRED: "Ingresa el nombre",
   LAST_NAME_REQUIRED: "Ingresa el apellido",
   INVALID_BIRTH_DATE: "La fecha de nacimiento no puede ser futura",
@@ -27,26 +55,28 @@ export const errorMessages = {
   INVALID_PLAYER_NUMBER: "El número debe estar entre 1 y 99",
   PLAYER_NUMBER_DUPLICATED: "Ya existe un jugador con ese número",
   PLAYER_INACTIVE:
-    "Esta deportista está desactivada y no puede asignarse a una categoría.",
+    "Esta deportista está desactivada y no puede asignarse a un equipo.",
   SEX_REQUIRED: "Selecciona un sexo",
   INVALID_SEX: "Sexo inválido",
-  TEAM_ID_REQUIRED: "Selecciona un equipo",
+  PLAYER_ALREADY_IN_TEAM: "Este jugador ya pertenece al equipo.",
+  PLAYER_MEMBERSHIP_NOT_FOUND: "El jugador no pertenece a este equipo.",
+  PLAYER_GENDER_MISMATCH:
+    "El sexo del deportista no coincide con la rama del equipo.",
+  PLAYER_NOT_FOUND: "Deportista no encontrado",
+  INVALID_PLAYER_STATUS: "Estado del deportista inválido",
+  INVALID_PLAYER_ACTIVE_STATUS: "Estado inválido",
+  PLAYER_HAS_HISTORY:
+    "No puedes eliminar una deportista con historial registrado",
 
-  // TRAININGS
+  // TRAININGS / ATTENDANCE
   TRAINING_DATE_REQUIRED: "Selecciona una fecha",
   TRAINING_LOCATION_REQUIRED: "La ubicación es obligatoria",
-  TEAM_HAS_TRAININGS:
-    "No puedes eliminar esta categoría porque tiene entrenamientos históricos.",
-
-  // TEAMS
-  TEAM_HAS_PLAYERS: "No puedes eliminar esta categoría porque tiene jugadores.",
-
-  PLAYER_ALREADY_IN_TEAM: "Este jugador ya pertenece a la categoría.",
-
-  PLAYER_MEMBERSHIP_NOT_FOUND: "El jugador no pertenece a esta categoría.",
-
   ATTENDANCE_REQUIRED: "Debes marcar al menos una asistencia.",
+  TRAINING_NOT_FOUND: "Entrenamiento no encontrado",
+  INVALID_ATTENDANCE_STATUS: "Estado de asistencia inválido",
+
   // MATCHES
+  MATCH_NOT_FOUND: "Partido no encontrado",
   OPPONENT_NAME_REQUIRED: "Ingresa el rival",
   MATCH_DATE_REQUIRED: "Selecciona la fecha",
   MATCH_STATUS_REQUIRED: "Debes registrar el estado de todas las convocadas",
@@ -56,20 +86,73 @@ export const errorMessages = {
   MATCH_PLAYER_NOT_FOUND:
     "No se encontró el registro de la jugadora en el partido.",
   MATCH_PLAYER_INVALID: "La jugadora no pertenece a este partido.",
-  PLAYER_NOT_CALLED: "La jugadora no está convocada para este partido.",
-  PLAYER_NOT_ELIGIBLE_FOR_PARTICIPATION:
-    "La jugadora no puede marcar participación con ese estado.",
-  PLAYER_NOT_ELIGIBLE_FOR_STATS:
-    "La jugadora no puede registrar estadísticas en este partido.",
   MATCH_ROSTER_REQUIRED: "Debes seleccionar al menos una jugadora.",
   INVALID_MATCH_STATUS: "Estado inválido",
   INVALID_MATCH_TYPE: "Tipo de partido inválido",
   INVALID_MATCH_RESULT:
     "Resultado inválido. Debe ser máximo 5 sets y uno de los equipos debe llegar a 3.",
+
+  PLAYER_NOT_CALLED: "La jugadora no está convocada para este partido.",
+  PLAYER_NOT_ELIGIBLE_FOR_PARTICIPATION:
+    "La jugadora no puede marcar participación con ese estado.",
+  PLAYER_NOT_ELIGIBLE_FOR_STATS:
+    "La jugadora no puede registrar estadísticas en este partido.",
+  PLAYER_NOT_ELIGIBLE_FOR_LINEUP:
+    "Todas las jugadoras iniciales deben estar presentes o haber llegado tarde",
+  PLAYER_NOT_ELIGIBLE_FOR_SUBSTITUTION:
+    "La jugadora que entra debe estar presente o haber llegado tarde",
+  PLAYER_NOT_ON_COURT: "Solo puedes registrar acciones a jugadoras en cancha",
+
+  STARTING_LINEUP_REQUIRED: "Debes seleccionar las jugadoras iniciales",
+  STARTING_LINEUP_MUST_HAVE_6:
+    "Debes seleccionar exactamente 6 jugadoras en cancha",
+  INVALID_STARTING_LINEUP: "Una o más jugadoras no pertenecen a este partido",
+
+  INVALID_SET_NUMBER: "Set inválido",
+  SUBSTITUTION_PLAYERS_REQUIRED: "Debes indicar quién sale y quién entra",
+  INVALID_SUBSTITUTION: "Cambio inválido",
+  PLAYER_OUT_NOT_ELIGIBLE: "La jugadora que sale no está disponible para jugar",
+  PLAYER_OUT_NOT_ON_COURT: "La jugadora que sale debe estar en cancha",
+  PLAYER_IN_ALREADY_ON_COURT: "La jugadora que entra ya está en cancha",
+
+  MATCH_EVENT_REQUIRED: "Faltan datos del evento",
+  INVALID_EVENT_ACTION: "Acción inválida",
+  INVALID_EVENT_RESULT: "Resultado inválido para esta acción",
+  MATCH_EVENT_NOT_FOUND: "Evento no encontrado",
+
   INVALID_ATTACK_STATS: "Los ataques no cuadran",
   INVALID_RECEPTION_STATS: "Las recepciones no cuadran",
   INVALID_SERVE_STATS: "Los saques no cuadran",
   INVALID_BLOCK_STATS: "Los bloqueos no cuadran",
   INVALID_POSITION: "Posición inválida",
   POSITION_REQUIRED: "Define la posición de las jugadoras que van a jugar",
+
+  // IMAGES
+  IMAGE_TOO_LARGE: "La imagen es demasiado pesada",
+  IMAGE_REQUIRED: "Debes seleccionar una imagen",
+  INVALID_IMAGE_FORMAT: "Formato inválido. Usa PNG, JPG o WEBP",
+
+  // PAYMENTS
+  ENROLLMENT_DATE_REQUIRED: "Selecciona la fecha de inscripción",
+  CLUB_PAYMENT_DEFAULTS_REQUIRED:
+    "Primero configura los montos de inscripción y mensualidad en el perfil del club",
+  ENROLLMENT_FEE_REQUIRED: "Ingresa el monto de inscripción",
+  MONTHLY_FEE_REQUIRED: "Ingresa el monto de la mensualidad",
+  INVALID_ENROLLMENT_FEE: "La inscripción debe ser mayor a 0",
+  INVALID_MONTHLY_FEE: "La mensualidad debe ser mayor a 0",
+  PAYMENT_DATE_REQUIRED: "Selecciona la fecha de pago",
+  PAYMENT_METHOD_REQUIRED: "Selecciona el método de pago",
+  INVALID_PAYMENT_METHOD: "Método de pago inválido",
+  INVALID_PAYMENT_AMOUNT: "Monto inválido",
+  INVALID_DATE_FORMAT: "Formato de fecha inválido",
+  INVALID_PAYMENT_STATUS: "Estado de pago inválido",
+  INVALID_PAYMENT_TYPE: "Tipo de pago inválido",
+  PAYMENT_NOT_FOUND: "Pago no encontrado",
+  INVALID_DUE_DATE_FORMAT: "Formato de fecha límite inválido",
+  INVALID_ENROLLMENT_DATE_FORMAT: "Formato de fecha de inscripción inválido",
+  // RECEIPTS
+  PAYMENT_NOT_PAID: "Solo puedes generar recibos de pagos registrados",
+  RECEIPT_NOT_FOUND: "Recibo no encontrado",
+  INVALID_RECEIPT_CHANNEL: "Canal de envío inválido",
+  INVALID_PAYMENT_DATE: "La fecha de pago no puede ser futura",
 };

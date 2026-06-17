@@ -6,6 +6,7 @@ import { PageHeader } from "../../component/ui/pageHeader";
 import { Card } from "../../component/ui/card";
 import { Button } from "../../component/ui/button";
 import { AttendanceToggle } from "../../component/ui/attendanceToggle";
+import { errorMessages } from "../../utils/errorMessages";
 import "../../../styles/trainingDetail.css";
 
 export const TrainingDetail = () => {
@@ -16,6 +17,8 @@ export const TrainingDetail = () => {
   const [attendance, setAttendance] = useState({});
   const [loading, setLoading] = useState(true);
   const [hasChanges, setHasChanges] = useState(false);
+  const [errors, setErrors] = useState({});
+  const [saving, setSaving] = useState(false);
 
   const loadTrainingData = async () => {
     setLoading(true);
@@ -49,10 +52,16 @@ export const TrainingDetail = () => {
       [playerId]: newStatus,
     }));
 
+    setErrors({});
     setHasChanges(true);
   };
 
   const handleSaveAttendance = async () => {
+    if (saving) return;
+
+    setErrors({});
+    setSaving(true);
+
     const attendanceList = store.players
       .filter((player) => attendance[player.id])
       .map((player) => ({
@@ -62,7 +71,12 @@ export const TrainingDetail = () => {
 
     const result = await actions.saveAttendance(training_id, attendanceList);
 
-    if (!result.ok) return;
+    setSaving(false);
+
+    if (!result.ok) {
+      setErrors({ [result.code]: true });
+      return;
+    }
 
     setHasChanges(false);
   };
@@ -128,6 +142,21 @@ export const TrainingDetail = () => {
           </div>
         )}
       </Card>
+      {errors.ATTENDANCE_REQUIRED && (
+        <p className="form-error">{errorMessages.ATTENDANCE_REQUIRED}</p>
+      )}
+
+      {errors.TRAINING_NOT_FOUND && (
+        <p className="form-error">{errorMessages.TRAINING_NOT_FOUND}</p>
+      )}
+
+      {errors.FORBIDDEN && (
+        <p className="form-error">{errorMessages.FORBIDDEN}</p>
+      )}
+
+      {errors.INVALID_ATTENDANCE_STATUS && (
+        <p className="form-error">{errorMessages.INVALID_ATTENDANCE_STATUS}</p>
+      )}
       <div className="attendance-sticky-bar">
         <div>
           <div className="attendance-progress">
@@ -144,9 +173,11 @@ export const TrainingDetail = () => {
         <Button
           className="button-primary"
           onClick={handleSaveAttendance}
-          disabled={!hasChanges || !allMarked}
+          disabled={saving || !hasChanges || !allMarked}
         >
-          {!allMarked
+          {saving
+            ? "Guardando..."
+            : !allMarked
             ? `Faltan ${totalPlayers - markedCount}`
             : hasChanges
             ? "Guardar asistencia"

@@ -10,7 +10,7 @@
   /* Brand */
   --color-primary: #1e3a8a;
   --color-primary-dark: #0f172a;
-  --color-primary-light: #dbeafe;
+  --color-primary-light: #bbcbe1;
 
   /* Sport / Action */
   --color-accent: #22c55e;
@@ -20,10 +20,8 @@
   --color-bg: #f8fafc;
   --color-bg-gradient: linear-gradient(
     180deg,
-    #ffe27a 0%,
-    #ffe68a 22%,
-    #ffedb3 48%,
-    #fff4d1 72%,
+    #bbcbe1 1%,
+    #bbcbe1 38%,
     #f8fafc 100%
   );
   --color-surface: #ffffff;
@@ -83,6 +81,10 @@ html,
 body,
 #root {
   min-height: 100%;
+}
+
+#root {
+  min-height: 100dvh;
 }
 
 body {

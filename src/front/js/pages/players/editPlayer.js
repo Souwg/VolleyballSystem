@@ -4,14 +4,17 @@ import { Context } from "../../store/appContext";
 
 import { PageHeader } from "../../component/ui/pageHeader";
 import { Card } from "../../component/ui/card";
-import { Input } from "../../component/ui/input";
 import { Button } from "../../component/ui/button";
+import { FormField } from "../../component/ui/formField";
+import { Input } from "../../component/ui/input";
+import { Select } from "../../component/ui/select";
 
 import { validatePlayerProfile } from "../../utils/validators";
 import { errorMessages } from "../../utils/errorMessages";
-
+import { getAssetUrl } from "../../utils/getAssetUrl";
+import "../../../styles/editPlayer.css";
 const POSITIONS = [
-  { label: "Armadora", value: "setter" },
+  { label: "Armador", value: "setter" },
   { label: "Punta", value: "outside" },
   { label: "Central", value: "middle" },
   { label: "Opuesto", value: "opposite" },
@@ -34,6 +37,10 @@ export const EditPlayer = () => {
   const [sex, setSex] = useState("");
   const [birthDate, setBirthDate] = useState("");
   const [mainPosition, setMainPosition] = useState("");
+  const [imageUrl, setImageUrl] = useState("");
+  const [playerImageFile, setPlayerImageFile] = useState(null);
+  const [playerImagePreview, setPlayerImagePreview] = useState("");
+  const [uploadingImage, setUploadingImage] = useState(false);
 
   const loadPlayer = async () => {
     setLoading(true);
@@ -49,6 +56,9 @@ export const EditPlayer = () => {
       setSex(currentPlayer.sex || "");
       setBirthDate(currentPlayer.birth_date || "");
       setMainPosition(currentPlayer.main_position || "");
+      setImageUrl(currentPlayer.image_url || "");
+      setPlayerImagePreview("");
+      setPlayerImageFile(null);
     }
 
     setLoading(false);
@@ -58,6 +68,21 @@ export const EditPlayer = () => {
     loadPlayer();
   }, [player_id]);
 
+  const handlePlayerImageChange = (e) => {
+    const file = e.target.files?.[0];
+
+    if (!file) return;
+
+    setPlayerImageFile(file);
+    setPlayerImagePreview(URL.createObjectURL(file));
+
+    setErrors((prev) => ({
+      ...prev,
+      IMAGE_TOO_LARGE: false,
+      INVALID_IMAGE_FORMAT: false,
+      IMAGE_REQUIRED: false,
+    }));
+  };
   const handleSubmit = async (e) => {
     e.preventDefault();
 
@@ -67,6 +92,7 @@ export const EditPlayer = () => {
       first_name: firstName,
       last_name: lastName,
       sex,
+      birth_date: birthDate,
     });
 
     if (Object.keys(profileErrors).length > 0) {
@@ -77,12 +103,34 @@ export const EditPlayer = () => {
     setErrors({});
     setSaving(true);
 
+    let finalImageUrl = imageUrl;
+
+    if (playerImageFile) {
+      setUploadingImage(true);
+
+      const uploadResult = await actions.uploadPlayerImage(
+        player_id,
+        playerImageFile,
+      );
+
+      setUploadingImage(false);
+
+      if (!uploadResult?.ok) {
+        setErrors({ [uploadResult.code]: true });
+        setSaving(false);
+        return;
+      }
+
+      finalImageUrl = uploadResult.data.image_url;
+    }
+
     const result = await actions.updatePlayer(player_id, {
       first_name: firstName.trim(),
       last_name: lastName.trim(),
       sex,
       birth_date: birthDate || null,
       main_position: mainPosition || null,
+      image_url: finalImageUrl || null,
     });
 
     if (!result.ok) {
@@ -104,125 +152,180 @@ export const EditPlayer = () => {
   }
 
   return (
-    <>
+    <div className="edit-player-page">
       <PageHeader
+        variant="detail"
+        eyebrow="Perfil de deportista"
         title="Editar perfil"
         subtitle={`${player.first_name} ${player.last_name}`}
+        onBack={() => navigate(`/players/${player_id}`)}
       />
 
       <Card>
         <form onSubmit={handleSubmit} className="form">
-          <label>Nombre</label>
-          <Input
-            value={firstName}
-            placeholder="Nombre"
-            className={errors.FIRST_NAME_REQUIRED ? "input-error" : ""}
-            onChange={(e) => {
-              setFirstName(e.target.value);
-              setErrors((prev) => ({
-                ...prev,
-                FIRST_NAME_REQUIRED: false,
-              }));
-            }}
-          />
-          {errors.FIRST_NAME_REQUIRED && (
-            <p className="form-error">{errorMessages.FIRST_NAME_REQUIRED}</p>
-          )}
+          <div className="player-photo-field">
+            <div className="player-photo-preview">
+              {playerImagePreview || imageUrl ? (
+                <img
+                  src={playerImagePreview || getAssetUrl(imageUrl)}
+                  alt="Foto del deportista"
+                />
+              ) : (
+                <span>
+                  {firstName?.charAt(0) || ""}
+                  {lastName?.charAt(0) || ""}
+                </span>
+              )}
+            </div>
 
-          <label>Apellido</label>
-          <Input
-            value={lastName}
-            placeholder="Apellido"
-            className={errors.LAST_NAME_REQUIRED ? "input-error" : ""}
-            onChange={(e) => {
-              setLastName(e.target.value);
-              setErrors((prev) => ({
-                ...prev,
-                LAST_NAME_REQUIRED: false,
-              }));
-            }}
-          />
-          {errors.LAST_NAME_REQUIRED && (
-            <p className="form-error">{errorMessages.LAST_NAME_REQUIRED}</p>
-          )}
+            <div className="player-photo-content">
+              <strong>Foto del deportista</strong>
+              <p>Opcional. Se mostrará en el perfil del deportista.</p>
 
-          <label>Sexo</label>
-          <select
-            value={sex}
-            className={
-              errors.SEX_REQUIRED || errors.INVALID_SEX ? "input-error" : ""
+              <label className="button button-secondary player-photo-button">
+                Cambiar foto
+                <input
+                  type="file"
+                  accept="image/png,image/jpeg,image/jpg,image/webp"
+                  onChange={handlePlayerImageChange}
+                  hidden
+                />
+              </label>
+            </div>
+          </div>
+          <FormField
+            label="Nombre"
+            error={
+              errors.FIRST_NAME_REQUIRED && errorMessages.FIRST_NAME_REQUIRED
             }
-            onChange={(e) => {
-              setSex(e.target.value);
-              setErrors((prev) => ({
-                ...prev,
-                SEX_REQUIRED: false,
-                INVALID_SEX: false,
-                PLAYER_GENDER_MISMATCH: false,
-              }));
-            }}
           >
-            <option value="">Selecciona sexo</option>
-            <option value="female">Femenino</option>
-            <option value="male">Masculino</option>
-          </select>
+            <Input
+              name="first_name"
+              value={firstName}
+              onChange={(e) => {
+                setFirstName(e.target.value);
 
-          {errors.SEX_REQUIRED && (
-            <p className="form-error">{errorMessages.SEX_REQUIRED}</p>
-          )}
+                setErrors((prev) => ({
+                  ...prev,
+                  FIRST_NAME_REQUIRED: false,
+                }));
+              }}
+              className={errors.FIRST_NAME_REQUIRED ? "input-error" : ""}
+            />
+          </FormField>
 
-          {errors.INVALID_SEX && (
-            <p className="form-error">{errorMessages.INVALID_SEX}</p>
-          )}
-
-          {errors.PLAYER_GENDER_MISMATCH && (
-            <p className="form-error">
-              No puedes cambiar el sexo porque la jugadora pertenece a una
-              categoría incompatible.
-            </p>
-          )}
-
-          <label>Fecha de nacimiento</label>
-          <Input
-            type="date"
-            value={birthDate}
-            className={errors.INVALID_DATE_FORMAT ? "input-error" : ""}
-            onChange={(e) => {
-              setBirthDate(e.target.value);
-              setErrors((prev) => ({
-                ...prev,
-                INVALID_DATE_FORMAT: false,
-              }));
-            }}
-          />
-
-          {errors.INVALID_DATE_FORMAT && (
-            <p className="form-error">Formato de fecha inválido</p>
-          )}
-
-          <label>Posición principal</label>
-          <select
-            value={mainPosition}
-            className={errors.INVALID_POSITION ? "input-error" : ""}
-            onChange={(e) => {
-              setMainPosition(e.target.value);
-              setErrors((prev) => ({
-                ...prev,
-                INVALID_POSITION: false,
-              }));
-            }}
+          <FormField
+            label="Apellido"
+            error={
+              errors.LAST_NAME_REQUIRED && errorMessages.LAST_NAME_REQUIRED
+            }
           >
-            <option value="">Sin posición definida</option>
-            {POSITIONS.map((position) => (
-              <option key={position.value} value={position.value}>
-                {position.label}
-              </option>
-            ))}
-          </select>
+            <Input
+              name="last_name"
+              value={lastName}
+              onChange={(e) => {
+                setLastName(e.target.value);
 
-          {errors.INVALID_POSITION && (
-            <p className="form-error">Posición inválida</p>
-          )}
+                setErrors((prev) => ({
+                  ...prev,
+                  LAST_NAME_REQUIRED: false,
+                }));
+              }}
+              className={errors.LAST_NAME_REQUIRED ? "input-error" : ""}
+            />
+          </FormField>
+          <FormField
+            label="Sexo"
+            error={
+              errors.SEX_REQUIRED
+                ? errorMessages.SEX_REQUIRED
+                : errors.INVALID_SEX
+                ? errorMessages.INVALID_SEX
+                : errors.PLAYER_GENDER_MISMATCH
+                ? "No puedes cambiar el sexo porque la jugadora pertenece a una categoría incompatible."
+                : ""
+            }
+          >
+            <Select
+              value={sex}
+              className={
+                errors.SEX_REQUIRED ||
+                errors.INVALID_SEX ||
+                errors.PLAYER_GENDER_MISMATCH
+                  ? "input-error"
+                  : ""
+              }
+              onChange={(e) => {
+                setSex(e.target.value);
+
+                setErrors((prev) => ({
+                  ...prev,
+                  SEX_REQUIRED: false,
+                  INVALID_SEX: false,
+                  PLAYER_GENDER_MISMATCH: false,
+                }));
+              }}
+            >
+              <option value="">Selecciona sexo</option>
+              <option value="female">Femenino</option>
+              <option value="male">Masculino</option>
+            </Select>
+          </FormField>
+          <FormField
+            label="Fecha de nacimiento"
+            error={
+              errors.INVALID_DATE_FORMAT
+                ? "Formato de fecha inválido"
+                : errors.INVALID_BIRTH_DATE
+                ? errorMessages.INVALID_BIRTH_DATE
+                : ""
+            }
+          >
+            <Input
+              type="date"
+              value={birthDate}
+              className={
+                errors.INVALID_DATE_FORMAT || errors.INVALID_BIRTH_DATE
+                  ? "input-error"
+                  : ""
+              }
+              onChange={(e) => {
+                setBirthDate(e.target.value);
+
+                setErrors((prev) => ({
+                  ...prev,
+                  INVALID_DATE_FORMAT: false,
+                  INVALID_BIRTH_DATE: false,
+                }));
+              }}
+            />
+          </FormField>
+
+          <FormField
+            label="Posición principal"
+            error={errors.INVALID_POSITION ? "Posición inválida" : ""}
+          >
+            <Select
+              value={mainPosition}
+              className={errors.INVALID_POSITION ? "input-error" : ""}
+              onChange={(e) => {
+                setMainPosition(e.target.value);
+
+                setErrors((prev) => ({
+                  ...prev,
+                  INVALID_POSITION: false,
+                }));
+              }}
+            >
+              <option value="">Sin posición definida</option>
+
+              {POSITIONS.map((position) => (
+                <option key={position.value} value={position.value}>
+                  {position.label}
+                </option>
+              ))}
+            </Select>
+          </FormField>
 
           <div className="form-actions">
             <Button
@@ -233,12 +336,16 @@ export const EditPlayer = () => {
               Cancelar
             </Button>
 
-            <Button type="submit" className="button-primary" disabled={saving}>
-              {saving ? "Guardando..." : "Guardar cambios"}
+            <Button
+              type="submit"
+              className="button-primary"
+              disabled={saving || uploadingImage}
+            >
+              {saving || uploadingImage ? "Guardando..." : "Guardar cambios"}
             </Button>
           </div>
         </form>
       </Card>
-    </>
+    </div>
   );
 };

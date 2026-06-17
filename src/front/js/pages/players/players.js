@@ -4,16 +4,21 @@ import { useState } from "react";
 import { Context } from "../../store/appContext";
 import { Card } from "../../component/ui/card";
 import { PageHeader } from "../../component/ui/pageHeader";
-import { Input } from "../../component/ui/input";
 import { Button } from "../../component/ui/button";
+import { FormField } from "../../component/ui/formField";
+import { Input } from "../../component/ui/input";
+import { Select } from "../../component/ui/select";
+import { Users } from "lucide-react";
+
 import {
   validatePlayerProfile,
   validatePlayerAssignment,
 } from "../../utils/validators";
 import { errorMessages } from "../../utils/errorMessages";
+import "../../../styles/players.css";
 
 const POSITIONS = [
-  { label: "Armadora", value: "setter" },
+  { label: "Armador", value: "setter" },
   { label: "Punta", value: "outside" },
   { label: "Central", value: "middle" },
   { label: "Opuesto", value: "opposite" },
@@ -31,6 +36,7 @@ export const Players = () => {
   const [searchTerm, setSearchTerm] = useState("");
   const [teamFilter, setTeamFilter] = useState("");
   const [statusFilter, setStatusFilter] = useState("all");
+  const [filtersOpen, setFiltersOpen] = useState(false);
   const [errors, setErrors] = useState({});
   const [loading, setLoading] = useState(false);
   const [loadingPlayers, setLoadingPlayers] = useState(true);
@@ -63,19 +69,34 @@ export const Players = () => {
   );
 
   useEffect(() => {
+    let isMounted = true;
+
     const loadPlayers = async () => {
       if (!store.token) return;
 
-      setLoadingPlayers(true);
+      try {
+        setLoadingPlayers(true);
 
-      await Promise.all([actions.getPlayers(), actions.getTeams()]);
+        await Promise.all([actions.getPlayers(), actions.getTeams()]);
 
-      setLoadingPlayers(false);
+        if (isMounted) {
+          setLoadingPlayers(false);
+        }
+      } catch (error) {
+        console.error("Error cargando deportistas:", error);
+
+        if (isMounted) {
+          setLoadingPlayers(false);
+        }
+      }
     };
 
     loadPlayers();
-  }, [store.token]);
 
+    return () => {
+      isMounted = false;
+    };
+  }, [store.token]);
   useEffect(() => {
     if (!selectedCreateTeam) return;
 
@@ -119,8 +140,8 @@ export const Players = () => {
     const assignmentErrors = validatePlayerAssignment({
       team_id: createTeamId,
       player_number: createPlayerNumber,
+      requiredTeam: false,
     });
-
     const newErrors = {
       ...profileErrors,
       ...assignmentErrors,
@@ -213,6 +234,8 @@ export const Players = () => {
       setLoading(false);
       return;
     }
+
+    await actions.getPlayers();
 
     setErrors({});
     setEditingPlayer(null);
@@ -330,7 +353,7 @@ export const Players = () => {
     const result = await actions.updatePlayerActiveStatus(player.id, isActive);
 
     if (!result.ok) {
-      setErrors({ GENERIC_ERROR: true });
+      setErrors({ [result.code]: true });
       return;
     }
 
@@ -360,9 +383,11 @@ export const Players = () => {
   return (
     <>
       <PageHeader
-        eyebrow="Gestión del club"
+        tone="players"
+        icon={Users}
+        eyebrow="Roster del club"
         title="Deportistas"
-        subtitle="Administra el roster, estados, posiciones y categorías del club."
+        subtitle="Administra los perfiles, estados, equipos y datos deportivos del club."
         actions={
           !showCreateForm && (
             <Button onClick={openCreateForm}>+ Añadir deportista</Button>
@@ -374,68 +399,84 @@ export const Players = () => {
           <h4>Nuevo deportista</h4>
 
           <form onSubmit={handleCreatePlayer} className="form">
-            <label>Nombre</label>
-            <Input
-              value={createFirstName}
-              placeholder="Nombre"
-              className={errors.FIRST_NAME_REQUIRED ? "input-error" : ""}
-              onChange={(e) => {
-                setCreateFirstName(e.target.value);
-                setErrors((prev) => ({
-                  ...prev,
-                  FIRST_NAME_REQUIRED: false,
-                }));
-              }}
-            />
-            {errors.FIRST_NAME_REQUIRED && (
-              <p className="form-error">{errorMessages.FIRST_NAME_REQUIRED}</p>
-            )}
-            <label>Apellido</label>
-            <Input
-              value={createLastName}
-              placeholder="Apellido"
-              className={errors.LAST_NAME_REQUIRED ? "input-error" : ""}
-              onChange={(e) => {
-                setCreateLastName(e.target.value);
-                setErrors((prev) => ({
-                  ...prev,
-                  LAST_NAME_REQUIRED: false,
-                }));
-              }}
-            />
-            {errors.LAST_NAME_REQUIRED && (
-              <p className="form-error">{errorMessages.LAST_NAME_REQUIRED}</p>
-            )}
-            <label>Categoría</label>
-            <select
-              value={createTeamId}
-              onChange={(e) => {
-                setCreateTeamId(e.target.value);
-                setErrors((prev) => ({
-                  ...prev,
-                  TEAM_ID_REQUIRED: false,
-                  PLAYER_NUMBER_REQUIRED: false,
-                  INVALID_PLAYER_NUMBER: false,
-                  PLAYER_NUMBER_DUPLICATED: false,
-                }));
-              }}
+            <FormField
+              label="Nombre"
+              error={
+                errors.FIRST_NAME_REQUIRED && errorMessages.FIRST_NAME_REQUIRED
+              }
             >
-              <option value="">Sin categoría</option>
-              {store.teams.map((team) => (
-                <option key={team.id} value={team.id}>
-                  {team.name} ·{" "}
-                  {team.gender === "mixed"
-                    ? "Mixto"
-                    : team.gender === "male"
-                    ? "Masculino"
-                    : "Femenino"}
-                </option>
-              ))}
-            </select>
+              <Input
+                value={createFirstName}
+                placeholder="Ej: Juan"
+                className={errors.FIRST_NAME_REQUIRED ? "input-error" : ""}
+                onChange={(e) => {
+                  setCreateFirstName(e.target.value);
+                  setErrors((prev) => ({
+                    ...prev,
+                    FIRST_NAME_REQUIRED: false,
+                  }));
+                }}
+              />
+            </FormField>
+            <FormField
+              label="Apellido"
+              error={
+                errors.LAST_NAME_REQUIRED && errorMessages.LAST_NAME_REQUIRED
+              }
+            >
+              <Input
+                value={createLastName}
+                placeholder="Ej: Pérez"
+                className={errors.LAST_NAME_REQUIRED ? "input-error" : ""}
+                onChange={(e) => {
+                  setCreateLastName(e.target.value);
+                  setErrors((prev) => ({
+                    ...prev,
+                    LAST_NAME_REQUIRED: false,
+                  }));
+                }}
+              />
+            </FormField>
+            <FormField
+              label="Equipo"
+              helper="Puedes crear el deportista sin equipo y asignarlo después."
+            >
+              <Select
+                value={createTeamId}
+                onChange={(e) => {
+                  setCreateTeamId(e.target.value);
+                  setErrors((prev) => ({
+                    ...prev,
+                    TEAM_ID_REQUIRED: false,
+                    PLAYER_NUMBER_REQUIRED: false,
+                    INVALID_PLAYER_NUMBER: false,
+                    PLAYER_NUMBER_DUPLICATED: false,
+                  }));
+                }}
+              >
+                <option value="">Sin equipo</option>
+
+                {store.teams.map((team) => (
+                  <option key={team.id} value={team.id}>
+                    {team.name} ·{" "}
+                    {team.gender === "mixed"
+                      ? "Mixto"
+                      : team.gender === "male"
+                      ? "Masculino"
+                      : "Femenino"}
+                  </option>
+                ))}
+              </Select>
+            </FormField>
             {(!createTeamId || selectedCreateTeam?.gender === "mixed") && (
-              <>
-                <label>Género</label>
-                <select
+              <FormField
+                label="Género"
+                error={
+                  (errors.SEX_REQUIRED && errorMessages.SEX_REQUIRED) ||
+                  (errors.INVALID_SEX && errorMessages.INVALID_SEX)
+                }
+              >
+                <Select
                   value={createSex}
                   className={
                     errors.SEX_REQUIRED || errors.INVALID_SEX
@@ -454,27 +495,28 @@ export const Players = () => {
                   <option value="">Selecciona sexo</option>
                   <option value="male">Masculino</option>
                   <option value="female">Femenino</option>
-                </select>
-
-                {errors.SEX_REQUIRED && (
-                  <p className="form-error">{errorMessages.SEX_REQUIRED}</p>
-                )}
-
-                {errors.INVALID_SEX && (
-                  <p className="form-error">{errorMessages.INVALID_SEX}</p>
-                )}
-              </>
+                </Select>
+              </FormField>
             )}
 
             {createTeamId && (
-              <>
-                <label>Número en la categoría</label>
+              <FormField
+                label="Número en el equipo"
+                error={
+                  (errors.PLAYER_NUMBER_REQUIRED &&
+                    errorMessages.PLAYER_NUMBER_REQUIRED) ||
+                  (errors.INVALID_PLAYER_NUMBER &&
+                    errorMessages.INVALID_PLAYER_NUMBER) ||
+                  (errors.PLAYER_NUMBER_DUPLICATED &&
+                    errorMessages.PLAYER_NUMBER_DUPLICATED)
+                }
+              >
                 <Input
                   type="number"
                   min="1"
                   max="99"
                   value={createPlayerNumber}
-                  placeholder="Número en la categoría"
+                  placeholder="Ej: 12"
                   className={
                     errors.PLAYER_NUMBER_REQUIRED ||
                     errors.INVALID_PLAYER_NUMBER ||
@@ -508,54 +550,37 @@ export const Players = () => {
                     }));
                   }}
                 />
-
-                {errors.PLAYER_NUMBER_REQUIRED && (
-                  <p className="form-error">
-                    {errorMessages.PLAYER_NUMBER_REQUIRED}
-                  </p>
-                )}
-
-                {errors.INVALID_PLAYER_NUMBER && (
-                  <p className="form-error">
-                    {errorMessages.INVALID_PLAYER_NUMBER}
-                  </p>
-                )}
-
-                {errors.PLAYER_NUMBER_DUPLICATED && (
-                  <p className="form-error">
-                    {errorMessages.PLAYER_NUMBER_DUPLICATED}
-                  </p>
-                )}
-              </>
+              </FormField>
             )}
 
-            <label>Posición principal</label>
-            <select
-              value={createMainPosition}
-              onChange={(e) => setCreateMainPosition(e.target.value)}
+            <FormField
+              label="Posición principal"
+              helper="Este dato es opcional."
             >
-              <option value="">Sin posición definida</option>
-              {POSITIONS.map((position) => (
-                <option key={position.value} value={position.value}>
-                  {position.label}
-                </option>
-              ))}
-            </select>
+              <Select
+                value={createMainPosition}
+                onChange={(e) => setCreateMainPosition(e.target.value)}
+              >
+                <option value="">Sin posición definida</option>
+
+                {POSITIONS.map((position) => (
+                  <option key={position.value} value={position.value}>
+                    {position.label}
+                  </option>
+                ))}
+              </Select>
+            </FormField>
 
             <div className="form-actions">
               <Button
                 type="button"
-                className="button-secondary"
+                variant="secondary"
                 onClick={closeCreateForm}
               >
                 Cancelar
               </Button>
 
-              <Button
-                type="submit"
-                className="button-primary"
-                disabled={createLoading}
-              >
+              <Button type="submit" disabled={createLoading}>
                 {createLoading ? "Guardando..." : "Guardar"}
               </Button>
             </div>
@@ -563,69 +588,96 @@ export const Players = () => {
         </Card>
       )}
 
-      <div>
-        {/* 🔎 SEARCH */}
-        <Input
-          placeholder="Buscar jugador..."
-          value={searchTerm}
-          onChange={(e) => setSearchTerm(e.target.value)}
-        />
+      <Card className="players-filter-card">
+        <div className="players-filter-top">
+          <div className="players-search">
+            <FormField>
+              <Input
+                placeholder="Buscar deportista..."
+                value={searchTerm}
+                onChange={(e) => setSearchTerm(e.target.value)}
+              />
+            </FormField>
+          </div>
 
-        {/* 🏐 CATEGORY FILTER */}
-        <div>
-          <p>Categoría</p>
+          <button
+            type="button"
+            className="players-filter-toggle"
+            onClick={() => setFiltersOpen((prev) => !prev)}
+          >
+            {filtersOpen ? "Ocultar filtros" : "Filtros"}
+          </button>
+        </div>
 
-          <div>
-            <button type="button" onClick={() => handleTeamFilter("")}>
-              Todas ({totalPlayersCount})
-            </button>
+        <div className="players-status-chips">
+          <button
+            type="button"
+            className={`filter-chip ${statusFilter === "all" ? "active" : ""}`}
+            onClick={() => handleStatusFilter("all")}
+          >
+            Todas ({baseFilteredPlayers.length})
+          </button>
 
-            <button
-              type="button"
-              onClick={() => handleTeamFilter("unassigned")}
-            >
-              Sin categoría ({unassignedCount})
-            </button>
+          <button
+            type="button"
+            className={`filter-chip ${
+              statusFilter === "active" ? "active" : ""
+            }`}
+            onClick={() => handleStatusFilter("active")}
+          >
+            Activas ({activeCount})
+          </button>
 
-            {store.teams.map((team) => (
+          <button
+            type="button"
+            className={`filter-chip ${
+              statusFilter === "inactive" ? "active" : ""
+            }`}
+            onClick={() => handleStatusFilter("inactive")}
+          >
+            Inactivas ({inactiveCount})
+          </button>
+        </div>
+
+        {filtersOpen && (
+          <div className="players-filter-extra">
+            <FormField label="Categoría">
+              <Select
+                value={teamFilter}
+                onChange={(e) => handleTeamFilter(e.target.value)}
+              >
+                <option value="">
+                  Todas los equipos ({totalPlayersCount})
+                </option>
+                <option value="unassigned">
+                  Sin equipo ({unassignedCount})
+                </option>
+
+                {store.teams.map((team) => (
+                  <option key={team.id} value={team.id}>
+                    {team.name} ·{" "}
+                    {team.gender === "mixed"
+                      ? "Mixto"
+                      : team.gender === "male"
+                      ? "Masculino"
+                      : "Femenino"}
+                  </option>
+                ))}
+              </Select>
+            </FormField>
+
+            {(searchTerm || teamFilter || statusFilter !== "all") && (
               <button
                 type="button"
-                key={team.id}
-                onClick={() => handleTeamFilter(team.id)}
+                className="players-clear-filters"
+                onClick={clearFilters}
               >
-                {team.name} ·{" "}
-                {team.gender === "mixed"
-                  ? "Mixto"
-                  : team.gender === "male"
-                  ? "Masculino"
-                  : "Femenino"}
+                Limpiar filtros
               </button>
-            ))}
+            )}
           </div>
-        </div>
-
-        {/* 📌 STATUS FILTER */}
-        <div>
-          <p>Estado</p>
-
-          <div>
-            <button type="button" onClick={() => handleStatusFilter("all")}>
-              Todas ({baseFilteredPlayers.length})
-            </button>
-
-            <button type="button" onClick={() => handleStatusFilter("active")}>
-              Activas ({activeCount})
-            </button>
-
-            <button
-              type="button"
-              onClick={() => handleStatusFilter("inactive")}
-            >
-              Inactivas ({inactiveCount})
-            </button>
-          </div>
-        </div>
-      </div>
+        )}
+      </Card>
 
       <Card>
         {filteredPlayers.length === 0 ? (
@@ -633,7 +685,7 @@ export const Players = () => {
             {store.players.length === 0 ? (
               <>
                 <p>Aún no tienes jugadores 👀</p>
-                <Button onClick={() => navigate("/teams")}>
+                <Button onClick={() => navigate("/categories")}>
                   Crear primer jugador
                 </Button>
               </>
@@ -755,7 +807,7 @@ export const Players = () => {
                         </p>
                       )}
                       {editingPlayerTeam?.gender === "mixed" && (
-                        <select
+                        <Select
                           value={sex}
                           className={
                             errors.SEX_REQUIRED || errors.INVALID_SEX
@@ -774,7 +826,7 @@ export const Players = () => {
                           <option value="">Selecciona sexo</option>
                           <option value="male">Masculino</option>
                           <option value="female">Femenino</option>
-                        </select>
+                        </Select>
                       )}
                       {errors.SEX_REQUIRED && (
                         <p className="form-error">
@@ -788,18 +840,23 @@ export const Players = () => {
                         </p>
                       )}
 
-                      <label>Posición principal</label>
-                      <select
-                        value={mainPosition}
-                        onChange={(e) => setMainPosition(e.target.value)}
+                      <FormField
+                        label="Posición principal"
+                        helper="Este dato es opcional."
                       >
-                        <option value="">Sin posición definida</option>
-                        {POSITIONS.map((position) => (
-                          <option key={position.value} value={position.value}>
-                            {position.label}
-                          </option>
-                        ))}
-                      </select>
+                        <Select
+                          value={mainPosition}
+                          onChange={(e) => setMainPosition(e.target.value)}
+                        >
+                          <option value="">Sin posición definida</option>
+
+                          {POSITIONS.map((position) => (
+                            <option key={position.value} value={position.value}>
+                              {position.label}
+                            </option>
+                          ))}
+                        </Select>
+                      </FormField>
 
                       <div className="edit-actions">
                         <Button type="submit" disabled={loading}>
@@ -808,7 +865,7 @@ export const Players = () => {
 
                         <Button
                           type="button"
-                          className="button-secondary"
+                          variant="secondary"
                           onClick={() => {
                             setEditingPlayer(null);
                             setMainPosition("");
@@ -823,178 +880,178 @@ export const Players = () => {
                   <>
                     {/* 👇 MODO NORMAL */}
                     <div
-                      className="player-header"
-                      onClick={() => navigate(`/players/${player.id}`)}
+                      className="player-row player-header player-header-clickable"
+                      onClick={() =>
+                        navigate(`/players/${player.id}`, {
+                          state: {
+                            from: "/players",
+                            fromLabel: "Deportistas",
+                          },
+                        })
+                      }
                     >
                       <div className="player-info">
                         <p className="player-name">
                           {player.first_name} {player.last_name}
                         </p>
-                        <p className="player-meta">
-                          {player.teams?.length > 0 ? (
-                            <>
-                              {player.teams.map((team, index) => (
-                                <span key={team.id}>
-                                  #{team.player_number} · {team.name}
-                                  {index < player.teams.length - 1 ? " • " : ""}
-                                </span>
-                              ))}{" "}
-                              ·{" "}
-                              {player.sex === "female"
-                                ? "♀"
-                                : player.sex === "male"
-                                ? "♂"
-                                : "—"}
-                            </>
-                          ) : (
-                            "Sin categoría"
-                          )}
-                        </p>
+
+                        {player.teams?.length > 0 ? (
+                          <p className="player-meta">
+                            {player.teams[0].category_name || "Sin categoría"} ·{" "}
+                            {player.teams[0].name}
+                            {player.teams.length > 1 &&
+                              ` +${player.teams.length - 1} equipo${
+                                player.teams.length - 1 > 1 ? "s" : ""
+                              }`}
+                          </p>
+                        ) : (
+                          <p className="player-meta">Sin equipo asignado</p>
+                        )}
                       </div>
 
-                      <div
-                        className={`status-badge ${
-                          player.is_active ? "status-active" : "status-inactive"
-                        }`}
-                      >
-                        {player.is_active ? "Activa" : "Inactiva"}
+                      <div className="player-card-side">
+                        <span
+                          className={`status-badge ${
+                            player.is_active ? "status-success" : "status-muted"
+                          }`}
+                        >
+                          {player.is_active ? "Activa" : "Inactiva"}
+                        </span>
+
+                        <span className="player-card-arrow">›</span>
                       </div>
                     </div>
 
                     <div className="player-actions">
-                      <Button
-                        className="button-secondary"
-                        onClick={(e) => handleStartEdit(e, player)}
-                      >
-                        Editar
-                      </Button>
                       {!player.teams?.length && player.is_active && (
                         <Button
+                          type="button"
                           className="button-primary"
                           onClick={(e) => openAssignTeam(e, player)}
                         >
-                          Asignar categoría
+                          Asignar equipo
                         </Button>
                       )}
 
-                      {player.is_active ? (
-                        <Button
-                          className="button-danger"
-                          onClick={(e) => handleActiveChange(e, player, false)}
-                        >
-                          Desactivar
-                        </Button>
-                      ) : (
-                        <Button
-                          className="button-success"
-                          onClick={(e) => handleActiveChange(e, player, true)}
-                        >
-                          Activar
-                        </Button>
-                      )}
+                      <button
+                        type="button"
+                        className={`player-state-action ${
+                          player.is_active ? "danger" : "success"
+                        }`}
+                        onClick={(e) =>
+                          handleActiveChange(e, player, !player.is_active)
+                        }
+                      >
+                        {player.is_active
+                          ? "Desactivar deportista"
+                          : "Reactivar deportista"}
+                      </button>
                     </div>
 
                     {assigningPlayer?.id === player.id && (
                       <Card className="assign-team-inline">
-                        <h4>Asignar categoría</h4>
+                        <h4>Asignar equipo</h4>
 
-                        <select
-                          value={selectedTeam}
-                          onChange={(e) => {
-                            setSelectedTeam(e.target.value);
-                            setErrors((prev) => ({
-                              ...prev,
-                              TEAM_ID_REQUIRED: false,
-                            }));
-                          }}
-                          className={
-                            errors.TEAM_ID_REQUIRED ? "input-error" : ""
+                        <FormField
+                          label="Categoría"
+                          error={
+                            errors.TEAM_ID_REQUIRED &&
+                            errorMessages.TEAM_ID_REQUIRED
                           }
                         >
-                          <option value="">Selecciona categoría</option>
-                          {assignAvailableTeams.map((team) => (
-                            <option key={team.id} value={team.id}>
-                              {team.name} ·{" "}
-                              {team.gender === "mixed"
-                                ? "Mixto"
-                                : team.gender === "male"
-                                ? "Masculino"
-                                : "Femenino"}
-                            </option>
-                          ))}
-                        </select>
-                        {errors.TEAM_ID_REQUIRED && (
-                          <p className="form-error">
-                            {errorMessages.TEAM_ID_REQUIRED}
-                          </p>
-                        )}
+                          <Select
+                            value={selectedTeam}
+                            className={
+                              errors.TEAM_ID_REQUIRED ? "input-error" : ""
+                            }
+                            onClick={(e) => e.stopPropagation()}
+                            onChange={(e) => {
+                              setSelectedTeam(e.target.value);
+                              setErrors((prev) => ({
+                                ...prev,
+                                TEAM_ID_REQUIRED: false,
+                              }));
+                            }}
+                          >
+                            <option value="">Selecciona equipo</option>
 
-                        <Input
-                          type="number"
-                          placeholder="Número"
-                          value={newNumber}
-                          onChange={(e) => {
-                            const value = e.target.value;
+                            {assignAvailableTeams.map((team) => (
+                              <option key={team.id} value={team.id}>
+                                {team.name} ·{" "}
+                                {team.gender === "mixed"
+                                  ? "Mixto"
+                                  : team.gender === "male"
+                                  ? "Masculino"
+                                  : "Femenino"}
+                              </option>
+                            ))}
+                          </Select>
+                        </FormField>
 
-                            if (value === "") {
-                              setNewNumber("");
+                        <FormField
+                          label="Número en la categoría"
+                          error={
+                            (errors.PLAYER_NUMBER_REQUIRED &&
+                              errorMessages.PLAYER_NUMBER_REQUIRED) ||
+                            (errors.INVALID_PLAYER_NUMBER &&
+                              errorMessages.INVALID_PLAYER_NUMBER) ||
+                            (errors.PLAYER_NUMBER_DUPLICATED &&
+                              errorMessages.PLAYER_NUMBER_DUPLICATED)
+                          }
+                        >
+                          <Input
+                            type="number"
+                            min="1"
+                            max="99"
+                            placeholder="Ej: 12"
+                            value={newNumber}
+                            className={
+                              errors.PLAYER_NUMBER_REQUIRED ||
+                              errors.INVALID_PLAYER_NUMBER ||
+                              errors.PLAYER_NUMBER_DUPLICATED
+                                ? "input-error"
+                                : ""
+                            }
+                            onClick={(e) => e.stopPropagation()}
+                            onChange={(e) => {
+                              const value = e.target.value;
+
+                              if (value === "") {
+                                setNewNumber("");
+                                setErrors((prev) => ({
+                                  ...prev,
+                                  PLAYER_NUMBER_REQUIRED: false,
+                                  INVALID_PLAYER_NUMBER: false,
+                                  PLAYER_NUMBER_DUPLICATED: false,
+                                }));
+                                return;
+                              }
+
+                              if (value.length > 2) return;
+
+                              setNewNumber(value);
+
                               setErrors((prev) => ({
                                 ...prev,
                                 PLAYER_NUMBER_REQUIRED: false,
                                 INVALID_PLAYER_NUMBER: false,
                                 PLAYER_NUMBER_DUPLICATED: false,
                               }));
-                              return;
-                            }
-
-                            if (value.length > 2) return;
-
-                            setNewNumber(value);
-
-                            setErrors((prev) => ({
-                              ...prev,
-                              PLAYER_NUMBER_REQUIRED: false,
-                              INVALID_PLAYER_NUMBER: false,
-                              PLAYER_NUMBER_DUPLICATED: false,
-                            }));
-                          }}
-                          className={
-                            errors.PLAYER_NUMBER_REQUIRED ||
-                            errors.INVALID_PLAYER_NUMBER ||
-                            errors.PLAYER_NUMBER_DUPLICATED
-                              ? "input-error"
-                              : ""
-                          }
-                        />
-
-                        {errors.PLAYER_NUMBER_REQUIRED && (
-                          <p className="form-error">
-                            {errorMessages.PLAYER_NUMBER_REQUIRED}
-                          </p>
-                        )}
-
-                        {errors.INVALID_PLAYER_NUMBER && (
-                          <p className="form-error">
-                            {errorMessages.INVALID_PLAYER_NUMBER}
-                          </p>
-                        )}
-
-                        {errors.PLAYER_NUMBER_DUPLICATED && (
-                          <p className="form-error">
-                            {errorMessages.PLAYER_NUMBER_DUPLICATED}
-                          </p>
-                        )}
+                            }}
+                          />
+                        </FormField>
 
                         <div className="form-actions">
                           <Button
-                            className="button-secondary"
+                            type="button"
+                            variant="secondary"
                             onClick={closeAssignTeam}
                           >
                             Cancelar
                           </Button>
 
                           <Button
-                            className="button-primary"
+                            type="button"
                             onClick={() => handleAssignPlayer(player)}
                           >
                             Guardar

@@ -20,7 +20,7 @@ const attendanceLabelMap = {
 };
 
 const positionLabelMap = {
-  setter: "Armadora",
+  setter: "Armador",
   outside: "Punta",
   middle: "Central",
   opposite: "Opuesto",
@@ -33,6 +33,7 @@ export const PlayerMatchStats = () => {
   const navigate = useNavigate();
   const [context, setContext] = useState(null);
   const [showLiveSummary, setShowLiveSummary] = useState(true);
+  const [error, setError] = useState("");
 
   const [attacksTotal, setAttacksTotal] = useState(0);
   const [attacksPositive, setAttacksPositive] = useState(0);
@@ -246,6 +247,7 @@ export const PlayerMatchStats = () => {
   }, [match_player_id]);
 
   const handleSave = async () => {
+    setError("");
     setLoading(true);
 
     const result = await actions.savePlayerMatchStats(match_player_id, {
@@ -282,7 +284,10 @@ export const PlayerMatchStats = () => {
 
     setLoading(false);
 
-    if (!result.ok) return;
+    if (!result.ok) {
+      setError(result.message || "No se pudieron guardar las estadísticas");
+      return;
+    }
 
     navigate(-1);
   };
@@ -569,7 +574,7 @@ export const PlayerMatchStats = () => {
           )}
         </div>
       </Card>
-
+      {error && <p className="form-error">{error}</p>}
       <div className="mt-4">
         <Button variant="primary" onClick={handleSave} disabled={loading}>
           {loading ? "Guardando..." : "Guardar stats"}

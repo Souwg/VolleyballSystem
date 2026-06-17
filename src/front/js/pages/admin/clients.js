@@ -4,6 +4,7 @@ import { Input } from "../../component/ui/input";
 import { Card } from "../../component/ui/card";
 import { Button } from "../../component/ui/button";
 import { PageHeader } from "../../component/ui/pageHeader";
+import { FormField } from "../../component/ui/formField";
 
 import { useToast } from "../../../../context/toastContext";
 import { validateClient } from "../../utils/validators";
@@ -17,6 +18,8 @@ export const Clients = () => {
   const [fullName, setFullName] = useState("");
   const [email, setEmail] = useState("");
   const [clubName, setClubName] = useState("");
+
+  const [clubState, setClubState] = useState("");
   const [createdCredentials, setCreatedCredentials] = useState(null);
   const [errors, setErrors] = useState({});
   const [loading, setLoading] = useState(false);
@@ -34,6 +37,7 @@ export const Clients = () => {
       full_name: fullName,
       email,
       club_name: clubName,
+      state: clubState,
     });
 
     if (Object.keys(newErrors).length > 0) {
@@ -48,6 +52,7 @@ export const Clients = () => {
       full_name: fullName.trim(),
       email: email.trim(),
       club_name: clubName.trim(),
+      state: clubState.trim(),
     });
 
     if (!result?.ok) {
@@ -61,6 +66,7 @@ export const Clients = () => {
     setFullName("");
     setEmail("");
     setClubName("");
+    setClubState("");
 
     setCreatedCredentials({
       email: credentials.email,
@@ -143,14 +149,22 @@ export const Clients = () => {
         </div>
       )}
 
-      <PageHeader title="Clients" />
-
-      <form onSubmit={createClient}>
-        <div>
-          <div>
-            <label>Nombre Completo</label>
+      <PageHeader
+        title="Clientes"
+        subtitle="Registra clubes y asigna sus datos principales."
+      />
+      <Card>
+        <form className="form" onSubmit={createClient}>
+          <FormField
+            label="Nombre completo"
+            error={
+              errors.FULL_NAME_REQUIRED
+                ? errorMessages.FULL_NAME_REQUIRED
+                : null
+            }
+          >
             <Input
-              placeholder="Nombre Completo"
+              placeholder="Ej: Ana Martínez"
               value={fullName}
               className={errors.FULL_NAME_REQUIRED ? "input-error" : ""}
               onChange={(e) => {
@@ -161,16 +175,22 @@ export const Clients = () => {
                 }));
               }}
             />
+          </FormField>
 
-            {errors.FULL_NAME_REQUIRED && (
-              <p className="form-error">{errorMessages.FULL_NAME_REQUIRED}</p>
-            )}
-          </div>
-
-          <div>
-            <label>Correo electrónico</label>
+          <FormField
+            label="Correo electrónico"
+            error={
+              errors.EMAIL_REQUIRED
+                ? errorMessages.EMAIL_REQUIRED
+                : errors.INVALID_EMAIL
+                ? errorMessages.INVALID_EMAIL
+                : errors.CLIENT_ALREADY_EXISTS
+                ? errorMessages.CLIENT_ALREADY_EXISTS
+                : null
+            }
+          >
             <Input
-              placeholder="Correo electrónico"
+              placeholder="Ej: cliente@email.com"
               value={email}
               className={
                 errors.CLIENT_ALREADY_EXISTS ||
@@ -189,25 +209,18 @@ export const Clients = () => {
                 }));
               }}
             />
+          </FormField>
 
-            {errors.EMAIL_REQUIRED && (
-              <p className="form-error">{errorMessages.EMAIL_REQUIRED}</p>
-            )}
-
-            {errors.CLIENT_ALREADY_EXISTS && (
-              <p className="form-error">
-                {errorMessages.CLIENT_ALREADY_EXISTS}
-              </p>
-            )}
-            {errors.INVALID_EMAIL && (
-              <p className="form-error">{errorMessages.INVALID_EMAIL}</p>
-            )}
-          </div>
-
-          <div>
-            <label>Nombre del club</label>
+          <FormField
+            label="Nombre del club"
+            error={
+              errors.CLUB_NAME_REQUIRED
+                ? errorMessages.CLUB_NAME_REQUIRED
+                : null
+            }
+          >
             <Input
-              placeholder="Nombre del club"
+              placeholder="Ej: Las Compotitas"
               value={clubName}
               className={errors.CLUB_NAME_REQUIRED ? "input-error" : ""}
               onChange={(e) => {
@@ -218,28 +231,44 @@ export const Clients = () => {
                 }));
               }}
             />
+          </FormField>
 
-            {errors.CLUB_NAME_REQUIRED && (
-              <p className="form-error">{errorMessages.CLUB_NAME_REQUIRED}</p>
-            )}
+          <FormField
+            label="Estado"
+            error={errors.STATE_REQUIRED ? errorMessages.STATE_REQUIRED : null}
+          >
+            <Input
+              placeholder="Ej: Aragua"
+              value={clubState}
+              className={errors.STATE_REQUIRED ? "input-error" : ""}
+              onChange={(e) => {
+                setClubState(e.target.value);
+                setErrors((prev) => ({
+                  ...prev,
+                  STATE_REQUIRED: false,
+                }));
+              }}
+            />
+          </FormField>
+
+          <div className="form-actions">
+            <Button disabled={loading}>
+              {loading ? "Creando..." : "Crear cliente"}
+            </Button>
           </div>
-        </div>
-
-        <Button disabled={loading}>
-          {loading ? "Creating..." : "Create Client"}
-        </Button>
-      </form>
+        </form>
+      </Card>
 
       <div className="clients-grid">
         {store.adminClients.map((client) => (
           <Card key={client.id}>
             <h5>{client.full_name}</h5>
             <p>{client.email}</p>
-            <p>{client.is_active ? "🟢 Active" : "🔴 Inactive"}</p>
+            <p>{client.is_active ? "🟢 Activo" : "🔴 Inactivo"}</p>
 
             {client.is_active ? (
               <Button onClick={() => handleDeactivate(client)}>
-                Deactivate
+                Desactivar
               </Button>
             ) : (
               <Button
@@ -247,7 +276,7 @@ export const Clients = () => {
                   actions.toggleClientStatus(client.id, "activate")
                 }
               >
-                Activate
+                Activar
               </Button>
             )}
           </Card>

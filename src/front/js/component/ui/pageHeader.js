@@ -1,4 +1,5 @@
 import React from "react";
+import { getAssetUrl } from "../../utils/getAssetUrl";
 
 export const PageHeader = ({
   title,
@@ -7,6 +8,8 @@ export const PageHeader = ({
   eyebrow,
   className = "",
   variant = "default",
+  tone = "default",
+  icon: Icon,
   backTo,
   onBack,
 
@@ -22,8 +25,13 @@ export const PageHeader = ({
       .toUpperCase();
   };
 
+  const showAvatar = avatar || fallback;
+  const showIcon = Icon && !showAvatar;
+
   return (
-    <header className={`page-header page-header-${variant} ${className}`}>
+    <header
+      className={`page-header page-header-${variant} page-header-tone-${tone} ${className}`}
+    >
       <div className="page-header-content">
         {(backTo || onBack) && (
           <button type="button" className="page-back-button" onClick={onBack}>
@@ -31,13 +39,17 @@ export const PageHeader = ({
           </button>
         )}
 
-        {avatar || fallback ? (
+        {showAvatar ? (
           <div className="page-header-avatar">
             {avatar ? (
-              <img src={avatar} alt={title} />
+              <img src={getAssetUrl(avatar)} alt={title} />
             ) : (
               <span>{getInitials(fallback)}</span>
             )}
+          </div>
+        ) : showIcon ? (
+          <div className="page-header-icon">
+            <Icon size={22} strokeWidth={2.4} />
           </div>
         ) : null}
 

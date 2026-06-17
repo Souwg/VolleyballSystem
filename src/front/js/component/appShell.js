@@ -14,6 +14,8 @@ export const AppShell = () => {
   const location = useLocation();
 
   const isDetailPage =
+    location.pathname === "/club/profile" ||
+    /^\/categories\/[^/]+$/.test(location.pathname) ||
     /^\/players\/[^/]+$/.test(location.pathname) ||
     /^\/players\/[^/]+\/edit$/.test(location.pathname) ||
     /^\/teams\/[^/]+$/.test(location.pathname) ||
@@ -25,13 +27,16 @@ export const AppShell = () => {
     /^\/matches\/[^/]+$/.test(location.pathname) ||
     /^\/matches\/[^/]+\/live$/.test(location.pathname) ||
     /^\/matches\/[^/]+\/stats$/.test(location.pathname) ||
+    /^\/players\/[^/]+\/payments$/.test(location.pathname) ||
     /^\/match-players\/[^/]+\/stats$/.test(location.pathname);
 
   const navItems = [
     { name: "Panel", path: "/dashboard" },
-    { name: "Categorías", path: "/teams" },
     { name: "Jugadores", path: "/players" },
+    { name: "Categorías", path: "/categories" },
     { name: "Entrenamientos", path: "/trainings" },
+    { name: "Partidos", path: "/matches" },
+    { name: "Pagos", path: "/payments" },
   ];
 
   const handleLogout = async () => {

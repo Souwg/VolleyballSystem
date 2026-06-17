@@ -18,6 +18,7 @@
 .match-card-meta {
   font-size: var(--font-size-sm);
   color: var(--color-muted);
+  margin-bottom: 2px;
 }
 
 .match-card-side {
@@ -28,9 +29,29 @@
 }
 
 .match-score {
-  font-size: var(--font-size-base);
-  font-weight: var(--font-weight-bold);
+  display: inline-flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 2px;
+  padding: 6px 10px;
+  border-radius: 999px;
+  background: var(--color-surface-soft);
+  border: 1px solid var(--color-border);
   color: var(--color-text);
+  line-height: 1;
+}
+
+.match-score-label {
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--color-muted);
+}
+
+.match-score strong {
+  font-size: 16px;
+  font-weight: 800;
 }
 
 @media (min-width: 768px) {

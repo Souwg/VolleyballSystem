@@ -17,8 +17,7 @@
 }
 
 .training-detail-page,
-.training-form-page,
-.team-trainings-page {
+.training-form-page {
   display: flex;
   flex-direction: column;
   gap: 16px;

@@ -1,8 +1,8 @@
 """empty message
 
-Revision ID: cb56e8e45610
+Revision ID: e7f6bc9d7429
 Revises: 
-Create Date: 2026-05-06 18:56:12.995811
+Create Date: 2026-06-17 03:02:10.224926
 
 """
 from alembic import op
@@ -10,7 +10,7 @@ import sqlalchemy as sa
 
 
 # revision identifiers, used by Alembic.
-revision = 'cb56e8e45610'
+revision = 'e7f6bc9d7429'
 down_revision = None
 branch_labels = None
 depends_on = None
@@ -21,8 +21,14 @@ def upgrade():
     op.create_table('clubs',
     sa.Column('id', sa.String(length=36), nullable=False),
     sa.Column('name', sa.String(length=120), nullable=False),
-    sa.Column('location', sa.String(length=255), nullable=True),
+    sa.Column('location', sa.String(length=120), nullable=True),
+    sa.Column('state', sa.String(length=120), nullable=True),
+    sa.Column('image_url', sa.String(length=500), nullable=True),
+    sa.Column('primary_color', sa.String(length=20), nullable=True),
+    sa.Column('secondary_color', sa.String(length=20), nullable=True),
     sa.Column('owner_id', sa.String(length=36), nullable=False),
+    sa.Column('default_enrollment_fee', sa.Float(), nullable=True),
+    sa.Column('default_monthly_fee', sa.Float(), nullable=True),
     sa.Column('created_at', sa.DateTime(), nullable=True),
     sa.PrimaryKeyConstraint('id')
     )
@@ -33,6 +39,16 @@ def upgrade():
     sa.PrimaryKeyConstraint('id'),
     sa.UniqueConstraint('jti')
     )
+    op.create_table('categories',
+    sa.Column('id', sa.String(length=36), nullable=False),
+    sa.Column('name', sa.String(length=120), nullable=False),
+    sa.Column('description', sa.String(length=255), nullable=True),
+    sa.Column('club_id', sa.String(length=36), nullable=False),
+    sa.Column('created_at', sa.DateTime(), nullable=True),
+    sa.ForeignKeyConstraint(['club_id'], ['clubs.id'], ),
+    sa.PrimaryKeyConstraint('id'),
+    sa.UniqueConstraint('name', 'club_id', name='unique_category_per_club')
+    )
     op.create_table('players',
     sa.Column('id', sa.String(length=36), nullable=False),
     sa.Column('first_name', sa.String(length=80), nullable=False),
@@ -40,21 +56,29 @@ def upgrade():
     sa.Column('sex', sa.String(length=10), nullable=True),
     sa.Column('birth_date', sa.Date(), nullable=True),
     sa.Column('main_position', sa.String(length=20), nullable=True),
+    sa.Column('image_url', sa.String(length=500), nullable=True),
+    sa.Column('representative_name', sa.String(length=120), nullable=True),
+    sa.Column('representative_phone', sa.String(length=30), nullable=True),
+    sa.Column('enrollment_date', sa.Date(), nullable=True),
+    sa.Column('enrollment_fee', sa.Float(), nullable=True),
+    sa.Column('monthly_fee', sa.Float(), nullable=True),
+    sa.Column('payment_cycle_day', sa.Integer(), nullable=True),
     sa.Column('is_active', sa.Boolean(), nullable=False),
     sa.Column('club_id', sa.String(length=36), nullable=False),
     sa.Column('created_at', sa.DateTime(), nullable=True),
     sa.ForeignKeyConstraint(['club_id'], ['clubs.id'], ),
     sa.PrimaryKeyConstraint('id')
     )
-    op.create_table('teams',
+    op.create_table('receipt_counters',
     sa.Column('id', sa.String(length=36), nullable=False),
-    sa.Column('name', sa.String(length=120), nullable=False),
-    sa.Column('gender', sa.String(length=20), nullable=False),
     sa.Column('club_id', sa.String(length=36), nullable=False),
+    sa.Column('year', sa.Integer(), nullable=False),
+    sa.Column('next_sequence', sa.Integer(), nullable=False),
     sa.Column('created_at', sa.DateTime(), nullable=True),
+    sa.Column('updated_at', sa.DateTime(), nullable=True),
     sa.ForeignKeyConstraint(['club_id'], ['clubs.id'], ),
     sa.PrimaryKeyConstraint('id'),
-    sa.UniqueConstraint('name', 'gender', 'club_id', name='unique_team_gender_per_club')
+    sa.UniqueConstraint('club_id', 'year', name='unique_receipt_counter_per_club_year')
     )
     op.create_table('users',
     sa.Column('id', sa.String(length=36), nullable=False),
@@ -70,6 +94,52 @@ def upgrade():
     sa.ForeignKeyConstraint(['club_id'], ['clubs.id'], ),
     sa.PrimaryKeyConstraint('id'),
     sa.UniqueConstraint('email')
+    )
+    op.create_table('player_payments',
+    sa.Column('id', sa.String(length=36), nullable=False),
+    sa.Column('club_id', sa.String(length=36), nullable=False),
+    sa.Column('player_id', sa.String(length=36), nullable=False),
+    sa.Column('payment_type', sa.String(length=30), nullable=False),
+    sa.Column('amount', sa.Float(), nullable=False),
+    sa.Column('status', sa.String(length=20), nullable=False),
+    sa.Column('period_start', sa.Date(), nullable=True),
+    sa.Column('period_end', sa.Date(), nullable=True),
+    sa.Column('due_date', sa.Date(), nullable=True),
+    sa.Column('payment_date', sa.Date(), nullable=True),
+    sa.Column('payment_method', sa.String(length=50), nullable=True),
+    sa.Column('reference', sa.String(length=120), nullable=True),
+    sa.Column('notes', sa.Text(), nullable=True),
+    sa.Column('created_by', sa.String(length=36), nullable=True),
+    sa.Column('paid_by', sa.String(length=36), nullable=True),
+    sa.Column('created_at', sa.DateTime(), nullable=True),
+    sa.ForeignKeyConstraint(['club_id'], ['clubs.id'], ),
+    sa.ForeignKeyConstraint(['created_by'], ['users.id'], ),
+    sa.ForeignKeyConstraint(['paid_by'], ['users.id'], ),
+    sa.ForeignKeyConstraint(['player_id'], ['players.id'], ),
+    sa.PrimaryKeyConstraint('id')
+    )
+    op.create_table('refresh_tokens',
+    sa.Column('id', sa.String(length=36), nullable=False),
+    sa.Column('user_id', sa.String(length=36), nullable=False),
+    sa.Column('jti', sa.String(length=36), nullable=False),
+    sa.Column('revoked', sa.Boolean(), nullable=True),
+    sa.Column('expires_at', sa.DateTime(), nullable=False),
+    sa.Column('created_at', sa.DateTime(), nullable=True),
+    sa.ForeignKeyConstraint(['user_id'], ['users.id'], ),
+    sa.PrimaryKeyConstraint('id'),
+    sa.UniqueConstraint('jti')
+    )
+    op.create_table('teams',
+    sa.Column('id', sa.String(length=36), nullable=False),
+    sa.Column('name', sa.String(length=120), nullable=False),
+    sa.Column('gender', sa.String(length=20), nullable=False),
+    sa.Column('category_id', sa.String(length=36), nullable=False),
+    sa.Column('club_id', sa.String(length=36), nullable=False),
+    sa.Column('created_at', sa.DateTime(), nullable=True),
+    sa.ForeignKeyConstraint(['category_id'], ['categories.id'], ),
+    sa.ForeignKeyConstraint(['club_id'], ['clubs.id'], ),
+    sa.PrimaryKeyConstraint('id'),
+    sa.UniqueConstraint('name', 'gender', 'category_id', 'club_id', name='unique_team_gender_per_category')
     )
     op.create_table('match_sessions',
     sa.Column('id', sa.String(length=36), nullable=False),
@@ -90,16 +160,23 @@ def upgrade():
     sa.ForeignKeyConstraint(['team_id'], ['teams.id'], ),
     sa.PrimaryKeyConstraint('id')
     )
-    op.create_table('refresh_tokens',
+    op.create_table('payment_receipts',
     sa.Column('id', sa.String(length=36), nullable=False),
-    sa.Column('user_id', sa.String(length=36), nullable=False),
-    sa.Column('jti', sa.String(length=36), nullable=False),
-    sa.Column('revoked', sa.Boolean(), nullable=True),
-    sa.Column('expires_at', sa.DateTime(), nullable=False),
-    sa.Column('created_at', sa.DateTime(), nullable=True),
-    sa.ForeignKeyConstraint(['user_id'], ['users.id'], ),
+    sa.Column('payment_id', sa.String(length=36), nullable=False),
+    sa.Column('club_id', sa.String(length=36), nullable=False),
+    sa.Column('player_id', sa.String(length=36), nullable=False),
+    sa.Column('receipt_number', sa.String(length=40), nullable=False),
+    sa.Column('pdf_url', sa.String(length=500), nullable=True),
+    sa.Column('generated_at', sa.DateTime(), nullable=True),
+    sa.Column('sent_at', sa.DateTime(), nullable=True),
+    sa.Column('sent_channel', sa.String(length=30), nullable=True),
+    sa.Column('sent_to', sa.String(length=120), nullable=True),
+    sa.ForeignKeyConstraint(['club_id'], ['clubs.id'], ),
+    sa.ForeignKeyConstraint(['payment_id'], ['player_payments.id'], ),
+    sa.ForeignKeyConstraint(['player_id'], ['players.id'], ),
     sa.PrimaryKeyConstraint('id'),
-    sa.UniqueConstraint('jti')
+    sa.UniqueConstraint('payment_id'),
+    sa.UniqueConstraint('receipt_number')
     )
     op.create_table('team_players',
     sa.Column('id', sa.String(length=36), nullable=False),
@@ -233,11 +310,15 @@ def downgrade():
     op.drop_table('attendance')
     op.drop_table('training_sessions')
     op.drop_table('team_players')
-    op.drop_table('refresh_tokens')
+    op.drop_table('payment_receipts')
     op.drop_table('match_sessions')
-    op.drop_table('users')
     op.drop_table('teams')
+    op.drop_table('refresh_tokens')
+    op.drop_table('player_payments')
+    op.drop_table('users')
+    op.drop_table('receipt_counters')
     op.drop_table('players')
+    op.drop_table('categories')
     op.drop_table('token_blocked_list')
     op.drop_table('clubs')
     # ### end Alembic commands ###

@@ -42,3 +42,17 @@
   color: var(--color-muted);
   line-height: var(--line-height-normal);
 }
+.match-result-status {
+  margin: 4px 0 0;
+  font-size: var(--font-size-sm);
+  font-weight: var(--font-weight-semibold);
+  color: var(--color-muted);
+}
+
+.match-result-win {
+  color: var(--color-success);
+}
+
+.match-result-loss {
+  color: var(--color-danger);
+}

@@ -1,0 +1,165 @@
+/* ===== PLAYER CARD ACTIONS ===== */
+
+.player-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: 12px;
+}
+
+.player-actions .button {
+  width: 100%;
+}
+
+.player-state-action {
+  width: 100%;
+  min-height: 38px;
+  padding: 8px 10px;
+  border: none;
+  background: transparent;
+  font-size: var(--font-size-sm);
+  font-weight: var(--font-weight-semibold);
+  cursor: pointer;
+  text-align: center;
+}
+
+.player-state-action.danger {
+  color: var(--color-danger);
+}
+
+.player-state-action.success {
+  color: var(--color-success);
+}
+
+.player-state-action:hover {
+  text-decoration: underline;
+}
+
+/* ===== PLAYERS FILTERS ===== */
+
+.players-filter-card {
+  padding: 14px;
+  margin-bottom: 1rem;
+}
+
+.players-filter-top {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.players-search {
+  width: 100%;
+}
+
+.players-filter-toggle {
+  width: 100%;
+  min-height: 42px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  background: var(--color-surface-soft);
+  color: var(--color-text);
+  font-size: var(--font-size-sm);
+  font-weight: var(--font-weight-semibold);
+  cursor: pointer;
+}
+
+.players-status-chips {
+  display: flex;
+  gap: 8px;
+  overflow-x: auto;
+  padding: 12px 0 2px;
+  scrollbar-width: none;
+}
+
+.players-status-chips::-webkit-scrollbar {
+  display: none;
+}
+
+.filter-chip {
+  flex-shrink: 0;
+  padding: 8px 12px;
+  border-radius: 999px;
+  border: 1px solid var(--color-border);
+  background: var(--color-surface);
+  color: var(--color-muted);
+  font-size: var(--font-size-sm);
+  font-weight: var(--font-weight-semibold);
+  cursor: pointer;
+}
+
+.filter-chip.active {
+  border-color: var(--color-primary);
+  background: var(--color-primary-light);
+  color: var(--color-primary);
+}
+
+.players-filter-extra {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding-top: 12px;
+  margin-top: 10px;
+  border-top: 1px solid var(--color-border);
+}
+
+.players-clear-filters {
+  width: 100%;
+  min-height: 40px;
+  border: none;
+  background: transparent;
+  color: var(--color-primary);
+  font-size: var(--font-size-sm);
+  font-weight: var(--font-weight-semibold);
+  cursor: pointer;
+}
+
+.player-team-summary {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin-top: 4px;
+}
+
+@media (min-width: 768px) {
+  .players-filter-top {
+    flex-direction: row;
+    align-items: center;
+  }
+
+  .players-search {
+    flex: 1;
+  }
+
+  .players-filter-toggle {
+    width: auto;
+    padding: 0 16px;
+  }
+
+  .players-filter-extra {
+    display: grid;
+    grid-template-columns: 1fr auto;
+    align-items: end;
+  }
+
+  .players-clear-filters {
+    width: auto;
+    padding: 0 12px;
+  }
+}
+
+@media (min-width: 768px) {
+  .player-actions {
+    flex-direction: row;
+    align-items: center;
+    justify-content: flex-end;
+  }
+
+  .player-actions .button {
+    width: auto;
+  }
+
+  .player-state-action {
+    width: auto;
+  }
+}

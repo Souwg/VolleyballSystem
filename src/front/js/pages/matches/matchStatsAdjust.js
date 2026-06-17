@@ -18,20 +18,24 @@ export const MatchStatsAdjust = () => {
   const loadPlayers = async () => {
     setLoading(true);
 
-    const result = await actions.getMatchRoster(match_id);
+    try {
+      const result = await actions.getMatchRoster(match_id);
 
-    if (result.ok) {
-      const playablePlayers = result.data.filter(
-        (player) =>
-          player.is_called &&
-          PLAYABLE_STATUSES.includes(player.attendance_status) &&
-          player.did_play,
-      );
+      if (result.ok) {
+        const roster = result.data || [];
 
-      setPlayers(playablePlayers);
+        const playablePlayers = roster.filter(
+          (player) =>
+            player.is_called &&
+            PLAYABLE_STATUSES.includes(player.attendance_status) &&
+            player.did_play,
+        );
+
+        setPlayers(playablePlayers);
+      }
+    } finally {
+      setLoading(false);
     }
-
-    setLoading(false);
   };
 
   useEffect(() => {

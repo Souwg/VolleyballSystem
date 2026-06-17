@@ -3,7 +3,7 @@ from flask import redirect, request
 from flask_admin import Admin
 from flask_admin.contrib.sqla import ModelView
 from flask_jwt_extended import verify_jwt_in_request, get_jwt_identity
-from .models import db, User, Club, Team, Player, TeamPlayer, Attendance, TrainingSession, TrainingPlayer, MatchSession, MatchPlayer, MatchSubstitution, MatchEvent, PlayerMatchStat, TokenBlockedList, RefreshToken
+from .models import db, User, Club, Team, Category, Player, TeamPlayer, Attendance, TrainingSession, TrainingPlayer, MatchSession, MatchPlayer, MatchSubstitution, MatchEvent, PlayerMatchStat, PlayerPayment, PaymentReceipt, ReceiptCounter, TokenBlockedList, RefreshToken
 import os
 ENV = os.getenv("APP_ENV")
 
@@ -40,6 +40,7 @@ def setup_admin(app):
     admin.add_view(SecureModelView(User, db.session))
     admin.add_view(SecureModelView(Club, db.session))
     admin.add_view(SecureModelView(Team, db.session))
+    admin.add_view(SecureModelView(Category, db.session))
     admin.add_view(SecureModelView(Player, db.session))
     admin.add_view(SecureModelView(TeamPlayer, db.session))
     admin.add_view(SecureModelView(TrainingSession, db.session))
@@ -50,6 +51,9 @@ def setup_admin(app):
     admin.add_view(SecureModelView(MatchSubstitution, db.session))
     admin.add_view(SecureModelView(MatchEvent, db.session))
     admin.add_view(SecureModelView(PlayerMatchStat, db.session))
+    admin.add_view(SecureModelView(PlayerPayment, db.session))
+    admin.add_view(SecureModelView(PaymentReceipt, db.session))
+    admin.add_view(SecureModelView(ReceiptCounter, db.session))
     admin.add_view(SecureModelView(TokenBlockedList, db.session))
     admin.add_view(SecureModelView(RefreshToken, db.session))
     

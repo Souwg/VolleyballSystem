@@ -31,10 +31,16 @@ const getState = ({ getStore, getActions, setStore }) => {
       nextMatch: null,
 
       adminClients: [],
+      categories: [],
       teams: [],
       players: [],
+      payments: [],
+      paymentSummary: null,
+      playerPayments: [],
       trainings: [],
       matches: [],
+      clubMatches: [],
+      matchTeam: null,
     },
 
     actions: {
@@ -147,6 +153,138 @@ const getState = ({ getStore, getActions, setStore }) => {
           return successResponse(data);
         } catch (error) {
           return networkError("Error loading onboarding status:", error);
+        }
+      },
+
+      getCategories: async () => {
+        try {
+          const resp = await authFetch("/api/categories");
+
+          const result = await parseResponse(resp);
+
+          if (!result.ok) return result;
+
+          setStore({
+            categories: result.data.categories,
+          });
+
+          return successResponse(result.data);
+        } catch (error) {
+          return networkError("Error loading categories:", error);
+        }
+      },
+
+      getCategoryDetail: async (categoryId) => {
+        try {
+          const resp = await authFetch(`/api/categories/${categoryId}`);
+
+          const result = await parseResponse(resp);
+
+          if (!result.ok) return result;
+
+          return successResponse(result.data);
+        } catch (error) {
+          return networkError("Error loading category detail:", error);
+        }
+      },
+
+      createCategory: async (categoryData) => {
+        try {
+          const resp = await authFetch("/api/categories", {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+            },
+            body: JSON.stringify(categoryData),
+          });
+
+          const result = await parseResponse(resp);
+
+          if (!result.ok) return result;
+
+          const actions = getActions();
+
+          await actions.getCategories();
+          await actions.getOnboardingStatus();
+
+          return successResponse(result.data);
+        } catch (error) {
+          return networkError("Error creating category:", error);
+        }
+      },
+
+      updateCategory: async (categoryId, categoryData) => {
+        try {
+          const resp = await authFetch(`/api/categories/${categoryId}`, {
+            method: "PUT",
+            headers: {
+              "Content-Type": "application/json",
+            },
+            body: JSON.stringify(categoryData),
+          });
+
+          const result = await parseResponse(resp);
+
+          if (!result.ok) return result;
+
+          const actions = getActions();
+
+          await actions.getCategories();
+          await actions.getOnboardingStatus();
+
+          return successResponse(result.data);
+        } catch (error) {
+          return networkError("Error updating category:", error);
+        }
+      },
+
+      createTeamInCategory: async (categoryId, teamData) => {
+        try {
+          const resp = await authFetch(`/api/categories/${categoryId}/teams`, {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+            },
+            body: JSON.stringify(teamData),
+          });
+
+          const result = await parseResponse(resp);
+
+          if (!result.ok) return result;
+
+          const actions = getActions();
+
+          await actions.getTeams();
+          await actions.getOnboardingStatus();
+
+          return successResponse(result.data);
+        } catch (error) {
+          return networkError("Error creating team in category:", error);
+        }
+      },
+
+      updateTeam: async (teamId, teamData) => {
+        try {
+          const resp = await authFetch(`/api/teams/${teamId}`, {
+            method: "PUT",
+            headers: {
+              "Content-Type": "application/json",
+            },
+            body: JSON.stringify(teamData),
+          });
+
+          const result = await parseResponse(resp);
+
+          if (!result.ok) return result;
+
+          const actions = getActions();
+
+          await actions.getTeams();
+          await actions.getOnboardingStatus();
+
+          return successResponse(result.data);
+        } catch (error) {
+          return networkError("Error updating team:", error);
         }
       },
 
@@ -429,31 +567,6 @@ const getState = ({ getStore, getActions, setStore }) => {
         }
       },
 
-      createTeam: async (teamData) => {
-        try {
-          const resp = await authFetch("/api/teams", {
-            method: "POST",
-            headers: {
-              "Content-Type": "application/json",
-            },
-            body: JSON.stringify(teamData),
-          });
-
-          const result = await parseResponse(resp);
-
-          if (!result.ok) return result;
-
-          const actions = getActions();
-
-          await actions.getTeams();
-          await actions.getOnboardingStatus();
-
-          return successResponse(result.data);
-        } catch (error) {
-          return networkError("Error creating team:", error);
-        }
-      },
-
       deleteTeam: async (teamId) => {
         try {
           const resp = await authFetch(`/api/teams/${teamId}`, {
@@ -629,6 +742,24 @@ const getState = ({ getStore, getActions, setStore }) => {
         }
       },
 
+      getClubMatches: async () => {
+        try {
+          const resp = await authFetch("/api/matches");
+
+          const result = await parseResponse(resp);
+
+          if (!result.ok) return result;
+
+          setStore({
+            clubMatches: result.data.matches || [],
+          });
+
+          return successResponse(result.data);
+        } catch (error) {
+          return networkError("Error loading club matches:", error);
+        }
+      },
+
       getTeamMatches: async (teamId) => {
         try {
           const resp = await authFetch(`/api/teams/${teamId}/matches`);
@@ -638,9 +769,9 @@ const getState = ({ getStore, getActions, setStore }) => {
           if (!result.ok) return result;
 
           setStore({
-            matches: result.data.matches || result.data,
+            matches: result.data.matches || [],
+            matchTeam: result.data.team || null,
           });
-
           return successResponse(result.data);
         } catch (error) {
           return networkError("Error loading matches:", error);
@@ -913,6 +1044,205 @@ const getState = ({ getStore, getActions, setStore }) => {
           return successResponse(result.data);
         } catch (error) {
           return networkError("Error deleting match event:", error);
+        }
+      },
+
+      uploadClubImage: async (file) => {
+        try {
+          const formData = new FormData();
+          formData.append("image", file);
+
+          const resp = await authFetch("/api/club/upload-image", {
+            method: "POST",
+            body: formData,
+          });
+
+          const result = await parseResponse(resp);
+
+          if (!result.ok) return result;
+
+          return successResponse(result.data);
+        } catch (error) {
+          return networkError("Error uploading club image:", error);
+        }
+      },
+      uploadPlayerImage: async (playerId, file) => {
+        try {
+          const formData = new FormData();
+          formData.append("image", file);
+
+          const resp = await authFetch(
+            `/api/players/${playerId}/upload-image`,
+            {
+              method: "POST",
+              body: formData,
+            },
+          );
+
+          const result = await parseResponse(resp);
+
+          if (!result.ok) return result;
+
+          const actions = getActions();
+          await actions.getPlayers();
+
+          return successResponse(result.data);
+        } catch (error) {
+          return networkError("Error uploading player image:", error);
+        }
+      },
+
+      getPayments: async (filters = {}) => {
+        try {
+          const params = new URLSearchParams();
+
+          if (filters.status) {
+            params.append("status", filters.status);
+          }
+
+          if (filters.payment_type) {
+            params.append("payment_type", filters.payment_type);
+          }
+
+          const queryString = params.toString();
+          const endpoint = queryString
+            ? `/api/payments?${queryString}`
+            : "/api/payments";
+
+          const resp = await authFetch(endpoint);
+
+          const result = await parseResponse(resp);
+
+          if (!result.ok) return result;
+
+          setStore({
+            payments: result.data.payments,
+            paymentSummary: result.data.summary,
+          });
+
+          return successResponse(result.data);
+        } catch (error) {
+          return networkError("Error loading payments:", error);
+        }
+      },
+
+      updatePayment: async (paymentId, paymentData, refreshFilters = null) => {
+        try {
+          const resp = await authFetch(`/api/payments/${paymentId}`, {
+            method: "PUT",
+            headers: {
+              "Content-Type": "application/json",
+            },
+            body: JSON.stringify(paymentData),
+          });
+
+          const result = await parseResponse(resp);
+
+          if (!result.ok) return result;
+
+          const store = getStore();
+
+          const updatedPayments = store.payments.map((payment) =>
+            payment.id === paymentId ? result.data.payment : payment,
+          );
+
+          setStore({
+            payments: updatedPayments,
+          });
+
+          if (refreshFilters) {
+            const actions = getActions();
+            await actions.getPayments(refreshFilters);
+          }
+
+          return successResponse(result.data);
+        } catch (error) {
+          return networkError("Error updating payment:", error);
+        }
+      },
+
+      createPaymentReceipt: async (paymentId) => {
+        try {
+          const resp = await authFetch(`/api/payments/${paymentId}/receipt`, {
+            method: "POST",
+          });
+
+          const result = await parseResponse(resp);
+
+          if (!result.ok) return result;
+
+          return successResponse(result.data);
+        } catch (error) {
+          return networkError("Error creating payment receipt:", error);
+        }
+      },
+
+      markPaymentReceiptShared: async (receiptId, shareData) => {
+        try {
+          const resp = await authFetch(
+            `/api/payment-receipts/${receiptId}/share`,
+            {
+              method: "PUT",
+              headers: {
+                "Content-Type": "application/json",
+              },
+              body: JSON.stringify(shareData),
+            },
+          );
+
+          const result = await parseResponse(resp);
+
+          if (!result.ok) return result;
+
+          return successResponse(result.data);
+        } catch (error) {
+          return networkError("Error sharing payment receipt:", error);
+        }
+      },
+
+      getPlayerPayments: async (playerId) => {
+        try {
+          const resp = await authFetch(`/api/players/${playerId}/payments`);
+
+          const result = await parseResponse(resp);
+
+          if (!result.ok) return result;
+
+          setStore({
+            playerPayments: result.data.payments,
+          });
+
+          return successResponse(result.data);
+        } catch (error) {
+          return networkError("Error loading player payments:", error);
+        }
+      },
+
+      updatePlayerPaymentSettings: async (playerId, paymentSettings) => {
+        try {
+          const resp = await authFetch(
+            `/api/players/${playerId}/payment-settings`,
+            {
+              method: "PUT",
+              headers: {
+                "Content-Type": "application/json",
+              },
+              body: JSON.stringify(paymentSettings),
+            },
+          );
+
+          const result = await parseResponse(resp);
+
+          if (!result.ok) return result;
+
+          const actions = getActions();
+
+          await actions.getPlayers();
+          await actions.getPlayerPayments(playerId);
+
+          return successResponse(result.data);
+        } catch (error) {
+          return networkError("Error updating player payment settings:", error);
         }
       },
       restoreSession: async () => {

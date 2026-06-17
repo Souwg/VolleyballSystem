@@ -52,10 +52,16 @@ class Club(db.Model):
 
     id = db.Column(db.String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
     name = db.Column(db.String(120), nullable=False)
-    location = db.Column(db.String(255))
+    location = db.Column(db.String(120), nullable=True)
+    state = db.Column(db.String(120), nullable=True)
     image_url = db.Column(db.String(500), nullable=True)
+    primary_color = db.Column(db.String(20), nullable=True)
+    secondary_color = db.Column(db.String(20), nullable=True)
     owner_id = db.Column(db.String(36), nullable=False)
+    default_enrollment_fee = db.Column(db.Float, nullable=True)
+    default_monthly_fee = db.Column(db.Float, nullable=True)
     created_at = db.Column(db.DateTime(), default=datetime.utcnow)
+    
 
     def __repr__(self):
         return f"<Club {self.name}>"
@@ -65,8 +71,55 @@ class Club(db.Model):
             "id": self.id,
             "name": self.name,
             "location": self.location,
+            "state": self.state,
             "image_url": self.image_url,
+            "primary_color": self.primary_color,
+            "secondary_color": self.secondary_color,
             "owner_id": self.owner_id,
+            "default_enrollment_fee": self.default_enrollment_fee,
+            "default_monthly_fee": self.default_monthly_fee,
+            "created_at": self.created_at.isoformat()
+        }
+
+class Category(db.Model):
+    __tablename__ = "categories"
+
+    __table_args__ = (
+        db.UniqueConstraint(
+            "name",
+            "club_id",
+            name="unique_category_per_club"
+        ),
+    )
+
+    id = db.Column(db.String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
+
+    name = db.Column(db.String(120), nullable=False)
+
+    description = db.Column(db.String(255), nullable=True)
+
+    club_id = db.Column(
+        db.String(36),
+        db.ForeignKey("clubs.id"),
+        nullable=False
+    )
+
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+
+    club = db.relationship(
+        "Club",
+        backref=db.backref("categories", lazy=True)
+    )
+
+    def __repr__(self):
+        return f"<Category {self.name}>"
+
+    def serialize(self):
+        return {
+            "id": self.id,
+            "name": self.name,
+            "description": self.description,
+            "club_id": self.club_id,
             "created_at": self.created_at.isoformat()
         }
 
@@ -77,15 +130,22 @@ class Team(db.Model):
         db.UniqueConstraint(
             "name",
             "gender",
+            "category_id",
             "club_id",
-            name="unique_team_gender_per_club"
+            name="unique_team_gender_per_category"
         ),
     )
 
     id = db.Column(db.String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
 
-    name = db.Column(db.String(120), nullable=False)  
-    gender = db.Column(db.String(20), nullable=False, default="female") 
+    name = db.Column(db.String(120), nullable=False)
+    gender = db.Column(db.String(20), nullable=False, default="female")
+
+    category_id = db.Column(
+        db.String(36),
+        db.ForeignKey("categories.id"),
+        nullable=False
+    )
 
     club_id = db.Column(
         db.String(36),
@@ -95,7 +155,15 @@ class Team(db.Model):
 
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
 
-    club = db.relationship("Club", backref=db.backref("teams", lazy=True))
+    category = db.relationship(
+        "Category",
+        backref=db.backref("teams", lazy=True)
+    )
+
+    club = db.relationship(
+        "Club",
+        backref=db.backref("teams", lazy=True)
+    )
 
     def __repr__(self):
         return f"<Team {self.name}>"
@@ -105,6 +173,8 @@ class Team(db.Model):
             "id": self.id,
             "name": self.name,
             "gender": self.gender,
+            "category_id": self.category_id,
+            "category": self.category.serialize() if self.category else None,
             "club_id": self.club_id,
             "created_at": self.created_at.isoformat()
         }
@@ -119,6 +189,13 @@ class Player(db.Model):
     sex = db.Column(db.String(10))
     birth_date = db.Column(db.Date)
     main_position = db.Column(db.String(20), nullable=True)
+    image_url = db.Column(db.String(500), nullable=True)
+    representative_name = db.Column(db.String(120), nullable=True)
+    representative_phone = db.Column(db.String(30), nullable=True)
+    enrollment_date = db.Column(db.Date, nullable=True)
+    enrollment_fee = db.Column(db.Float, nullable=True)
+    monthly_fee = db.Column(db.Float, nullable=True)
+    payment_cycle_day = db.Column(db.Integer, nullable=True)
 
     is_active = db.Column(db.Boolean(), default=True, nullable=False)
 
@@ -143,6 +220,13 @@ class Player(db.Model):
             "sex": self.sex,
             "birth_date": self.birth_date.isoformat() if self.birth_date else None,
             "main_position": self.main_position,
+            "image_url": self.image_url,
+            "representative_name": self.representative_name,
+            "representative_phone": self.representative_phone,
+            "enrollment_date": self.enrollment_date.isoformat() if self.enrollment_date else None,
+            "enrollment_fee": self.enrollment_fee,
+            "monthly_fee": self.monthly_fee,
+            "payment_cycle_day": self.payment_cycle_day,
             "is_active": self.is_active,
             "club_id": self.club_id,
             "created_at": self.created_at.isoformat()
@@ -676,6 +760,162 @@ class PlayerMatchStat(db.Model):
             "blocks_neutral": self.blocks_neutral,
             "blocks_errors": self.blocks_errors,
             "created_at": self.created_at.isoformat()
+        }
+    
+class PlayerPayment(db.Model):
+    __tablename__ = "player_payments"
+
+    id = db.Column(db.String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
+
+    club_id = db.Column(db.String(36), db.ForeignKey("clubs.id"), nullable=False)
+    player_id = db.Column(db.String(36), db.ForeignKey("players.id"), nullable=False)
+
+    payment_type = db.Column(db.String(30), nullable=False, default="monthly")
+    # enrollment, monthly, uniform, tournament, extra
+
+    amount = db.Column(db.Float, nullable=False, default=0)
+    status = db.Column(db.String(20), default="pending", nullable=False)
+
+    period_start = db.Column(db.Date, nullable=True)
+    period_end = db.Column(db.Date, nullable=True)
+    due_date = db.Column(db.Date, nullable=True)
+
+    payment_date = db.Column(db.Date, nullable=True)
+    payment_method = db.Column(db.String(50), nullable=True)
+    reference = db.Column(db.String(120), nullable=True)
+    notes = db.Column(db.Text, nullable=True)
+
+    created_by = db.Column(db.String(36), db.ForeignKey("users.id"), nullable=True)
+    paid_by = db.Column(db.String(36), db.ForeignKey("users.id"), nullable=True)
+
+    created_at = db.Column(db.DateTime(), default=datetime.utcnow)
+
+    player = db.relationship("Player", backref=db.backref("payments", lazy=True))
+    club = db.relationship("Club", backref=db.backref("payments", lazy=True))
+
+    def serialize(self):
+        return {
+            "id": self.id,
+            "club_id": self.club_id,
+            "player_id": self.player_id,
+            "payment_type": self.payment_type,
+            "amount": self.amount,
+            "status": self.status,
+            "period_start": self.period_start.isoformat() if self.period_start else None,
+            "period_end": self.period_end.isoformat() if self.period_end else None,
+            "due_date": self.due_date.isoformat() if self.due_date else None,
+            "payment_date": self.payment_date.isoformat() if self.payment_date else None,
+            "payment_method": self.payment_method,
+            "reference": self.reference,
+            "receipt": self.receipt.serialize() if self.receipt else None,
+            "notes": self.notes,
+            "created_by": self.created_by,
+            "paid_by": self.paid_by,
+            "created_at": self.created_at.isoformat(),
+            "player": self.player.serialize() if self.player else None
+        }
+    
+class PaymentReceipt(db.Model):
+    __tablename__ = "payment_receipts"
+
+    id = db.Column(db.String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
+
+    payment_id = db.Column(
+        db.String(36),
+        db.ForeignKey("player_payments.id"),
+        nullable=False,
+        unique=True
+    )
+
+    club_id = db.Column(
+        db.String(36),
+        db.ForeignKey("clubs.id"),
+        nullable=False
+    )
+
+    player_id = db.Column(
+        db.String(36),
+        db.ForeignKey("players.id"),
+        nullable=False
+    )
+
+    receipt_number = db.Column(db.String(40), nullable=False, unique=True)
+
+    pdf_url = db.Column(db.String(500), nullable=True)
+
+    generated_at = db.Column(db.DateTime, default=datetime.utcnow)
+
+    sent_at = db.Column(db.DateTime, nullable=True)
+    sent_channel = db.Column(db.String(30), nullable=True)
+    sent_to = db.Column(db.String(120), nullable=True)
+
+    payment = db.relationship(
+        "PlayerPayment",
+        backref=db.backref(
+            "receipt",
+            uselist=False,
+            cascade="all, delete-orphan",
+            single_parent=True
+        )
+    )
+
+    def serialize(self):
+        return {
+            "id": self.id,
+            "payment_id": self.payment_id,
+            "club_id": self.club_id,
+            "player_id": self.player_id,
+            "receipt_number": self.receipt_number,
+            "pdf_url": self.pdf_url,
+            "generated_at": self.generated_at.isoformat() if self.generated_at else None,
+            "sent_at": self.sent_at.isoformat() if self.sent_at else None,
+            "sent_channel": self.sent_channel,
+            "sent_to": self.sent_to,
+        }
+    
+class ReceiptCounter(db.Model):
+    __tablename__ = "receipt_counters"
+
+    __table_args__ = (
+        db.UniqueConstraint(
+            "club_id",
+            "year",
+            name="unique_receipt_counter_per_club_year"
+        ),
+    )
+
+    id = db.Column(db.String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
+
+    club_id = db.Column(
+        db.String(36),
+        db.ForeignKey("clubs.id"),
+        nullable=False
+    )
+
+    year = db.Column(db.Integer, nullable=False)
+
+    next_sequence = db.Column(db.Integer, nullable=False, default=1)
+
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    updated_at = db.Column(
+        db.DateTime,
+        default=datetime.utcnow,
+        onupdate=datetime.utcnow
+    )
+
+    club = db.relationship(
+        "Club",
+        backref=db.backref("receipt_counters", lazy=True)
+    )
+
+    def serialize(self):
+        return {
+            "id": self.id,
+            "club_id": self.club_id,
+            "year": self.year,
+            "next_sequence": self.next_sequence,
+            "created_at": self.created_at.isoformat() if self.created_at else None,
+            "updated_at": self.updated_at.isoformat() if self.updated_at else None,
         }
     
 class TokenBlockedList(db.Model):

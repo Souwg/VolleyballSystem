@@ -16,21 +16,26 @@ import { AdminShell } from "./component/adminShell";
 import { Dashboard } from "./pages/dashboard/dashboard";
 import { SetPassword } from "./pages/auth/setPassword";
 import { Onboarding } from "./pages/onboarding/onboarding";
-import { Teams } from "./pages/teams/teams";
+import { Categories } from "./pages/categories/categories";
+import { CategoryDetail } from "./pages/categories/categoryDetail";
 import { TeamDetail } from "./pages/teams/teamDetail";
 import { Players } from "./pages/players/players";
 import { PlayerDetail } from "./pages/players/playerDetail";
 import { EditPlayer } from "./pages/players/editPlayer";
+import { PlayerPayments } from "./pages/players/playerPayments";
 import { Trainings } from "./pages/trainings/trainings";
 import { TeamTrainings } from "./pages/trainings/teamTrainings";
 import { TrainingDetail } from "./pages/trainings/trainingDetail";
 import { CreateTraining } from "./pages/trainings/createTraining";
 import { MatchSessions } from "./pages/matches/matchSessions";
+import { Matches } from "./pages/matches/matches";
 import { CreateMatch } from "./pages/matches/createMatch";
 import { MatchDetail } from "./pages/matches/matchDetail";
 import { LiveMatch } from "./pages/matches/liveMatch";
 import { PlayerMatchStats } from "./pages/matches/playerMatchStats";
 import { MatchStatsAdjust } from "./pages/matches/matchStatsAdjust";
+import { ClubProfile } from "./pages/club/clubProfile";
+import { Payments } from "./pages/payments/payments";
 import injectContext from "./store/appContext";
 
 const Layout = () => {
@@ -88,7 +93,13 @@ const Layout = () => {
           <Route element={<ProtectedRoute />}>
             <Route element={<AppShell />}>
               <Route path="/dashboard" element={<Dashboard />} />
-              <Route path="/teams" element={<Teams />} />
+              <Route path="/club/profile" element={<ClubProfile />} />
+              <Route path="/payments" element={<Payments />} />
+              <Route path="/categories" element={<Categories />} />
+              <Route
+                path="/categories/:category_id"
+                element={<CategoryDetail />}
+              />
               <Route path="/teams/:team_id" element={<TeamDetail />} />
               <Route path="/trainings" element={<Trainings />} />
               <Route
@@ -104,6 +115,7 @@ const Layout = () => {
                 path="/teams/:team_id/trainings/new"
                 element={<CreateTraining />}
               />
+              <Route path="/matches" element={<Matches />} />
               <Route
                 path="/teams/:team_id/matches"
                 element={<MatchSessions />}
@@ -125,6 +137,10 @@ const Layout = () => {
               />
               <Route path="/players" element={<Players />} />
               <Route path="/players/:player_id/edit" element={<EditPlayer />} />
+              <Route
+                path="/players/:player_id/payments"
+                element={<PlayerPayments />}
+              />
               <Route path="/players/:player_id" element={<PlayerDetail />} />
             </Route>
           </Route>

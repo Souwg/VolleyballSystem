@@ -1,5 +1,5 @@
 import React, { useEffect, useState, useContext, useMemo } from "react";
-import { useParams, useNavigate } from "react-router-dom";
+import { useParams, useNavigate, useLocation } from "react-router-dom";
 import { Context } from "../../store/appContext";
 import { PageHeader } from "../../component/ui/pageHeader";
 import { Card } from "../../component/ui/card";
@@ -19,7 +19,7 @@ const MATCH_STATUS_LABELS = {
 const PLAYABLE_STATUSES = ["present", "late"];
 
 const POSITION_LABELS = {
-  setter: "Armadora",
+  setter: "Armador",
   outside: "Punta",
   middle: "Central",
   opposite: "Opuesto",
@@ -27,7 +27,7 @@ const POSITION_LABELS = {
 };
 
 const POSITION_OPTIONS = [
-  { value: "setter", label: "Armadora" },
+  { value: "setter", label: "Armador" },
   { value: "outside", label: "Punta" },
   { value: "middle", label: "Central" },
   { value: "opposite", label: "Opuesto" },
@@ -38,11 +38,13 @@ export const MatchDetail = () => {
   const { actions } = useContext(Context);
   const { match_id } = useParams();
   const navigate = useNavigate();
+  const location = useLocation();
 
   const [loading, setLoading] = useState(true);
   const [match, setMatch] = useState(null);
   const [roster, setRoster] = useState([]);
   const [currentStep, setCurrentStep] = useState(0);
+  const [resultError, setResultError] = useState("");
 
   const [teamPlayers, setTeamPlayers] = useState([]);
   const [selectedPlayers, setSelectedPlayers] = useState([]);
@@ -143,6 +145,9 @@ export const MatchDetail = () => {
   };
 
   const updatePlayerPosition = (matchPlayerId, newPosition) => {
+    setStatusDirty(true);
+    setStatusError("");
+
     setRoster((prev) =>
       prev.map((player) => {
         if (player.match_player_id !== matchPlayerId) return player;
@@ -177,7 +182,10 @@ export const MatchDetail = () => {
 
     setSavingRoster(false);
 
-    if (!result?.ok) return;
+    if (!result?.ok) {
+      setRosterError(result.message || "No se pudo guardar la convocatoria");
+      return;
+    }
 
     setCurrentStep(1);
     await loadMatch();
@@ -208,7 +216,10 @@ export const MatchDetail = () => {
 
     setSavingStatus(false);
 
-    if (!result?.ok) return;
+    if (!result?.ok) {
+      setStatusError(result.message || "No se pudo guardar el estado");
+      return;
+    }
 
     setMatch((prev) => ({
       ...prev,
@@ -221,6 +232,7 @@ export const MatchDetail = () => {
   };
 
   const saveMatchResult = async () => {
+    setResultError("");
     setSavingResult(true);
 
     const result = await actions.saveMatchResult(match_id, {
@@ -230,7 +242,10 @@ export const MatchDetail = () => {
 
     setSavingResult(false);
 
-    if (!result?.ok) return;
+    if (!result?.ok) {
+      setResultError(result.message || "Resultado inválido");
+      return;
+    }
 
     setShowResultEditor(false);
     await loadMatch();
@@ -283,17 +298,27 @@ export const MatchDetail = () => {
 
   const getResultButtonText = () => {
     if (showResultEditor) return "Ocultar resultado";
-    if (isMatchCompleted) return "Editar resultado";
+    if (isMatchCompleted) return "Editar sets";
 
-    return "Cerrar partido";
+    return "Registrar sets";
+  };
+
+  const handleBack = () => {
+    if (location.state?.from === "clubMatches") {
+      navigate("/matches");
+      return;
+    }
+
+    if (location.state?.from === "teamMatches" && location.state?.teamId) {
+      navigate(`/teams/${location.state.teamId}/matches`);
+      return;
+    }
+
+    navigate(`/teams/${match?.team_id}/matches`);
   };
 
   if (loading) {
-    return (
-      <>
-        <PageHeader title="Partido" subtitle="Cargando partido..." />
-      </>
-    );
+    return <p>Cargando partido...</p>;
   }
 
   return (
@@ -303,22 +328,30 @@ export const MatchDetail = () => {
         eyebrow="Partido"
         title={`vs ${match?.opponent_name || "Partido interno"}`}
         subtitle={match?.date}
-        onBack={() => navigate(`/teams/${match?.team_id}/matches`)}
+        onBack={handleBack}
       />
       <Card className="mb-4">
         <div className="d-flex justify-content-between align-items-center gap-3">
           <div>
-            <small className="text-muted">Resultado</small>
+            <small className="text-muted">Resultado final en sets</small>
 
             <h2 className="mb-1">
               {homeSets} - {opponentSets}
             </h2>
 
-            <p className="mb-0">
+            <p
+              className={`match-result-status ${
+                match?.result === "win"
+                  ? "match-result-win"
+                  : match?.result === "loss"
+                  ? "match-result-loss"
+                  : ""
+              }`}
+            >
               {match?.result === "win"
-                ? "🏆 Victoria"
+                ? "Victoria"
                 : match?.result === "loss"
-                ? "❌ Derrota"
+                ? "Derrota"
                 : "Pendiente"}
             </p>
           </div>
@@ -350,7 +383,7 @@ export const MatchDetail = () => {
             </div>
 
             <div className="text-center">
-              <small>SETS</small>
+              <small>SETS GANADOS</small>
               <h2>-</h2>
             </div>
 
@@ -360,6 +393,7 @@ export const MatchDetail = () => {
             </div>
           </div>
 
+          {resultError && <p className="form-error">{resultError}</p>}
           <div className="d-flex gap-2 flex-wrap">
             <Button
               onClick={() => setHomeSets((prev) => Math.max(0, prev - 1))}

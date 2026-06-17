@@ -12,23 +12,33 @@ export const Dashboard = () => {
   const stats = store.dashboardStats;
 
   const getDashboardCTA = () => {
-    if (stats.total_teams === 0) {
+    if (stats.total_categories === 0) {
       return {
         title: "Crea tu primera categoría",
         message:
-          "Organiza tu club por categorías para gestionar jugadoras, entrenamientos y partidos.",
-        action: "go_to_teams",
+          "Organiza tu club por etapas como Iniciación, U12, U14 o Juvenil.",
+        action: "go_to_categories",
         buttonText: "Crear categoría",
+      };
+    }
+
+    if (stats.total_teams === 0) {
+      return {
+        title: "Crea tu primer equipo",
+        message:
+          "Divide una categoría en equipos o grupos para gestionar entrenamientos y deportistas.",
+        action: "go_to_categories",
+        buttonText: "Crear equipo",
       };
     }
 
     if (stats.total_players === 0) {
       return {
-        title: "Añade tu primer jugador",
+        title: "Añade tu primer deportista",
         message:
-          "Empieza a construir el roster de tu club y mantén la información centralizada.",
+          "Empieza a construir el roster de tu equipo y mantén la información centralizada.",
         action: "go_to_players",
-        buttonText: "Añadir jugador",
+        buttonText: "Añadir deportista",
       };
     }
 
@@ -37,7 +47,7 @@ export const Dashboard = () => {
         title: "Crea tu primer entrenamiento",
         message:
           "Organiza sesiones, controla asistencia y empieza a medir el progreso del equipo.",
-        action: "create_training",
+        action: "go_to_trainings",
         buttonText: "Crear entrenamiento",
       };
     }
@@ -64,18 +74,13 @@ export const Dashboard = () => {
 
   const handleCTAAction = () => {
     const routes = {
-      go_to_teams: "/teams",
+      go_to_categories: "/categories",
       go_to_players: "/players",
-      create_training: "/trainings",
       go_to_trainings: "/trainings",
     };
 
-    navigate(routes[cta.action]);
+    navigate(routes[cta.action] || "/dashboard");
   };
-
-  const goToTeams = () => navigate("/teams");
-  const goToPlayers = () => navigate("/players");
-  const goToTrainings = () => navigate("/trainings");
 
   const today = new Date().toISOString().slice(0, 10);
 
@@ -158,7 +163,7 @@ export const Dashboard = () => {
 
           <div className="metric-content">
             <h2>{stats.total_teams}</h2>
-            <span>categorías creadas</span>
+            <span>equipos creados</span>
           </div>
         </Card>
 
@@ -180,22 +185,6 @@ export const Dashboard = () => {
           </div>
         </Card>
       </div>
-
-      <Card className="dashboard-shortcuts">
-        <h4>Accesos rápidos</h4>
-
-        <div className="dashboard-actions">
-          <Button onClick={goToTeams}>Ver equipos</Button>
-
-          <Button variant="secondary" onClick={goToPlayers}>
-            Ver jugadores
-          </Button>
-
-          <Button variant="secondary" onClick={goToTrainings}>
-            Ver entrenamientos
-          </Button>
-        </div>
-      </Card>
     </>
   );
 };

@@ -1,0 +1,93 @@
+.club-profile-page {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.club-profile-preview {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  margin-bottom: 8px;
+  padding: 14px;
+  border-radius: var(--radius-lg);
+  background: var(--color-surface-soft);
+  border: 1px solid var(--color-border);
+}
+
+.club-profile-avatar {
+  width: 68px;
+  height: 68px;
+  border-radius: 20px;
+  overflow: hidden;
+  flex-shrink: 0;
+
+  display: flex;
+  align-items: center;
+  justify-content: center;
+
+  background: var(--color-primary);
+  color: white;
+
+  font-size: 22px;
+  font-weight: var(--font-weight-extrabold);
+
+  box-shadow: 0 10px 24px rgba(15, 23, 42, 0.12);
+}
+
+.club-profile-avatar img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.club-profile-preview h3 {
+  margin-bottom: 4px;
+  font-size: var(--font-size-lg);
+  font-weight: var(--font-weight-extrabold);
+  color: var(--color-text);
+}
+
+.club-profile-preview p {
+  margin: 0;
+  font-size: var(--font-size-sm);
+  color: var(--color-muted);
+}
+
+.club-image-picker {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.club-image-button {
+  width: fit-content;
+  cursor: pointer;
+}
+.club-profile-section {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  padding-top: 18px;
+  margin-top: 8px;
+  border-top: 1px solid var(--color-border);
+}
+
+.club-profile-section h3 {
+  font-size: var(--font-size-lg);
+  font-weight: var(--font-weight-bold);
+  color: var(--color-text);
+  margin: 0 0 4px;
+}
+
+.club-profile-section p {
+  font-size: var(--font-size-sm);
+  color: var(--color-muted);
+  margin: 0;
+}
+
+@media (min-width: 768px) {
+  .club-color-grid {
+    grid-template-columns: repeat(2, 1fr);
+  }
+}

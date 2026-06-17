@@ -68,10 +68,14 @@ export const SetPassword = () => {
               }
               onChange={(e) => {
                 setPassword(e.target.value);
+
                 setErrors((prev) => ({
                   ...prev,
                   PASSWORD_REQUIRED: false,
                   PASSWORD_TOO_SHORT: false,
+                  PASSWORDS_NOT_MATCH: false,
+                  SESSION_EXPIRED: false,
+                  NETWORK_ERROR: false,
                 }));
               }}
             />
@@ -113,6 +117,8 @@ export const SetPassword = () => {
                   ...prev,
                   CONFIRM_PASSWORD_REQUIRED: false,
                   PASSWORDS_NOT_MATCH: false,
+                  SESSION_EXPIRED: false,
+                  NETWORK_ERROR: false,
                 }));
               }}
             />
@@ -136,15 +142,19 @@ export const SetPassword = () => {
             <p className="form-error">{errorMessages.PASSWORDS_NOT_MATCH}</p>
           )}
 
-          {confirmPassword && password === confirmPassword && (
-            <p className="form-success">Las contraseñas coinciden</p>
-          )}
-
-          {confirmPassword && password && password !== confirmPassword && (
-            <p className="form-error">{errorMessages.PASSWORDS_NOT_MATCH}</p>
-          )}
+          {confirmPassword.trim() &&
+            password.trim() &&
+            password.trim() === confirmPassword.trim() && (
+              <p className="form-success">Las contraseñas coinciden</p>
+            )}
         </div>
-
+        {(errors.SESSION_EXPIRED || errors.NETWORK_ERROR) && (
+          <p className="form-error">
+            {errors.SESSION_EXPIRED
+              ? errorMessages.SESSION_EXPIRED
+              : errorMessages.NETWORK_ERROR}
+          </p>
+        )}
         <Button variant="primary" type="submit" disabled={loading}>
           {loading ? "Guardando..." : "Guardar contraseña"}
         </Button>

@@ -1,0 +1,71 @@
+.trainings-page,
+.team-trainings-page {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.section-header {
+  margin-bottom: 16px;
+}
+
+.section-header h4 {
+  margin-bottom: 4px;
+}
+
+.section-header p {
+  font-size: var(--font-size-sm);
+  margin: 0;
+}
+
+.trainings-list {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.training-card {
+  padding: 16px;
+  cursor: pointer;
+}
+
+.training-card-content {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.training-card-main {
+  min-width: 0;
+}
+
+.training-card-label {
+  display: inline-flex;
+  margin-bottom: 6px;
+  font-size: var(--font-size-xs);
+  font-weight: var(--font-weight-bold);
+  color: var(--color-primary);
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
+
+.training-card h3 {
+  font-size: var(--font-size-base);
+  font-weight: var(--font-weight-bold);
+  color: var(--color-text);
+  margin-bottom: 4px;
+}
+
+.training-card p {
+  font-size: var(--font-size-sm);
+  color: var(--color-muted);
+  margin: 0;
+}
+
+.training-card-arrow {
+  flex-shrink: 0;
+  color: var(--color-muted);
+  font-size: var(--font-size-lg);
+  font-weight: var(--font-weight-bold);
+}
