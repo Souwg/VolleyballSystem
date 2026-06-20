@@ -304,7 +304,7 @@ export const Onboarding = () => {
                 label={
                   <span className="onboarding-label-with-icon">
                     <FaRegHandPaper className="onboarding-greeting-icon" />
-                    Este es tu club
+                    Tu club
                   </span>
                 }
               >

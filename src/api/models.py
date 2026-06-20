@@ -943,3 +943,33 @@ class RefreshToken(db.Model):
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
 
     user = db.relationship("User", backref=db.backref("refresh_tokens", lazy=True))
+
+class PasswordResetToken(db.Model):
+    __tablename__ = "password_reset_tokens"
+
+    id = db.Column(db.String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
+
+    user_id = db.Column(
+        db.String(36),
+        db.ForeignKey("users.id"),
+        nullable=False
+    )
+
+    token_hash = db.Column(db.String(255), unique=True, nullable=False)
+
+    expires_at = db.Column(db.DateTime, nullable=False)
+
+    used_at = db.Column(db.DateTime, nullable=True)
+
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+
+    user = db.relationship(
+        "User",
+        backref=db.backref("password_reset_tokens", lazy=True)
+    )
+
+    def is_used(self):
+        return self.used_at is not None
+
+    def is_expired(self):
+        return datetime.utcnow() > self.expires_at

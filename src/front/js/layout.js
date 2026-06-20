@@ -11,6 +11,8 @@ import { OnboardingRoute } from "./component/onboardingRoute";
 
 import { Clients } from "./pages/admin/clients";
 import { Login } from "./pages/auth/login";
+import { ForgotPassword } from "./pages/auth/forgotPassword";
+import { ResetPassword } from "./pages/auth/resetPassword";
 import { AppShell } from "./component/appShell";
 import { AdminShell } from "./component/adminShell";
 import { Dashboard } from "./pages/dashboard/dashboard";
@@ -81,6 +83,23 @@ const Layout = () => {
             element={
               <PublicRoute>
                 <Login />
+              </PublicRoute>
+            }
+          />
+          <Route
+            path="/forgot-password"
+            element={
+              <PublicRoute>
+                <ForgotPassword />
+              </PublicRoute>
+            }
+          />
+
+          <Route
+            path="/reset-password"
+            element={
+              <PublicRoute>
+                <ResetPassword />
               </PublicRoute>
             }
           />

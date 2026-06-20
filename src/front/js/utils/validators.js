@@ -325,3 +325,17 @@ export const validatePaymentRegistration = ({
 
   return errors;
 };
+
+export const validateForgotPassword = ({ email }) => {
+  const errors = {};
+
+  const cleanEmail = email?.trim() || "";
+
+  if (!cleanEmail) {
+    errors.EMAIL_REQUIRED = true;
+  } else if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(cleanEmail)) {
+    errors.INVALID_EMAIL = true;
+  }
+
+  return errors;
+};

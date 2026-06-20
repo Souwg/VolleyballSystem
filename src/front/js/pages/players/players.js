@@ -1043,6 +1043,7 @@ export const Players = () => {
 
                         <div className="form-actions">
                           <Button
+                            className="mt-2"
                             type="button"
                             variant="secondary"
                             onClick={closeAssignTeam}

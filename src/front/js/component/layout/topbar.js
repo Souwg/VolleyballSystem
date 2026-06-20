@@ -1,7 +1,8 @@
 import React from "react";
 import isotipoSportflow from "../../../img/isotipo-sportflow.svg";
+import wordmarkSportflow from "../../../img/sportflow-logo.svg";
 
-export const Topbar = ({ title, openMenu, isDetailPage = false }) => {
+export const Topbar = ({ openMenu, isDetailPage = false }) => {
   return (
     <header className={`topbar ${isDetailPage ? "topbar-neutral" : ""}`}>
       <button
@@ -17,15 +18,22 @@ export const Topbar = ({ title, openMenu, isDetailPage = false }) => {
         </span>
       </button>
 
-      <div className="topbar-brand">
+      <div className="topbar-brand" aria-label="SportFlow">
         <img
           src={isotipoSportflow}
-          alt={title || "SportFlow"}
-          className="topbar-logo"
+          alt=""
+          aria-hidden="true"
+          className="topbar-isotipo"
+        />
+
+        <img
+          src={wordmarkSportflow}
+          alt="SportFlow"
+          className="topbar-wordmark"
         />
       </div>
 
-      <div className="topbar-spacer" />
+      <div className="topbar-spacer" aria-hidden="true" />
     </header>
   );
 };

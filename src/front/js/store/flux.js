@@ -76,6 +76,49 @@ const getState = ({ getStore, getActions, setStore }) => {
         }
       },
 
+      requestPasswordReset: async (email) => {
+        try {
+          const resp = await fetch(`${BACKEND_URL}/api/auth/forgot-password`, {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+            },
+            body: JSON.stringify({ email }),
+          });
+
+          const result = await parseResponse(resp);
+
+          if (!result.ok) return result;
+
+          return successResponse(result.data);
+        } catch (error) {
+          return networkError("Error requesting password reset:", error);
+        }
+      },
+
+      resetPassword: async (token, newPassword) => {
+        try {
+          const resp = await fetch(`${BACKEND_URL}/api/auth/reset-password`, {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+            },
+            body: JSON.stringify({
+              token,
+              new_password: newPassword,
+            }),
+          });
+
+          const result = await parseResponse(resp);
+
+          if (!result.ok) return result;
+
+          return successResponse(result.data);
+        } catch (error) {
+          return networkError("Error resetting password:", error);
+        }
+      },
+
       logoutUser: async () => {
         try {
           const resp = await authFetch("/api/logout", {

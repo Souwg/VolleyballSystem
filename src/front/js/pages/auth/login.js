@@ -135,6 +135,15 @@ export const Login = () => {
           {errors.PASSWORD_REQUIRED && (
             <p className="form-error">{errorMessages.PASSWORD_REQUIRED}</p>
           )}
+          <div className="auth-forgot-row">
+            <button
+              type="button"
+              className="auth-link-button"
+              onClick={() => navigate("/forgot-password")}
+            >
+              ¿Olvidaste tu contraseña?
+            </button>
+          </div>
         </div>
         {(errors.INVALID_CREDENTIALS ||
           errors.ACCOUNT_DISABLED ||

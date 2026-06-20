@@ -109,45 +109,45 @@ export const MatchSessions = () => {
           <p>No hay partidos creados todavía</p>
         </Card>
       ) : (
-        matches.map((match) => {
-          const hasScore =
-            match.is_completed ||
-            (match.home_sets ?? 0) > 0 ||
-            (match.opponent_sets ?? 0) > 0;
+        <div className="match-list">
+          {matches.map((match) => {
+            const hasScore =
+              match.is_completed ||
+              (match.home_sets ?? 0) > 0 ||
+              (match.opponent_sets ?? 0) > 0;
 
-          return (
-            <Card
-              key={match.id}
-              className="match-card card-interactive"
-              onClick={() =>
-                navigate(`/matches/${match.id}`, {
-                  state: {
-                    from: "teamMatches",
-                    teamId: team_id,
-                  },
-                })
-              }
-            >
-              <div className="match-card-header">
-                <div className="match-card-main">
-                  <h3>vs {match.opponent_name || "Partido interno"}</h3>
+            return (
+              <Card
+                key={match.id}
+                className="match-card card-interactive"
+                onClick={() =>
+                  navigate(`/matches/${match.id}`, {
+                    state: {
+                      from: "teamMatches",
+                      teamId: team_id,
+                    },
+                  })
+                }
+              >
+                <div className="match-card-content">
+                  <div className="match-card-main">
+                    <h3>vs {match.opponent_name || "Partido interno"}</h3>
 
-                  <p className="match-card-meta">
-                    {match.date} ·{" "}
-                    {match.match_type === "official"
-                      ? "Oficial"
-                      : match.match_type === "friendly"
-                      ? "Amistoso"
-                      : "Partido interno"}
-                  </p>
-                </div>
+                    <p className="match-card-meta">
+                      {match.date} ·{" "}
+                      {match.match_type === "official"
+                        ? "Oficial"
+                        : match.match_type === "friendly"
+                        ? "Amistoso"
+                        : "Partido interno"}
+                    </p>
 
-                <div className="match-card-side">
-                  <span
-                    className={`status-badge ${getMatchStatusClass(match)}`}
-                  >
-                    {getMatchStatusText(match)}
-                  </span>
+                    <span
+                      className={`status-badge ${getMatchStatusClass(match)}`}
+                    >
+                      {getMatchStatusText(match)}
+                    </span>
+                  </div>
 
                   {hasScore && (
                     <span
@@ -155,16 +155,19 @@ export const MatchSessions = () => {
                       aria-label="Resultado en sets"
                     >
                       <span className="match-score-label">Sets</span>
+
                       <strong>
-                        {match.home_sets ?? 0} - {match.opponent_sets ?? 0}
+                        {match.home_sets ?? 0}
+                        <span className="match-score-separator">–</span>
+                        {match.opponent_sets ?? 0}
                       </strong>
                     </span>
                   )}
                 </div>
-              </div>
-            </Card>
-          );
-        })
+              </Card>
+            );
+          })}
+        </div>
       )}
     </>
   );

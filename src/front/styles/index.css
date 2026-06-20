@@ -18,12 +18,17 @@
 
   /* Backgrounds */
   --color-bg: #f8fafc;
-  --color-bg-gradient: linear-gradient(
-    180deg,
-    #bbcbe1 1%,
-    #bbcbe1 38%,
-    #f8fafc 100%
-  );
+  --color-bg-gradient: radial-gradient(
+      circle at 12% 4%,
+      rgba(255, 255, 255, 0.72) 0%,
+      rgba(255, 255, 255, 0) 28%
+    ),
+    radial-gradient(
+      circle at 88% 10%,
+      rgba(30, 58, 138, 0.12) 0%,
+      rgba(30, 58, 138, 0) 30%
+    ),
+    linear-gradient(180deg, #b8c9e1 0%, #ccd8e8 38%, #f8fafc 100%);
   --color-surface: #ffffff;
   --color-surface-soft: #f1f5f9;
   /* Text */
@@ -96,7 +101,7 @@ body {
   background-image: var(--color-bg-gradient);
   background-repeat: no-repeat;
   background-position: top;
-  background-size: 100% 340px;
+  background-size: 520px 360px, 520px 380px, 100% 380px;
 
   color: var(--color-text);
 }
@@ -136,4 +141,11 @@ p {
   font-size: var(--font-size-md);
   color: var(--color-muted);
   line-height: var(--line-height-normal);
+}
+@media (max-width: 768px) {
+  body {
+    background-position: -120px -30px, calc(100% + 150px) -20px, top;
+
+    background-size: 430px 320px, 460px 340px, 100% 360px;
+  }
 }

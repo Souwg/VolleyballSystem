@@ -17,6 +17,12 @@ export const errorMessages = {
   PASSWORDS_NOT_MATCH: "Las contraseñas no coinciden",
   INVALID_CREDENTIALS: "Email o contraseña incorrectos",
   ACCOUNT_DISABLED: "Tu cuenta está desactivada. Contacta al administrador.",
+  RESET_TOKEN_REQUIRED: "El enlace de recuperación no es válido",
+  RESET_TOKEN_INVALID: "El enlace no es válido o ya fue usado",
+  RESET_TOKEN_EXPIRED: "El enlace expiró. Solicita uno nuevo.",
+  USER_NOT_FOUND: "Usuario no encontrado",
+  PASSWORD_RESET_EMAIL_FAILED:
+    "No pudimos enviar el correo. Intenta nuevamente más tarde.",
 
   // CLUB
   LOCATION_REQUIRED: "La ciudad es obligatoria",
