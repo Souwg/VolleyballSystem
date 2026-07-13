@@ -91,10 +91,15 @@ export const Matches = () => {
 
       {matches.length === 0 ? (
         <Card>
-          <h3>No hay partidos registrados</h3>
-          <p className="mb-0">
-            Los partidos aparecerán aquí cuando los crees desde un equipo.
-          </p>
+          <div className="empty-state">
+            <Trophy size={30} />
+
+            <h4>Aún no tienes partidos</h4>
+
+            <p>
+              Los partidos aparecerán aquí cuando los crees desde un equipo.
+            </p>
+          </div>
         </Card>
       ) : (
         <div className="match-list">

@@ -293,6 +293,308 @@ class TeamPlayer(db.Model):
             "player": self.player.serialize() if self.player else None
         }
     
+class Tournament(db.Model):
+    __tablename__ = "tournaments"
+
+    __table_args__ = (
+        db.UniqueConstraint(
+            "club_id",
+            "name",
+            "start_date",
+            name="unique_tournament_per_club"
+        ),
+    )
+
+    id = db.Column(
+        db.String(36),
+        primary_key=True,
+        default=lambda: str(uuid.uuid4())
+    )
+
+    club_id = db.Column(
+        db.String(36),
+        db.ForeignKey("clubs.id"),
+        nullable=False
+    )
+
+    name = db.Column(
+        db.String(150),
+        nullable=False
+    )
+
+    organizer_name = db.Column(
+        db.String(150),
+        nullable=True
+    )
+
+    start_date = db.Column(
+        db.Date,
+        nullable=False
+    )
+
+    end_date = db.Column(
+        db.Date,
+        nullable=True
+    )
+
+    default_referee_fee = db.Column(
+        db.Numeric(10, 2),
+        nullable=False,
+        default=0
+    )
+
+    status = db.Column(
+        db.String(20),
+        nullable=False,
+        default="active"
+    )
+
+    created_by = db.Column(
+        db.String(36),
+        db.ForeignKey("users.id"),
+        nullable=False
+    )
+
+    created_at = db.Column(
+        db.DateTime,
+        default=datetime.utcnow
+    )
+
+    club = db.relationship(
+        "Club",
+        backref=db.backref(
+            "tournaments",
+            lazy=True
+        )
+    )
+
+    creator = db.relationship(
+        "User",
+        foreign_keys=[created_by],
+        backref=db.backref(
+            "tournaments_created",
+            lazy=True
+        )
+    )
+
+    def serialize(self):
+        return {
+            "id": self.id,
+            "club_id": self.club_id,
+            "name": self.name,
+            "organizer_name": self.organizer_name,
+            "start_date": (
+                self.start_date.isoformat()
+                if self.start_date
+                else None
+            ),
+            "end_date": (
+                self.end_date.isoformat()
+                if self.end_date
+                else None
+            ),
+            "default_referee_fee": (
+                float(self.default_referee_fee)
+                if self.default_referee_fee is not None
+                else 0
+            ),
+            "status": self.status,
+            "created_by": self.created_by,
+            "created_at": (
+                self.created_at.isoformat()
+                if self.created_at
+                else None
+            )
+        }
+
+
+class TournamentTeam(db.Model):
+    __tablename__ = "tournament_teams"
+
+    __table_args__ = (
+        db.UniqueConstraint(
+            "tournament_id",
+            "team_id",
+            name="unique_team_per_tournament"
+        ),
+    )
+
+    id = db.Column(
+        db.String(36),
+        primary_key=True,
+        default=lambda: str(uuid.uuid4())
+    )
+
+    tournament_id = db.Column(
+        db.String(36),
+        db.ForeignKey("tournaments.id"),
+        nullable=False
+    )
+
+    team_id = db.Column(
+        db.String(36),
+        db.ForeignKey("teams.id"),
+        nullable=False
+    )
+
+    registration_fee = db.Column(
+        db.Numeric(10, 2),
+        nullable=False,
+        default=0
+    )
+
+    status = db.Column(
+        db.String(20),
+        nullable=False,
+        default="active"
+    )
+
+    created_at = db.Column(
+        db.DateTime,
+        default=datetime.utcnow
+    )
+
+    tournament = db.relationship(
+        "Tournament",
+        backref=db.backref(
+            "team_entries",
+            lazy=True,
+            cascade="all, delete-orphan"
+        )
+    )
+
+    team = db.relationship(
+        "Team",
+        backref=db.backref(
+            "tournament_entries",
+            lazy=True
+        )
+    )
+
+    def serialize(self):
+        return {
+            "id": self.id,
+            "tournament_id": self.tournament_id,
+            "tournament": (
+                {
+                    "id": self.tournament.id,
+                    "name": self.tournament.name,
+                    "organizer_name": self.tournament.organizer_name,
+                    "start_date": (
+                        self.tournament.start_date.isoformat()
+                        if self.tournament.start_date
+                        else None
+                    ),
+                    "end_date": (
+                        self.tournament.end_date.isoformat()
+                        if self.tournament.end_date
+                        else None
+                    ),
+                    "default_referee_fee": (
+                        float(self.tournament.default_referee_fee)
+                        if self.tournament.default_referee_fee is not None
+                        else 0
+                    ),
+                    "status": self.tournament.status,
+                }
+                if self.tournament
+                else None
+            ),
+            "team_id": self.team_id,
+            "registration_fee": (
+                float(self.registration_fee)
+                if self.registration_fee is not None
+                else 0
+            ),
+            "status": self.status,
+            "created_at": (
+                self.created_at.isoformat()
+                if self.created_at
+                else None
+            ),
+            "team": (
+                self.team.serialize()
+                if self.team
+                else None
+            )
+        }
+
+
+class TournamentPlayer(db.Model):
+    __tablename__ = "tournament_players"
+
+    __table_args__ = (
+        db.UniqueConstraint(
+            "tournament_team_id",
+            "player_id",
+            name="unique_player_per_tournament_team"
+        ),
+    )
+
+    id = db.Column(
+        db.String(36),
+        primary_key=True,
+        default=lambda: str(uuid.uuid4())
+    )
+
+    tournament_team_id = db.Column(
+        db.String(36),
+        db.ForeignKey("tournament_teams.id"),
+        nullable=False
+    )
+
+    player_id = db.Column(
+        db.String(36),
+        db.ForeignKey("players.id"),
+        nullable=False
+    )
+
+    status = db.Column(
+        db.String(20),
+        nullable=False,
+        default="active"
+    )
+
+    created_at = db.Column(
+        db.DateTime,
+        default=datetime.utcnow
+    )
+
+    tournament_team = db.relationship(
+        "TournamentTeam",
+        backref=db.backref(
+            "registered_players",
+            lazy=True,
+            cascade="all, delete-orphan"
+        )
+    )
+
+    player = db.relationship(
+        "Player",
+        backref=db.backref(
+            "tournament_registrations",
+            lazy=True
+        )
+    )
+
+    def serialize(self):
+        return {
+            "id": self.id,
+            "tournament_team_id": self.tournament_team_id,
+            "player_id": self.player_id,
+            "status": self.status,
+            "created_at": (
+                self.created_at.isoformat()
+                if self.created_at
+                else None
+            ),
+            "player": (
+                self.player.serialize()
+                if self.player
+                else None
+            )
+        }
+    
 class TrainingSession(db.Model):
     __tablename__ = "training_sessions"
 
@@ -447,6 +749,17 @@ class MatchSession(db.Model):
         nullable=False
     )
 
+    tournament_team_id = db.Column(
+        db.String(36),
+        db.ForeignKey("tournament_teams.id"),
+        nullable=True
+    )
+
+    referee_fee = db.Column(
+        db.Numeric(10, 2),
+        nullable=True
+    )
+
     date = db.Column(db.Date, nullable=False)
 
     opponent_name = db.Column(db.String(120))
@@ -482,10 +795,29 @@ class MatchSession(db.Model):
         backref=db.backref("match_sessions", lazy=True)
     )
 
+    tournament_team = db.relationship(
+        "TournamentTeam",
+        backref=db.backref(
+            "match_sessions",
+            lazy=True
+        )
+    )
+
     def serialize(self):
         return {
             "id": self.id,
             "team_id": self.team_id,
+            "tournament_team_id": self.tournament_team_id,
+            "referee_fee": (
+                float(self.referee_fee)
+                if self.referee_fee is not None
+                else None
+            ),
+            "tournament_team": (
+                self.tournament_team.serialize()
+                if self.tournament_team
+                else None
+            ),
             "date": self.date.isoformat() if self.date else None,
             "opponent_name": self.opponent_name,
             "match_type": self.match_type,
@@ -770,10 +1102,26 @@ class PlayerPayment(db.Model):
     club_id = db.Column(db.String(36), db.ForeignKey("clubs.id"), nullable=False)
     player_id = db.Column(db.String(36), db.ForeignKey("players.id"), nullable=False)
 
-    payment_type = db.Column(db.String(30), nullable=False, default="monthly")
-    # enrollment, monthly, uniform, tournament, extra
+    tournament_team_id = db.Column(
+        db.String(36),
+        db.ForeignKey("tournament_teams.id"),
+        nullable=True
+    )
 
-    amount = db.Column(db.Float, nullable=False, default=0)
+    match_id = db.Column(
+        db.String(36),
+        db.ForeignKey("match_sessions.id"),
+        nullable=True
+    )
+
+    payment_type = db.Column(db.String(30), nullable=False, default="monthly")
+    
+    # enrollment, monthly, uniform, tournament, referee, extra
+    amount = db.Column(
+        db.Numeric(10, 2),
+        nullable=False,
+        default=0
+    )
     status = db.Column(db.String(20), default="pending", nullable=False)
 
     period_start = db.Column(db.Date, nullable=True)
@@ -793,13 +1141,35 @@ class PlayerPayment(db.Model):
     player = db.relationship("Player", backref=db.backref("payments", lazy=True))
     club = db.relationship("Club", backref=db.backref("payments", lazy=True))
 
+    tournament_team = db.relationship(
+        "TournamentTeam",
+        backref=db.backref(
+            "payments",
+            lazy=True
+        )
+    )
+
+    match = db.relationship(
+        "MatchSession",
+        backref=db.backref(
+            "payments",
+            lazy=True
+        )
+    )
+
     def serialize(self):
         return {
             "id": self.id,
             "club_id": self.club_id,
             "player_id": self.player_id,
+            "tournament_team_id": self.tournament_team_id,
+            "match_id": self.match_id,
             "payment_type": self.payment_type,
-            "amount": self.amount,
+            "amount": (
+                float(self.amount)
+                if self.amount is not None
+                else 0
+            ),
             "status": self.status,
             "period_start": self.period_start.isoformat() if self.period_start else None,
             "period_end": self.period_end.isoformat() if self.period_end else None,
@@ -812,7 +1182,26 @@ class PlayerPayment(db.Model):
             "created_by": self.created_by,
             "paid_by": self.paid_by,
             "created_at": self.created_at.isoformat(),
-            "player": self.player.serialize() if self.player else None
+            "player": self.player.serialize() if self.player else None,
+            "tournament_team": (
+                self.tournament_team.serialize()
+                if self.tournament_team
+                else None
+            ),
+            "match": (
+                {
+                    "id": self.match.id,
+                    "date": (
+                        self.match.date.isoformat()
+                        if self.match.date
+                        else None
+                    ),
+                    "opponent_name": self.match.opponent_name,
+                    "team_id": self.match.team_id,
+                }
+                if self.match
+                else None
+            ),
         }
     
 class PaymentReceipt(db.Model):

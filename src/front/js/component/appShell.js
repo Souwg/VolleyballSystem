@@ -16,6 +16,8 @@ export const AppShell = () => {
   const isDetailPage =
     location.pathname === "/club/profile" ||
     /^\/categories\/[^/]+$/.test(location.pathname) ||
+    /^\/tournaments\/[^/]+$/.test(location.pathname) ||
+    /^\/tournament-teams\/[^/]+$/.test(location.pathname) ||
     /^\/players\/[^/]+$/.test(location.pathname) ||
     /^\/players\/[^/]+\/edit$/.test(location.pathname) ||
     /^\/teams\/[^/]+$/.test(location.pathname) ||
@@ -36,6 +38,7 @@ export const AppShell = () => {
     { name: "Categorías", path: "/categories" },
     { name: "Entrenamientos", path: "/trainings" },
     { name: "Partidos", path: "/matches" },
+    { name: "Torneos", path: "/tournaments" },
     { name: "Pagos", path: "/payments" },
   ];
 

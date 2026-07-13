@@ -29,6 +29,9 @@ import { Trainings } from "./pages/trainings/trainings";
 import { TeamTrainings } from "./pages/trainings/teamTrainings";
 import { TrainingDetail } from "./pages/trainings/trainingDetail";
 import { CreateTraining } from "./pages/trainings/createTraining";
+import { Tournaments } from "./pages/tournaments/tournaments";
+import { TournamentDetail } from "./pages/tournaments/tournamentDetail";
+import { TournamentTeamDetail } from "./pages/tournaments/tournamentTeamDetail";
 import { MatchSessions } from "./pages/matches/matchSessions";
 import { Matches } from "./pages/matches/matches";
 import { CreateMatch } from "./pages/matches/createMatch";
@@ -135,6 +138,15 @@ const Layout = () => {
                 element={<CreateTraining />}
               />
               <Route path="/matches" element={<Matches />} />
+              <Route path="/tournaments" element={<Tournaments />} />
+              <Route
+                path="/tournaments/:tournament_id"
+                element={<TournamentDetail />}
+              />
+              <Route
+                path="/tournament-teams/:tournament_team_id"
+                element={<TournamentTeamDetail />}
+              />
               <Route
                 path="/teams/:team_id/matches"
                 element={<MatchSessions />}

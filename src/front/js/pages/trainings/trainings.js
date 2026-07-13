@@ -58,6 +58,7 @@ export const Trainings = () => {
       {store.trainings.length === 0 ? (
         <Card>
           <div className="empty-state">
+            <CalendarCheck size={30} />
             <h4>No hay entrenamientos aún</h4>
             <p>
               Crea tu primer entrenamiento para empezar a registrar asistencia.

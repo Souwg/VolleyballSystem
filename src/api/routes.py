@@ -9,6 +9,7 @@ import secrets
 import hashlib
 from src.api.email_service import send_password_reset_email
 from datetime import datetime, timedelta
+from decimal import Decimal, InvalidOperation, ROUND_HALF_UP
 from flask import (
     Flask,
     request,
@@ -27,6 +28,9 @@ from src.api.models import (
     Player,
     Team,
     TeamPlayer,
+    Tournament,
+    TournamentTeam,
+    TournamentPlayer,
     Attendance,
     TrainingSession,
     TrainingPlayer,
@@ -73,7 +77,30 @@ VALID_MATCH_TYPES = ["official", "friendly", "scrimmage"]
 ALLOWED_POSITIONS = ["setter", "outside", "middle", "opposite", "libero"]
 VALID_PAYMENT_STATUSES = ["pending", "paid", "overdue", "cancelled"]
 VALID_PAYMENT_METHODS = ["cash", "transfer", "zelle", "mobile_payment", "other"]
-VALID_PAYMENT_TYPES = ["enrollment", "monthly", "uniform", "tournament", "extra"]
+VALID_PAYMENT_TYPES = [
+    "enrollment",
+    "monthly",
+    "uniform",
+    "tournament",
+    "referee",
+    "extra"
+]
+VALID_TOURNAMENT_STATUSES = [
+    "active",
+    "completed",
+    "cancelled"
+]
+
+VALID_TOURNAMENT_TEAM_STATUSES = [
+    "active",
+    "withdrawn",
+    "completed"
+]
+
+VALID_TOURNAMENT_PLAYER_STATUSES = [
+    "active",
+    "withdrawn"
+]
 
 ALLOWED_IMAGE_EXTENSIONS = {"png", "jpg", "jpeg", "webp"}
 MAX_CLUB_IMAGE_SIZE = 2 * 1024 * 1024  
@@ -86,56 +113,233 @@ def allowed_image_file(filename):
         filename.rsplit(".", 1)[1].lower() in ALLOWED_IMAGE_EXTENSIONS
     )
 
+def parse_money(value, field_name="Monto"):
+    try:
+        amount = Decimal(str(value)).quantize(
+            Decimal("0.01"),
+            rounding=ROUND_HALF_UP
+        )
+    except (InvalidOperation, TypeError, ValueError):
+        return None, error_response(
+            f"{field_name} debe ser un número válido",
+            "INVALID_AMOUNT",
+            400
+        )
+
+    if amount < 0:
+        return None, error_response(
+            f"{field_name} no puede ser negativo",
+            "INVALID_AMOUNT",
+            400
+        )
+
+    return amount, None
+
+def split_money_exactly(total_amount, total_people):
+    """
+    Divide un monto conservando exactamente todos los centavos.
+
+    Ejemplo:
+    10.00 entre 3 personas
+    -> 3.34, 3.33, 3.33
+    """
+
+    if total_people <= 0:
+        return []
+
+    total_amount = Decimal(str(total_amount)).quantize(
+        Decimal("0.01"),
+        rounding=ROUND_HALF_UP
+    )
+
+    total_cents = int(total_amount * 100)
+
+    base_cents = total_cents // total_people
+    remaining_cents = total_cents % total_people
+
+    amounts = []
+
+    for index in range(total_people):
+        cents = base_cents
+
+        if index < remaining_cents:
+            cents += 1
+
+        amounts.append(
+            Decimal(cents) / Decimal("100")
+        )
+
+    return amounts
+
 def sync_match_roster_if_open(match):
     """
-    Sincroniza jugadoras nuevas del equipo al partido SOLO si el partido
-    todavía no tiene convocatoria guardada.
+    Reconcilia el snapshot del partido mientras la convocatoria
+    todavía no ha sido guardada.
 
-    No elimina jugadoras viejas del snapshot.
-    Solo agrega las que faltan.
+    Partido normal:
+    - Incluye únicamente membresías activas del equipo.
+    - La deportista debe estar activa.
+
+    Partido de torneo:
+    - Además debe estar inscrita activamente en TournamentPlayer.
+
+    Cuando match_step deja de ser 0, el snapshot queda congelado
+    para conservar el historial.
     """
 
     if not match:
         return 0
 
-    # Si ya avanzó de convocatoria, no tocamos el snapshot
     if match.match_step != 0:
         return 0
 
     if match.is_completed:
         return 0
 
-    existing_player_ids = {
-        row.player_id
-        for row in MatchPlayer.query.filter_by(match_id=match.id).all()
+    # =========================
+    # 1. Determinar elegibles
+    # =========================
+
+    eligible_memberships_query = (
+        TeamPlayer.query
+        .join(
+            Player,
+            Player.id == TeamPlayer.player_id
+        )
+        .filter(
+            TeamPlayer.team_id == match.team_id,
+            TeamPlayer.status == "active",
+            Player.is_active.is_(True)
+        )
+    )
+
+    if match.tournament_team_id:
+        active_tournament_player_ids = (
+            db.session.query(TournamentPlayer.player_id)
+            .filter(
+                TournamentPlayer.tournament_team_id
+                == match.tournament_team_id,
+                TournamentPlayer.status == "active"
+            )
+        )
+
+        eligible_memberships_query = (
+            eligible_memberships_query
+            .filter(
+                TeamPlayer.player_id.in_(
+                    active_tournament_player_ids
+                )
+            )
+        )
+
+    eligible_memberships = eligible_memberships_query.all()
+
+    eligible_by_player_id = {
+        membership.player_id: membership
+        for membership in eligible_memberships
     }
 
-    current_roster = TeamPlayer.query.filter_by(
-        team_id=match.team_id
+    eligible_player_ids = set(eligible_by_player_id.keys())
+
+    # =========================
+    # 2. Leer snapshot actual
+    # =========================
+
+    existing_rows = MatchPlayer.query.filter_by(
+        match_id=match.id
     ).all()
 
-    added_count = 0
+    existing_by_player_id = {
+        row.player_id: row
+        for row in existing_rows
+    }
 
-    for member in current_roster:
-        if member.player_id in existing_player_ids:
-            continue
+    existing_player_ids = set(existing_by_player_id.keys())
+
+    added_count = 0
+    removed_count = 0
+    updated_count = 0
+
+    # =========================
+    # 3. Agregar quienes faltan
+    # =========================
+
+    player_ids_to_add = (
+        eligible_player_ids - existing_player_ids
+    )
+
+    for player_id in player_ids_to_add:
+        membership = eligible_by_player_id[player_id]
 
         snapshot = MatchPlayer(
             match_id=match.id,
-            player_id=member.player_id,
-            player_number=member.player_number,
+            player_id=membership.player_id,
+            player_number=membership.player_number,
             is_called=False,
             attendance_status=None,
-            did_play=False
+            did_play=False,
+            is_on_court=False,
+            position=None
         )
 
         db.session.add(snapshot)
         added_count += 1
 
-    if added_count > 0:
+    # =========================
+    # 4. Actualizar el número
+    # =========================
+
+    player_ids_to_keep = (
+        eligible_player_ids & existing_player_ids
+    )
+
+    for player_id in player_ids_to_keep:
+        row = existing_by_player_id[player_id]
+        membership = eligible_by_player_id[player_id]
+
+        if row.player_number != membership.player_number:
+            row.player_number = membership.player_number
+            updated_count += 1
+
+    # =========================
+    # 5. Retirar no elegibles
+    # =========================
+
+    player_ids_to_remove = (
+        existing_player_ids - eligible_player_ids
+    )
+
+    for player_id in player_ids_to_remove:
+        row = existing_by_player_id[player_id]
+
+        # Protección defensiva:
+        # aunque match_step sea 0, no eliminamos una fila que ya
+        # tenga señales de historial o participación.
+        has_history = (
+            row.is_called
+            or row.attendance_status is not None
+            or row.did_play
+            or row.is_on_court
+            or bool(row.events)
+            or row.performance_stats is not None
+        )
+
+        if has_history:
+            continue
+
+        db.session.delete(row)
+        removed_count += 1
+
+    total_changes = (
+        added_count +
+        removed_count +
+        updated_count
+    )
+
+    if total_changes > 0:
         db.session.commit()
 
-    return added_count
+    return total_changes
 
 def recalculate_player_match_stats(match_player_id):
     row = MatchPlayer.query.get(match_player_id)
@@ -392,7 +596,8 @@ def generate_payment_receipt_pdf(receipt, payment):
         "enrollment": "Inscripción",
         "monthly": "Mensualidad",
         "uniform": "Uniforme",
-        "tournament": "Torneo",
+        "tournament": "Inscripción de torneo",
+        "referee": "Arbitraje",
         "extra": "Extra",
     }
 
@@ -4198,6 +4403,244 @@ def get_player_attendance(player_id):
         "history": history
     }), 200
 
+@api.route("/players/<string:player_id>/performance", methods=["GET"])
+@jwt_required()
+def get_player_performance(player_id):
+    user = get_current_user()
+
+    player = Player.query.get(player_id)
+
+    if not player:
+        return error_response(
+            "Deportista no encontrada",
+            "PLAYER_NOT_FOUND",
+            404
+        )
+
+    if player.club_id != user.club_id:
+        return error_response(
+            "No tienes acceso",
+            "FORBIDDEN",
+            403
+        )
+
+    # Solo partidos en los que realmente pudo participar y jugó.
+    match_rows = (
+        MatchPlayer.query
+        .join(
+            MatchSession,
+            MatchSession.id == MatchPlayer.match_id
+        )
+        .join(
+            Team,
+            Team.id == MatchSession.team_id
+        )
+        .filter(
+            MatchPlayer.player_id == player.id,
+            MatchPlayer.did_play.is_(True),
+            MatchPlayer.attendance_status.in_(
+                PLAYABLE_MATCH_STATUSES
+            ),
+            Team.club_id == user.club_id
+        )
+        .order_by(
+            MatchSession.date.desc(),
+            MatchPlayer.created_at.desc()
+        )
+        .all()
+    )
+
+    totals = {
+        "attacks_total": 0,
+        "attacks_positive": 0,
+        "attacks_neutral": 0,
+        "attacks_errors": 0,
+
+        "receptions_total": 0,
+        "receptions_positive": 0,
+        "receptions_neutral": 0,
+        "receptions_negative": 0,
+
+        "defenses_total": 0,
+        "defenses_positive": 0,
+        "defenses_neutral": 0,
+        "defenses_negative": 0,
+
+        "sets_total": 0,
+        "sets_positive": 0,
+        "sets_neutral": 0,
+        "sets_errors": 0,
+
+        "serves_total": 0,
+        "serves_in": 0,
+        "serves_aces": 0,
+        "serves_errors": 0,
+
+        "blocks_total": 0,
+        "blocks_points": 0,
+        "blocks_neutral": 0,
+        "blocks_errors": 0,
+    }
+
+    matches = []
+    matches_with_stats = 0
+
+    def safe_value(value):
+        return int(value or 0)
+
+    def percentage(value, total):
+        if total <= 0:
+            return 0
+
+        return round((value / total) * 100)
+
+    for row in match_rows:
+        match = row.match
+        stat = row.performance_stats
+
+        match_stats = {
+            key: 0
+            for key in totals.keys()
+        }
+
+        if stat:
+            matches_with_stats += 1
+
+            for key in totals.keys():
+                value = safe_value(getattr(stat, key, 0))
+
+                match_stats[key] = value
+                totals[key] += value
+
+        points_total = (
+            match_stats["attacks_positive"]
+            + match_stats["serves_aces"]
+            + match_stats["blocks_points"]
+        )
+
+        errors_total = (
+            match_stats["attacks_errors"]
+            + match_stats["sets_errors"]
+            + match_stats["serves_errors"]
+            + match_stats["blocks_errors"]
+        )
+
+        matches.append({
+            "match_player_id": row.id,
+            "match_id": match.id,
+            "date": (
+                match.date.isoformat()
+                if match.date else None
+            ),
+            "opponent_name": match.opponent_name,
+            "match_type": match.match_type,
+            "location": match.location,
+            "result": match.result,
+            "home_sets": match.home_sets,
+            "opponent_sets": match.opponent_sets,
+            "is_completed": match.is_completed,
+            "team": {
+                "id": match.team.id,
+                "name": match.team.name
+            },
+            "player_number": row.player_number,
+            "position": (
+                row.position
+                or player.main_position
+            ),
+            "points_total": points_total,
+            "errors_total": errors_total,
+            "stats": match_stats
+        })
+
+    matches_played = len(match_rows)
+
+    points_total = (
+        totals["attacks_positive"]
+        + totals["serves_aces"]
+        + totals["blocks_points"]
+    )
+
+    errors_total = (
+        totals["attacks_errors"]
+        + totals["sets_errors"]
+        + totals["serves_errors"]
+        + totals["blocks_errors"]
+    )
+
+    actions_total = (
+        totals["attacks_total"]
+        + totals["receptions_total"]
+        + totals["defenses_total"]
+        + totals["sets_total"]
+        + totals["serves_total"]
+        + totals["blocks_total"]
+    )
+
+    attack_efficiency = 0
+
+    if totals["attacks_total"] > 0:
+        attack_efficiency = round(
+            (
+                (
+                    totals["attacks_positive"]
+                    - totals["attacks_errors"]
+                )
+                / totals["attacks_total"]
+            )
+            * 100
+        )
+
+    return jsonify({
+        "player": {
+            "id": player.id,
+            "first_name": player.first_name,
+            "last_name": player.last_name,
+            "main_position": player.main_position
+        },
+        "summary": {
+            "matches_played": matches_played,
+            "matches_with_stats": matches_with_stats,
+            "actions_total": actions_total,
+            "points_total": points_total,
+            "errors_total": errors_total,
+
+            "attack_efficiency": attack_efficiency,
+
+            "attack_positive_rate": percentage(
+                totals["attacks_positive"],
+                totals["attacks_total"]
+            ),
+
+            "reception_positive_rate": percentage(
+                totals["receptions_positive"],
+                totals["receptions_total"]
+            ),
+
+            "defense_positive_rate": percentage(
+                totals["defenses_positive"],
+                totals["defenses_total"]
+            ),
+
+            "set_positive_rate": percentage(
+                totals["sets_positive"],
+                totals["sets_total"]
+            ),
+
+            "serve_ace_rate": percentage(
+                totals["serves_aces"],
+                totals["serves_total"]
+            ),
+
+            "block_point_rate": percentage(
+                totals["blocks_points"],
+                totals["blocks_total"]
+            )
+        },
+        "totals": totals,
+        "matches": matches
+    }), 200
+
 ############################################ TRAININGS ##############################################
 @api.route("/trainings", methods=["POST"])
 @jwt_required()
@@ -4513,7 +4956,1096 @@ def complete_onboarding():
     return jsonify({
         "message": "Sistema activado correctamente"
     }), 200
+############################################ TOURNAMENTS ############################################
 
+@api.route("/tournaments", methods=["POST"])
+@jwt_required()
+def create_tournament():
+    user = get_current_user()
+
+    if user.role != "club_owner":
+        return error_response(
+            "Solo el dueño del club puede registrar torneos",
+            "FORBIDDEN",
+            403
+        )
+
+    if not user.club_id:
+        return error_response(
+            "El usuario no pertenece a ningún club",
+            "CLUB_REQUIRED",
+            400
+        )
+
+    body = request.get_json() or {}
+
+    name = body.get("name")
+    organizer_name = body.get("organizer_name")
+    start_date = body.get("start_date")
+    end_date = body.get("end_date")
+    default_referee_fee = body.get("default_referee_fee", 0)
+
+    if name:
+        name = " ".join(str(name).strip().split())
+
+    if organizer_name:
+        organizer_name = " ".join(
+            str(organizer_name).strip().split()
+        )
+
+    if not name:
+        return error_response(
+            "El nombre del torneo es obligatorio",
+            "TOURNAMENT_NAME_REQUIRED",
+            400
+        )
+
+    if not start_date:
+        return error_response(
+            "La fecha de inicio es obligatoria",
+            "TOURNAMENT_START_DATE_REQUIRED",
+            400
+        )
+
+    try:
+        parsed_start_date = datetime.strptime(
+            start_date,
+            "%Y-%m-%d"
+        ).date()
+    except (TypeError, ValueError):
+        return error_response(
+            "Formato de fecha inválido. Usa YYYY-MM-DD",
+            "INVALID_DATE_FORMAT",
+            400
+        )
+
+    parsed_end_date = None
+
+    if end_date:
+        try:
+            parsed_end_date = datetime.strptime(
+                end_date,
+                "%Y-%m-%d"
+            ).date()
+        except (TypeError, ValueError):
+            return error_response(
+                "Formato de fecha inválido. Usa YYYY-MM-DD",
+                "INVALID_DATE_FORMAT",
+                400
+            )
+
+        if parsed_end_date < parsed_start_date:
+            return error_response(
+                "La fecha de finalización no puede ser anterior al inicio",
+                "INVALID_TOURNAMENT_DATE_RANGE",
+                400
+            )
+
+    parsed_referee_fee, amount_error = parse_money(
+        default_referee_fee,
+        "El costo de arbitraje"
+    )
+
+    if amount_error:
+        return amount_error
+
+    existing_tournament = Tournament.query.filter(
+        Tournament.club_id == user.club_id,
+        func.lower(Tournament.name) == name.lower(),
+        Tournament.start_date == parsed_start_date
+    ).first()
+
+    if existing_tournament:
+        return error_response(
+            "Ya existe un torneo con ese nombre y fecha",
+            "TOURNAMENT_ALREADY_EXISTS",
+            409
+        )
+
+    tournament = Tournament(
+        club_id=user.club_id,
+        name=name,
+        organizer_name=organizer_name or None,
+        start_date=parsed_start_date,
+        end_date=parsed_end_date,
+        default_referee_fee=parsed_referee_fee,
+        status="active",
+        created_by=user.id
+    )
+
+    db.session.add(tournament)
+    db.session.commit()
+
+    return jsonify({
+        "message": "Torneo registrado correctamente",
+        "tournament": tournament.serialize()
+    }), 201
+
+@api.route("/tournaments", methods=["GET"])
+@jwt_required()
+def get_tournaments():
+    user = get_current_user()
+
+    if not user.club_id:
+        return error_response(
+            "El usuario no pertenece a ningún club",
+            "CLUB_REQUIRED",
+            400
+        )
+
+    if user.role not in ["club_owner", "coach"]:
+        return error_response(
+            "No tienes permisos para consultar torneos",
+            "FORBIDDEN",
+            403
+        )
+
+    status = request.args.get("status")
+
+    query = Tournament.query.filter_by(
+        club_id=user.club_id
+    )
+
+    if status:
+        if status not in VALID_TOURNAMENT_STATUSES:
+            return error_response(
+                "Estado de torneo inválido",
+                "INVALID_TOURNAMENT_STATUS",
+                400
+            )
+
+        query = query.filter(
+            Tournament.status == status
+        )
+
+    tournaments = query.order_by(
+        Tournament.start_date.desc()
+    ).all()
+
+    result = []
+
+    for tournament in tournaments:
+        result.append({
+            **tournament.serialize(),
+            "total_teams": len(tournament.team_entries),
+            "teams": [
+                entry.serialize()
+                for entry in tournament.team_entries
+            ]
+        })
+
+    return jsonify({
+        "total_tournaments": len(result),
+        "tournaments": result
+    }), 200
+
+@api.route("/tournaments/<string:tournament_id>", methods=["GET"])
+@jwt_required()
+def get_tournament_detail(tournament_id):
+    user = get_current_user()
+
+    tournament = Tournament.query.get(tournament_id)
+
+    if not tournament:
+        return error_response(
+            "Torneo no encontrado",
+            "TOURNAMENT_NOT_FOUND",
+            404
+        )
+
+    if tournament.club_id != user.club_id:
+        return error_response(
+            "No tienes acceso a este torneo",
+            "FORBIDDEN",
+            403
+        )
+
+    teams = TournamentTeam.query.filter_by(
+        tournament_id=tournament.id
+    ).order_by(TournamentTeam.created_at.asc()).all()
+
+    return jsonify({
+        "tournament": {
+            **tournament.serialize(),
+            "teams": [
+                {
+                    **entry.serialize(),
+                    "total_players": TournamentPlayer.query.filter_by(
+                        tournament_team_id=entry.id,
+                        status="active"
+                    ).count(),
+                    "total_matches": MatchSession.query.filter_by(
+                        tournament_team_id=entry.id
+                    ).count()
+                }
+                for entry in teams
+            ]
+        }
+    }), 200
+
+@api.route("/tournaments/<string:tournament_id>", methods=["PUT"])
+@jwt_required()
+def update_tournament(tournament_id):
+    user = get_current_user()
+
+    if user.role != "club_owner":
+        return error_response(
+            "Solo el dueño del club puede editar torneos",
+            "FORBIDDEN",
+            403
+        )
+
+    tournament = Tournament.query.get(tournament_id)
+
+    if not tournament:
+        return error_response(
+            "Torneo no encontrado",
+            "TOURNAMENT_NOT_FOUND",
+            404
+        )
+
+    if tournament.club_id != user.club_id:
+        return error_response(
+            "No tienes acceso a este torneo",
+            "FORBIDDEN",
+            403
+        )
+
+    body = request.get_json() or {}
+
+    name = body.get("name")
+    organizer_name = body.get("organizer_name")
+    start_date = body.get("start_date")
+    end_date = body.get("end_date")
+    default_referee_fee = body.get("default_referee_fee")
+    status = body.get("status")
+
+    if name is not None:
+        name = " ".join(str(name).strip().split())
+
+        if not name:
+            return error_response(
+                "El nombre del torneo es obligatorio",
+                "TOURNAMENT_NAME_REQUIRED",
+                400
+            )
+
+    if organizer_name is not None:
+        organizer_name = " ".join(
+            str(organizer_name).strip().split()
+        )
+
+    parsed_start_date = tournament.start_date
+
+    if start_date is not None:
+        if not start_date:
+            return error_response(
+                "La fecha de inicio es obligatoria",
+                "TOURNAMENT_START_DATE_REQUIRED",
+                400
+            )
+
+        try:
+            parsed_start_date = datetime.strptime(
+                start_date,
+                "%Y-%m-%d"
+            ).date()
+        except (TypeError, ValueError):
+            return error_response(
+                "Formato de fecha inválido. Usa YYYY-MM-DD",
+                "INVALID_DATE_FORMAT",
+                400
+            )
+
+    parsed_end_date = tournament.end_date
+
+    if end_date is not None:
+        if end_date == "":
+            parsed_end_date = None
+        else:
+            try:
+                parsed_end_date = datetime.strptime(
+                    end_date,
+                    "%Y-%m-%d"
+                ).date()
+            except (TypeError, ValueError):
+                return error_response(
+                    "Formato de fecha inválido. Usa YYYY-MM-DD",
+                    "INVALID_DATE_FORMAT",
+                    400
+                )
+
+    if parsed_end_date and parsed_end_date < parsed_start_date:
+        return error_response(
+            "La fecha de finalización no puede ser anterior al inicio",
+            "INVALID_TOURNAMENT_DATE_RANGE",
+            400
+        )
+
+    parsed_referee_fee = tournament.default_referee_fee
+
+    if default_referee_fee is not None:
+        parsed_referee_fee, amount_error = parse_money(
+            default_referee_fee,
+            "El costo de arbitraje"
+        )
+
+        if amount_error:
+            return amount_error
+
+    if status is not None:
+        if status not in VALID_TOURNAMENT_STATUSES:
+            return error_response(
+                "Estado de torneo inválido",
+                "INVALID_TOURNAMENT_STATUS",
+                400
+            )
+
+    final_name = name if name is not None else tournament.name
+
+    existing_tournament = Tournament.query.filter(
+        Tournament.club_id == user.club_id,
+        func.lower(Tournament.name) == final_name.lower(),
+        Tournament.start_date == parsed_start_date,
+        Tournament.id != tournament.id
+    ).first()
+
+    if existing_tournament:
+        return error_response(
+            "Ya existe un torneo con ese nombre y fecha",
+            "TOURNAMENT_ALREADY_EXISTS",
+            409
+        )
+
+    if name is not None:
+        tournament.name = name
+
+    if organizer_name is not None:
+        tournament.organizer_name = organizer_name or None
+
+    tournament.start_date = parsed_start_date
+    tournament.end_date = parsed_end_date
+    tournament.default_referee_fee = parsed_referee_fee
+
+    if status is not None:
+        tournament.status = status
+
+    db.session.commit()
+
+    return jsonify({
+        "message": "Torneo actualizado correctamente",
+        "tournament": tournament.serialize()
+    }), 200
+
+@api.route(
+    "/tournaments/<string:tournament_id>/teams",
+    methods=["POST"]
+)
+@jwt_required()
+def add_team_to_tournament(tournament_id):
+    user = get_current_user()
+
+    if user.role != "club_owner":
+        return error_response(
+            "Solo el dueño del club puede inscribir equipos",
+            "FORBIDDEN",
+            403
+        )
+
+    tournament = Tournament.query.get(tournament_id)
+
+    if not tournament:
+        return error_response(
+            "Torneo no encontrado",
+            "TOURNAMENT_NOT_FOUND",
+            404
+        )
+
+    if tournament.club_id != user.club_id:
+        return error_response(
+            "No tienes acceso a este torneo",
+            "FORBIDDEN",
+            403
+        )
+
+    if tournament.status != "active":
+        return error_response(
+            "Solo puedes inscribir equipos en torneos activos",
+            "TOURNAMENT_NOT_ACTIVE",
+            409
+        )
+
+    body = request.get_json() or {}
+
+    team_id = body.get("team_id")
+    registration_fee = body.get("registration_fee", 0)
+
+    if not team_id:
+        return error_response(
+            "El equipo es obligatorio",
+            "TEAM_ID_REQUIRED",
+            400
+        )
+
+    team = Team.query.get(team_id)
+
+    if not team:
+        return error_response(
+            "Equipo no encontrado",
+            "TEAM_NOT_FOUND",
+            404
+        )
+
+    if team.club_id != user.club_id:
+        return error_response(
+            "No tienes acceso a este equipo",
+            "FORBIDDEN",
+            403
+        )
+
+    existing_entry = TournamentTeam.query.filter_by(
+        tournament_id=tournament.id,
+        team_id=team.id
+    ).first()
+
+    if existing_entry:
+        return error_response(
+            "Este equipo ya está inscrito en el torneo",
+            "TEAM_ALREADY_IN_TOURNAMENT",
+            409
+        )
+
+    parsed_registration_fee, amount_error = parse_money(
+        registration_fee,
+        "El costo de inscripción"
+    )
+
+    if amount_error:
+        return amount_error
+
+    tournament_team = TournamentTeam(
+        tournament_id=tournament.id,
+        team_id=team.id,
+        registration_fee=parsed_registration_fee,
+        status="active"
+    )
+
+    db.session.add(tournament_team)
+    db.session.commit()
+
+    return jsonify({
+        "message": "Equipo inscrito correctamente",
+        "tournament_team": tournament_team.serialize()
+    }), 201
+
+@api.route(
+    "/tournaments/<string:tournament_id>/teams",
+    methods=["GET"]
+)
+@jwt_required()
+def get_tournament_teams(tournament_id):
+    user = get_current_user()
+
+    if user.role not in ["club_owner", "coach"]:
+        return error_response(
+            "No tienes permisos para consultar equipos del torneo",
+            "FORBIDDEN",
+            403
+        )
+
+    tournament = Tournament.query.get(tournament_id)
+
+    if not tournament:
+        return error_response(
+            "Torneo no encontrado",
+            "TOURNAMENT_NOT_FOUND",
+            404
+        )
+
+    if tournament.club_id != user.club_id:
+        return error_response(
+            "No tienes acceso a este torneo",
+            "FORBIDDEN",
+            403
+        )
+
+    entries = TournamentTeam.query.filter_by(
+        tournament_id=tournament.id
+    ).order_by(TournamentTeam.created_at.asc()).all()
+
+    result = []
+
+    for entry in entries:
+        active_players = TournamentPlayer.query.filter_by(
+            tournament_team_id=entry.id,
+            status="active"
+        ).count()
+
+        matches_count = MatchSession.query.filter_by(
+            tournament_team_id=entry.id
+        ).count()
+
+        result.append({
+            **entry.serialize(),
+            "total_players": active_players,
+            "total_matches": matches_count
+        })
+
+    return jsonify({
+        "tournament": tournament.serialize(),
+        "total_teams": len(result),
+        "teams": result
+    }), 200
+
+@api.route(
+    "/tournament-teams/<string:tournament_team_id>/players",
+    methods=["GET"]
+)
+@jwt_required()
+def get_tournament_team_players(tournament_team_id):
+    user = get_current_user()
+
+    if user.role not in ["club_owner", "coach"]:
+        return error_response(
+            "No tienes permisos para consultar jugadoras del torneo",
+            "FORBIDDEN",
+            403
+        )
+
+    tournament_team = TournamentTeam.query.get(
+        tournament_team_id
+    )
+
+    if not tournament_team:
+        return error_response(
+            "Participación de torneo no encontrada",
+            "TOURNAMENT_TEAM_NOT_FOUND",
+            404
+        )
+
+    if tournament_team.tournament.club_id != user.club_id:
+        return error_response(
+            "No tienes acceso a esta participación",
+            "FORBIDDEN",
+            403
+        )
+
+    team_memberships = TeamPlayer.query.filter_by(
+        team_id=tournament_team.team_id
+    ).order_by(TeamPlayer.player_number.asc()).all()
+
+    registered_rows = TournamentPlayer.query.filter_by(
+        tournament_team_id=tournament_team.id
+    ).all()
+
+    registered_map = {
+        row.player_id: row
+        for row in registered_rows
+    }
+
+    players = []
+
+    for membership in team_memberships:
+        registration = registered_map.get(
+            membership.player_id
+        )
+
+        players.append({
+            "player_id": membership.player_id,
+            "player_number": membership.player_number,
+            "team_status": membership.status,
+            "is_registered": (
+                registration is not None
+                and registration.status == "active"
+            ),
+            "registration_status": (
+                registration.status
+                if registration
+                else None
+            ),
+            "player": membership.player.serialize()
+        })
+
+    return jsonify({
+        "tournament_team": tournament_team.serialize(),
+        "total_players": len(players),
+        "registered_count": sum(
+            1
+            for player in players
+            if player["is_registered"]
+        ),
+        "players": players
+    }), 200
+
+@api.route(
+    "/tournament-teams/<string:tournament_team_id>/players",
+    methods=["PUT"]
+)
+@jwt_required()
+def update_tournament_team_players(tournament_team_id):
+    user = get_current_user()
+
+    if user.role != "club_owner":
+        return error_response(
+            "Solo el dueño del club puede modificar las inscripciones",
+            "FORBIDDEN",
+            403
+        )
+
+    tournament_team = TournamentTeam.query.get(
+        tournament_team_id
+    )
+
+    if not tournament_team:
+        return error_response(
+            "Participación de torneo no encontrada",
+            "TOURNAMENT_TEAM_NOT_FOUND",
+            404
+        )
+
+    if tournament_team.tournament.club_id != user.club_id:
+        return error_response(
+            "No tienes acceso a esta participación",
+            "FORBIDDEN",
+            403
+        )
+
+    if tournament_team.status != "active":
+        return error_response(
+            "La participación del equipo no está activa",
+            "TOURNAMENT_TEAM_NOT_ACTIVE",
+            409
+        )
+
+    locked_registration_charge = PlayerPayment.query.filter(
+        PlayerPayment.club_id == user.club_id,
+        PlayerPayment.tournament_team_id == tournament_team.id,
+        PlayerPayment.match_id.is_(None),
+        PlayerPayment.payment_type == "tournament",
+        (
+            (PlayerPayment.status == "paid")
+            |
+            PlayerPayment.receipt.has()
+        )
+    ).first()
+
+    if locked_registration_charge:
+        return error_response(
+            (
+                "No puedes cambiar las jugadoras inscritas porque existen "
+                "cargos de inscripción pagados o con recibo"
+            ),
+            "TOURNAMENT_PLAYERS_FINANCIALLY_LOCKED",
+            409
+        )
+
+    body = request.get_json() or {}
+
+    player_ids = body.get("player_ids")
+
+    if not isinstance(player_ids, list):
+        return error_response(
+            "La lista de jugadoras es inválida",
+            "INVALID_TOURNAMENT_PLAYERS",
+            400
+        )
+
+    normalized_player_ids = list({
+        str(player_id).strip()
+        for player_id in player_ids
+        if str(player_id).strip()
+    })
+
+    valid_memberships = TeamPlayer.query.filter(
+        TeamPlayer.team_id == tournament_team.team_id,
+        TeamPlayer.player_id.in_(normalized_player_ids)
+    ).all() if normalized_player_ids else []
+
+    valid_player_ids = {
+        membership.player_id
+        for membership in valid_memberships
+    }
+
+    invalid_player_ids = set(
+        normalized_player_ids
+    ) - valid_player_ids
+
+    if invalid_player_ids:
+        return error_response(
+            "Una o más jugadoras no pertenecen al equipo",
+            "PLAYER_NOT_IN_TEAM",
+            400
+        )
+
+    existing_rows = TournamentPlayer.query.filter_by(
+        tournament_team_id=tournament_team.id
+    ).all()
+
+    existing_map = {
+        row.player_id: row
+        for row in existing_rows
+    }
+
+    selected_ids = set(normalized_player_ids)
+
+    for player_id, row in existing_map.items():
+        if player_id in selected_ids:
+            row.status = "active"
+        else:
+            row.status = "withdrawn"
+
+    for player_id in selected_ids:
+        if player_id in existing_map:
+            continue
+
+        registration = TournamentPlayer(
+            tournament_team_id=tournament_team.id,
+            player_id=player_id,
+            status="active"
+        )
+
+        db.session.add(registration)
+
+    db.session.commit()
+
+    active_registrations = TournamentPlayer.query.filter_by(
+        tournament_team_id=tournament_team.id,
+        status="active"
+    ).all()
+
+    return jsonify({
+        "message": "Jugadoras inscritas correctamente",
+        "total_players": len(active_registrations),
+        "players": [
+            row.serialize()
+            for row in active_registrations
+        ]
+    }), 200
+
+@api.route(
+    "/tournament-teams/<string:tournament_team_id>/registration-charges/preview",
+    methods=["GET"]
+)
+@jwt_required()
+def preview_tournament_registration_charges(tournament_team_id):
+    user = get_current_user()
+
+    if user.role not in ["club_owner", "coach"]:
+        return error_response(
+            "No tienes permisos para consultar el reparto de inscripción",
+            "FORBIDDEN",
+            403
+        )
+
+    tournament_team = TournamentTeam.query.get(
+        tournament_team_id
+    )
+
+    if not tournament_team:
+        return error_response(
+            "Participación de torneo no encontrada",
+            "TOURNAMENT_TEAM_NOT_FOUND",
+            404
+        )
+
+    tournament = tournament_team.tournament
+
+    if tournament.club_id != user.club_id:
+        return error_response(
+            "No tienes acceso a esta participación",
+            "FORBIDDEN",
+            403
+        )
+
+    registration_fee = Decimal(
+        str(tournament_team.registration_fee or 0)
+    ).quantize(
+        Decimal("0.01"),
+        rounding=ROUND_HALF_UP
+    )
+
+    if registration_fee <= 0:
+        return error_response(
+            "El costo de inscripción debe ser mayor que cero",
+            "INVALID_TOURNAMENT_REGISTRATION_FEE",
+            400
+        )
+
+    registered_players = TournamentPlayer.query.filter_by(
+        tournament_team_id=tournament_team.id,
+        status="active"
+    ).order_by(
+        TournamentPlayer.created_at.asc()
+    ).all()
+
+    if not registered_players:
+        return error_response(
+            "Debes inscribir al menos una jugadora antes de repartir el costo",
+            "TOURNAMENT_PLAYERS_REQUIRED",
+            400
+        )
+
+    distributed_amounts = split_money_exactly(
+        registration_fee,
+        len(registered_players)
+    )
+
+    existing_charges = PlayerPayment.query.filter_by(
+        club_id=user.club_id,
+        tournament_team_id=tournament_team.id,
+        match_id=None,
+        payment_type="tournament"
+    ).all()
+
+    existing_by_player = {
+        charge.player_id: charge
+        for charge in existing_charges
+    }
+
+    players_preview = []
+
+    for index, registration in enumerate(registered_players):
+        existing_charge = existing_by_player.get(
+            registration.player_id
+        )
+
+        team_membership = TeamPlayer.query.filter_by(
+            team_id=tournament_team.team_id,
+            player_id=registration.player_id
+        ).first()
+
+        players_preview.append({
+            "tournament_player_id": registration.id,
+            "player_id": registration.player_id,
+            "player_number": (
+                team_membership.player_number
+                if team_membership
+                else None
+            ),
+            "player": registration.player.serialize(),
+            "amount": float(distributed_amounts[index]),
+            "existing_charge": (
+                existing_charge.serialize()
+                if existing_charge
+                else None
+            )
+        })
+
+    has_locked_charges = any(
+        charge.status == "paid" or charge.receipt is not None
+        for charge in existing_charges
+    )
+
+    return jsonify({
+        "tournament_team": tournament_team.serialize(),
+        "registration_fee": float(registration_fee),
+        "registered_players_count": len(registered_players),
+        "existing_charges_count": len(existing_charges),
+        "has_locked_charges": has_locked_charges,
+        "can_generate": not has_locked_charges,
+        "players": players_preview
+    }), 200
+
+@api.route(
+    "/tournament-teams/<string:tournament_team_id>/registration-charges",
+    methods=["POST"]
+)
+@jwt_required()
+def generate_tournament_registration_charges(tournament_team_id):
+    user = get_current_user()
+
+    if user.role != "club_owner":
+        return error_response(
+            "Solo el dueño del club puede generar cargos de inscripción",
+            "FORBIDDEN",
+            403
+        )
+
+    tournament_team = TournamentTeam.query.get(
+        tournament_team_id
+    )
+
+    if not tournament_team:
+        return error_response(
+            "Participación de torneo no encontrada",
+            "TOURNAMENT_TEAM_NOT_FOUND",
+            404
+        )
+
+    tournament = tournament_team.tournament
+
+    if tournament.club_id != user.club_id:
+        return error_response(
+            "No tienes acceso a esta participación",
+            "FORBIDDEN",
+            403
+        )
+
+    if tournament_team.status != "active":
+        return error_response(
+            "La participación del equipo no está activa",
+            "TOURNAMENT_TEAM_NOT_ACTIVE",
+            409
+        )
+
+    registration_fee = Decimal(
+        str(tournament_team.registration_fee or 0)
+    ).quantize(
+        Decimal("0.01"),
+        rounding=ROUND_HALF_UP
+    )
+
+    if registration_fee <= 0:
+        return error_response(
+            "El costo de inscripción debe ser mayor que cero",
+            "INVALID_TOURNAMENT_REGISTRATION_FEE",
+            400
+        )
+
+    registered_players = TournamentPlayer.query.filter_by(
+        tournament_team_id=tournament_team.id,
+        status="active"
+    ).order_by(
+        TournamentPlayer.created_at.asc()
+    ).all()
+
+    if not registered_players:
+        return error_response(
+            "Debes inscribir al menos una jugadora antes de generar los cargos",
+            "TOURNAMENT_PLAYERS_REQUIRED",
+            400
+        )
+
+    existing_charges = PlayerPayment.query.filter_by(
+        club_id=user.club_id,
+        tournament_team_id=tournament_team.id,
+        match_id=None,
+        payment_type="tournament"
+    ).all()
+
+    protected_charges = [
+        charge
+        for charge in existing_charges
+        if charge.status == "paid" or charge.receipt is not None
+    ]
+
+    if protected_charges:
+        return error_response(
+            (
+                "No puedes recalcular la inscripción porque uno o más "
+                "cargos ya fueron pagados o tienen recibo"
+            ),
+            "TOURNAMENT_REGISTRATION_CHARGES_LOCKED",
+            409
+        )
+
+    # Sustituimos únicamente cargos que aún no tienen valor financiero definitivo.
+    for charge in existing_charges:
+        if charge.status in ["pending", "overdue", "cancelled"]:
+            db.session.delete(charge)
+
+    db.session.flush()
+
+    distributed_amounts = split_money_exactly(
+        registration_fee,
+        len(registered_players)
+    )
+
+    created_charges = []
+
+    tournament_name = (
+        tournament.name
+        if tournament
+        else "Torneo"
+    )
+
+    team_name = (
+        tournament_team.team.name
+        if tournament_team.team
+        else "Equipo"
+    )
+
+    for index, registration in enumerate(registered_players):
+        charge = PlayerPayment(
+            club_id=user.club_id,
+            player_id=registration.player_id,
+            tournament_team_id=tournament_team.id,
+            match_id=None,
+            payment_type="tournament",
+            amount=distributed_amounts[index],
+            status="pending",
+            due_date=tournament.start_date,
+            notes=(
+                f"Inscripción al torneo {tournament_name}"
+                f" · Equipo: {team_name}"
+            ),
+            created_by=user.id
+        )
+
+        db.session.add(charge)
+        created_charges.append(charge)
+
+    db.session.commit()
+
+    return jsonify({
+        "message": "Cargos de inscripción generados correctamente",
+        "registration_fee": float(registration_fee),
+        "total_charges": len(created_charges),
+        "charges": [
+            charge.serialize()
+            for charge in created_charges
+        ]
+    }), 201
+
+@api.route(
+    "/teams/<string:team_id>/tournament-entries",
+    methods=["GET"]
+)
+@jwt_required()
+def get_team_tournament_entries(team_id):
+    user = get_current_user()
+
+    if user.role not in ["club_owner", "coach"]:
+        return error_response(
+            "No tienes permisos para consultar torneos",
+            "FORBIDDEN",
+            403
+        )
+
+    team = Team.query.get(team_id)
+
+    if not team:
+        return error_response(
+            "Equipo no encontrado",
+            "TEAM_NOT_FOUND",
+            404
+        )
+
+    if team.club_id != user.club_id:
+        return error_response(
+            "No tienes acceso a este equipo",
+            "FORBIDDEN",
+            403
+        )
+
+    entries = TournamentTeam.query.join(
+        Tournament
+    ).filter(
+        TournamentTeam.team_id == team.id,
+        TournamentTeam.status == "active",
+        Tournament.status == "active",
+        Tournament.club_id == user.club_id
+    ).order_by(
+        Tournament.start_date.desc()
+    ).all()
+
+    return jsonify({
+        "team": team.serialize(),
+        "tournament_entries": [
+            entry.serialize()
+            for entry in entries
+        ]
+    }), 200
 ############################################# MATCHES #############################################
 
 @api.route("/matches", methods=["POST"])
@@ -4528,6 +6060,13 @@ def create_match():
             403
         )
 
+    if not user.club_id:
+        return error_response(
+            "El usuario no pertenece a ningún club",
+            "CLUB_REQUIRED",
+            400
+        )
+
     body = request.get_json() or {}
 
     team_id = body.get("team_id")
@@ -4537,16 +6076,30 @@ def create_match():
     location = body.get("location")
     notes = body.get("notes")
 
+    # Nuevos campos
+    tournament_team_id = body.get("tournament_team_id")
+    referee_fee = body.get("referee_fee")
+
     if opponent_name:
-        opponent_name = opponent_name.strip()
-    
+        opponent_name = " ".join(
+            str(opponent_name).strip().split()
+        )
+
+    if location:
+        location = " ".join(
+            str(location).strip().split()
+        )
+
+    if notes:
+        notes = str(notes).strip()
+
     if not team_id:
         return error_response(
-            "La categoría es obligatoria",
+            "El equipo es obligatorio",
             "TEAM_ID_REQUIRED",
             400
         )
-    
+
     if match_type not in VALID_MATCH_TYPES:
         return error_response(
             "Tipo de partido inválido",
@@ -4562,14 +6115,17 @@ def create_match():
         )
 
     try:
-        parsed_date = datetime.strptime(date, "%Y-%m-%d").date()
+        parsed_date = datetime.strptime(
+            date,
+            "%Y-%m-%d"
+        ).date()
     except (ValueError, TypeError):
         return error_response(
             "Formato de fecha inválido. Usa YYYY-MM-DD",
             "INVALID_DATE_FORMAT",
             400
         )
-    
+
     if not opponent_name:
         return error_response(
             "El rival es obligatorio",
@@ -4588,38 +6144,130 @@ def create_match():
 
     if team.club_id != user.club_id:
         return error_response(
-            "No tienes acceso a esta categoría}",
+            "No tienes acceso a este equipo",
             "FORBIDDEN",
             403
         )
 
+    tournament_team = None
+
+    if tournament_team_id:
+        tournament_team = TournamentTeam.query.get(
+            tournament_team_id
+        )
+
+        if not tournament_team:
+            return error_response(
+                "Participación de torneo no encontrada",
+                "TOURNAMENT_TEAM_NOT_FOUND",
+                404
+            )
+
+        if tournament_team.tournament.club_id != user.club_id:
+            return error_response(
+                "No tienes acceso a esta participación",
+                "FORBIDDEN",
+                403
+            )
+
+        if tournament_team.team_id != team.id:
+            return error_response(
+                "La participación seleccionada no corresponde a este equipo",
+                "TOURNAMENT_TEAM_MISMATCH",
+                400
+            )
+
+        if tournament_team.status != "active":
+            return error_response(
+                "La participación del equipo no está activa",
+                "TOURNAMENT_TEAM_NOT_ACTIVE",
+                409
+            )
+
+        if tournament_team.tournament.status != "active":
+            return error_response(
+                "El torneo no está activo",
+                "TOURNAMENT_NOT_ACTIVE",
+                409
+            )
+
+    parsed_referee_fee = None
+
+    if referee_fee not in [None, ""]:
+        parsed_referee_fee, amount_error = parse_money(
+            referee_fee,
+            "El costo de arbitraje"
+        )
+
+        if amount_error:
+            return amount_error
+
+    elif tournament_team:
+        parsed_referee_fee = (
+            tournament_team.tournament.default_referee_fee
+        )
+
     match = MatchSession(
         team_id=team.id,
+        tournament_team_id=(
+            tournament_team.id
+            if tournament_team
+            else None
+        ),
+        referee_fee=parsed_referee_fee,
         date=parsed_date,
         opponent_name=opponent_name,
         match_type=match_type,
-        location=location,
-        notes=notes,
+        location=location or None,
+        notes=notes or None,
         created_by=user.id
     )
 
     db.session.add(match)
-        
     db.session.flush()
 
-    current_roster = TeamPlayer.query.filter_by(
-        team_id=team.id
-    ).all()
+    roster_query = (
+        TeamPlayer.query
+        .join(
+            Player,
+            Player.id == TeamPlayer.player_id
+        )
+        .filter(
+            TeamPlayer.team_id == team.id,
+            TeamPlayer.status == "active",
+            Player.is_active.is_(True)
+        )
+    )
 
-    for member in current_roster:
+    if tournament_team:
+        active_tournament_player_ids = (
+            db.session.query(TournamentPlayer.player_id)
+            .filter(
+                TournamentPlayer.tournament_team_id == tournament_team.id,
+                TournamentPlayer.status == "active"
+            )
+        )
+
+        roster_query = roster_query.filter(
+            TeamPlayer.player_id.in_(
+                active_tournament_player_ids
+            )
+        )
+
+    roster_members = roster_query.all()
+
+    for member in roster_members:
         snapshot = MatchPlayer(
             match_id=match.id,
             player_id=member.player_id,
             player_number=member.player_number,
             is_called=False,
             attendance_status=None,
-            did_play=False
+            did_play=False,
+            is_on_court=False,
+            position=None
         )
+
         db.session.add(snapshot)
 
     db.session.commit()
@@ -4680,6 +6328,27 @@ def save_match_roster(match_id):
             "FORBIDDEN",
             403
         )
+    
+    locked_referee_charge = PlayerPayment.query.filter(
+        PlayerPayment.club_id == user.club_id,
+        PlayerPayment.match_id == match.id,
+        PlayerPayment.payment_type == "referee",
+        (
+            (PlayerPayment.status == "paid")
+            |
+            PlayerPayment.receipt.has()
+        )
+    ).first()
+
+    if locked_referee_charge:
+        return error_response(
+            (
+                "No puedes cambiar la convocatoria porque existen "
+                "cargos de arbitraje pagados o con recibo"
+            ),
+            "MATCH_ROSTER_FINANCIALLY_LOCKED",
+            409
+        )
 
     body = request.get_json() or {}
     players = body.get("players")
@@ -4716,6 +6385,271 @@ def save_match_roster(match_id):
     return jsonify({
         "message": "Convocatoria guardada correctamente"
     }), 200
+
+@api.route(
+    "/matches/<string:match_id>/referee-charges/preview",
+    methods=["GET"]
+)
+@jwt_required()
+def preview_match_referee_charges(match_id):
+    user = get_current_user()
+
+    if user.role not in ["club_owner", "coach"]:
+        return error_response(
+            "No tienes permisos para consultar el reparto de arbitraje",
+            "FORBIDDEN",
+            403
+        )
+
+    match = MatchSession.query.get(match_id)
+
+    if not match:
+        return error_response(
+            "Partido no encontrado",
+            "MATCH_NOT_FOUND",
+            404
+        )
+
+    if match.team.club_id != user.club_id:
+        return error_response(
+            "No tienes acceso a este partido",
+            "FORBIDDEN",
+            403
+        )
+
+    if match.referee_fee is None:
+        return error_response(
+            "Este partido no tiene costo de arbitraje",
+            "REFEREE_FEE_NOT_CONFIGURED",
+            400
+        )
+
+    referee_fee = Decimal(str(match.referee_fee)).quantize(
+        Decimal("0.01"),
+        rounding=ROUND_HALF_UP
+    )
+
+    if referee_fee <= 0:
+        return error_response(
+            "El costo de arbitraje debe ser mayor que cero",
+            "INVALID_REFEREE_FEE",
+            400
+        )
+
+    called_players = MatchPlayer.query.filter_by(
+        match_id=match.id,
+        is_called=True
+    ).order_by(
+        MatchPlayer.player_number.asc()
+    ).all()
+
+    if not called_players:
+        return error_response(
+            "Debes guardar una convocatoria antes de repartir el arbitraje",
+            "MATCH_ROSTER_REQUIRED",
+            400
+        )
+
+    distributed_amounts = split_money_exactly(
+        referee_fee,
+        len(called_players)
+    )
+
+    existing_charges = PlayerPayment.query.filter_by(
+        club_id=user.club_id,
+        match_id=match.id,
+        payment_type="referee"
+    ).all()
+
+    existing_by_player = {
+        charge.player_id: charge
+        for charge in existing_charges
+    }
+
+    players_preview = []
+
+    for index, match_player in enumerate(called_players):
+        existing_charge = existing_by_player.get(
+            match_player.player_id
+        )
+
+        players_preview.append({
+            "match_player_id": match_player.id,
+            "player_id": match_player.player_id,
+            "player_number": match_player.player_number,
+            "player": match_player.player.serialize(),
+            "amount": float(distributed_amounts[index]),
+            "existing_charge": (
+                existing_charge.serialize()
+                if existing_charge
+                else None
+            )
+        })
+
+    has_paid_charges = any(
+        charge.status == "paid" or charge.receipt is not None
+        for charge in existing_charges
+    )
+
+    can_generate = not has_paid_charges
+
+    return jsonify({
+        "match": match.serialize(),
+        "referee_fee": float(referee_fee),
+        "called_players_count": len(called_players),
+        "existing_charges_count": len(existing_charges),
+        "has_paid_charges": has_paid_charges,
+        "can_generate": can_generate,
+        "players": players_preview
+    }), 200
+
+@api.route(
+    "/matches/<string:match_id>/referee-charges",
+    methods=["POST"]
+)
+@jwt_required()
+def generate_match_referee_charges(match_id):
+    user = get_current_user()
+
+    if user.role != "club_owner":
+        return error_response(
+            "Solo el dueño del club puede generar cargos de arbitraje",
+            "FORBIDDEN",
+            403
+        )
+
+    match = MatchSession.query.get(match_id)
+
+    if not match:
+        return error_response(
+            "Partido no encontrado",
+            "MATCH_NOT_FOUND",
+            404
+        )
+
+    if match.team.club_id != user.club_id:
+        return error_response(
+            "No tienes acceso a este partido",
+            "FORBIDDEN",
+            403
+        )
+
+    if match.referee_fee is None:
+        return error_response(
+            "Este partido no tiene costo de arbitraje",
+            "REFEREE_FEE_NOT_CONFIGURED",
+            400
+        )
+
+    referee_fee = Decimal(str(match.referee_fee)).quantize(
+        Decimal("0.01"),
+        rounding=ROUND_HALF_UP
+    )
+
+    if referee_fee <= 0:
+        return error_response(
+            "El costo de arbitraje debe ser mayor que cero",
+            "INVALID_REFEREE_FEE",
+            400
+        )
+
+    called_players = MatchPlayer.query.filter_by(
+        match_id=match.id,
+        is_called=True
+    ).order_by(
+        MatchPlayer.player_number.asc()
+    ).all()
+
+    if not called_players:
+        return error_response(
+            "Debes guardar una convocatoria antes de generar los cargos",
+            "MATCH_ROSTER_REQUIRED",
+            400
+        )
+
+    existing_charges = PlayerPayment.query.filter_by(
+        club_id=user.club_id,
+        match_id=match.id,
+        payment_type="referee"
+    ).all()
+
+    protected_charges = [
+        charge
+        for charge in existing_charges
+        if charge.status == "paid" or charge.receipt is not None
+    ]
+
+    if protected_charges:
+        return error_response(
+            (
+                "No puedes recalcular el arbitraje porque uno o más "
+                "cargos ya fueron pagados o tienen recibo"
+            ),
+            "REFEREE_CHARGES_LOCKED",
+            409
+        )
+    # Los cargos pendientes anteriores se reemplazan por el nuevo reparto.
+    for charge in existing_charges:
+        if charge.status in ["pending", "overdue", "cancelled"]:
+            db.session.delete(charge)
+
+    db.session.flush()
+
+    distributed_amounts = split_money_exactly(
+        referee_fee,
+        len(called_players)
+    )
+
+    created_charges = []
+
+    tournament_team_id = match.tournament_team_id
+
+    tournament_name = None
+
+    if match.tournament_team:
+        tournament_name = (
+            match.tournament_team.tournament.name
+            if match.tournament_team.tournament
+            else None
+        )
+
+    for index, match_player in enumerate(called_players):
+        notes_parts = [
+            f"Arbitraje del partido contra {match.opponent_name}"
+        ]
+
+        if tournament_name:
+            notes_parts.append(
+                f"Torneo: {tournament_name}"
+            )
+
+        charge = PlayerPayment(
+            club_id=user.club_id,
+            player_id=match_player.player_id,
+            tournament_team_id=tournament_team_id,
+            match_id=match.id,
+            payment_type="referee",
+            amount=distributed_amounts[index],
+            status="pending",
+            due_date=match.date,
+            notes=" · ".join(notes_parts),
+            created_by=user.id
+        )
+
+        db.session.add(charge)
+        created_charges.append(charge)
+
+    db.session.commit()
+
+    return jsonify({
+        "message": "Cargos de arbitraje generados correctamente",
+        "referee_fee": float(referee_fee),
+        "total_charges": len(created_charges),
+        "charges": [
+            charge.serialize()
+            for charge in created_charges
+        ]
+    }), 201
 
 @api.route("/matches/<string:match_id>/roster/status", methods=["PUT"])
 @jwt_required()

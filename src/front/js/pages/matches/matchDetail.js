@@ -1,5 +1,14 @@
 import React, { useEffect, useState, useContext, useMemo } from "react";
 import { useParams, useNavigate, useLocation } from "react-router-dom";
+import {
+  DollarSign,
+  Users,
+  ReceiptText,
+  AlertCircle,
+  CircleCheck,
+  ArrowRight,
+  Check,
+} from "lucide-react";
 import { Context } from "../../store/appContext";
 import { PageHeader } from "../../component/ui/pageHeader";
 import { Card } from "../../component/ui/card";
@@ -34,6 +43,42 @@ const POSITION_OPTIONS = [
   { value: "libero", label: "Líbero" },
 ];
 
+const formatCurrency = (value) => {
+  return Number(value || 0).toLocaleString("es", {
+    style: "currency",
+    currency: "USD",
+    minimumFractionDigits: 2,
+  });
+};
+
+const getPaymentStatusData = (status) => {
+  const statuses = {
+    pending: {
+      label: "Pendiente",
+      className: "status-warning",
+    },
+    paid: {
+      label: "Pagado",
+      className: "status-success",
+    },
+    overdue: {
+      label: "Vencido",
+      className: "status-danger",
+    },
+    cancelled: {
+      label: "Cancelado",
+      className: "status-muted",
+    },
+  };
+
+  return (
+    statuses[status] || {
+      label: status || "Sin estado",
+      className: "status-muted",
+    }
+  );
+};
+
 export const MatchDetail = () => {
   const { actions } = useContext(Context);
   const { match_id } = useParams();
@@ -59,6 +104,13 @@ export const MatchDetail = () => {
   const [statusError, setStatusError] = useState("");
   const [savingRoster, setSavingRoster] = useState(false);
   const [savingStatus, setSavingStatus] = useState(false);
+
+  const [refereePreview, setRefereePreview] = useState(null);
+  const [loadingRefereePreview, setLoadingRefereePreview] = useState(false);
+  const [generatingRefereeCharges, setGeneratingRefereeCharges] =
+    useState(false);
+  const [refereeError, setRefereeError] = useState("");
+  const [refereeErrorCode, setRefereeErrorCode] = useState("");
 
   const totalSets = homeSets + opponentSets;
   const disableHomeIncrease = homeSets >= 3 || totalSets >= 5;
@@ -108,6 +160,10 @@ export const MatchDetail = () => {
 
   const togglePlayerSelection = (player) => {
     setRosterError("");
+
+    setRefereePreview(null);
+    setRefereeError("");
+    setRefereeErrorCode("");
 
     setSelectedPlayers((prev) => {
       const exists = prev.includes(player.player_id);
@@ -183,11 +239,16 @@ export const MatchDetail = () => {
     setSavingRoster(false);
 
     if (!result?.ok) {
-      setRosterError(result.message || "No se pudo guardar la convocatoria");
+      setRosterError(
+        errorMessages[result.code] ||
+          result.message ||
+          "No se pudo guardar la convocatoria",
+      );
+
       return;
     }
-
     setCurrentStep(1);
+    setRefereePreview(null);
     await loadMatch();
   };
 
@@ -296,11 +357,96 @@ export const MatchDetail = () => {
   const statusSaved = (match?.match_step ?? 0) >= 2;
   const isMatchCompleted = match?.is_completed;
 
+  const refereeFeeConfigured =
+    match?.referee_fee !== null && match?.referee_fee !== undefined;
+
+  const refereeFee = Number(match?.referee_fee || 0);
+
+  const calledPlayersCount = roster.filter((player) => player.is_called).length;
+
+  const existingRefereeChargesCount =
+    refereePreview?.existing_charges_count || 0;
+
+  const hasGeneratedRefereeCharges = existingRefereeChargesCount > 0;
+
+  const canPreviewRefereeCharges =
+    refereeFeeConfigured &&
+    refereeFee > 0 &&
+    calledPlayersCount > 0 &&
+    !hasUnsavedRosterChanges;
+
   const getResultButtonText = () => {
     if (showResultEditor) return "Ocultar resultado";
     if (isMatchCompleted) return "Editar sets";
 
     return "Registrar sets";
+  };
+
+  const loadRefereePreview = async () => {
+    if (loadingRefereePreview) return;
+
+    setRefereeError("");
+    setRefereeErrorCode("");
+    setLoadingRefereePreview(true);
+
+    const result = await actions.previewRefereeCharges(match_id);
+
+    setLoadingRefereePreview(false);
+
+    if (!result.ok) {
+      setRefereePreview(null);
+      setRefereeErrorCode(result.code || "NETWORK_ERROR");
+      setRefereeError(
+        result.message ||
+          errorMessages[result.code] ||
+          "No se pudo calcular el reparto de arbitraje",
+      );
+
+      return;
+    }
+
+    setRefereePreview(result.data);
+  };
+
+  const handleGenerateRefereeCharges = async () => {
+    if (generatingRefereeCharges || !refereePreview) return;
+
+    if (refereePreview.existing_charges_count > 0) {
+      const confirmed = window.confirm(
+        "Se reemplazarán los cargos pendientes con la nueva distribución. Los cargos pagados o con recibo no serán modificados. ¿Deseas continuar?",
+      );
+
+      if (!confirmed) return;
+    }
+
+    setRefereeError("");
+    setRefereeErrorCode("");
+    setGeneratingRefereeCharges(true);
+
+    const result = await actions.generateRefereeCharges(match_id);
+
+    setGeneratingRefereeCharges(false);
+
+    if (!result.ok) {
+      setRefereeErrorCode(result.code || "NETWORK_ERROR");
+      setRefereeError(
+        result.message ||
+          errorMessages[result.code] ||
+          "No se pudieron generar los cargos de arbitraje",
+      );
+
+      return;
+    }
+
+    const previewResult = await actions.previewRefereeCharges(match_id);
+
+    if (previewResult.ok) {
+      setRefereePreview(previewResult.data);
+    }
+  };
+
+  const handleGoToRefereePayments = () => {
+    navigate(`/payments?payment_type=referee&match_id=${match_id}`);
   };
 
   const handleBack = () => {
@@ -472,6 +618,7 @@ export const MatchDetail = () => {
           </p>
         )}
       </Card>
+
       {/* Stepper */}
       <div className="stepper-mobile mb-4">
         {STEPS.map((step, index) => {
@@ -514,33 +661,46 @@ export const MatchDetail = () => {
         <p className="form-error">{statusError}</p>
       )}
       {/* Players list */}
-      {currentStep === 0
-        ? teamPlayers.map((player) => {
+      {currentStep === 0 ? (
+        <div className="match-player-selection-list">
+          {teamPlayers.map((player) => {
             const isSelected = selectedPlayers.includes(player.player_id);
 
             return (
-              <Card
+              <button
+                type="button"
                 key={player.player_id}
-                className={`mb-3 cursor-pointer ${
-                  isSelected ? "border-primary" : ""
+                className={`match-player-option ${
+                  isSelected ? "selected" : ""
                 }`}
                 onClick={() => togglePlayerSelection(player)}
               >
-                <h3>
-                  #{player.player_number} {player.first_name} {player.last_name}
-                </h3>
+                <div className="match-player-option-check">
+                  {isSelected && <Check size={16} />}
+                </div>
 
-                <p className="text-muted mb-1">
-                  Posición:{" "}
-                  {POSITION_LABELS[player.position || player.main_position] ||
-                    "Sin definir"}
-                </p>
+                <div className="match-player-option-copy">
+                  <strong>
+                    #{player.player_number} {player.first_name}{" "}
+                    {player.last_name}
+                  </strong>
 
-                <p>{isSelected ? "✅ Convocada" : "➕ Tap para convocar"}</p>
-              </Card>
+                  <span>
+                    {POSITION_LABELS[player.position || player.main_position] ||
+                      "Sin posición definida"}
+                  </span>
+                </div>
+
+                <span className="match-player-option-state">
+                  {isSelected ? "Convocada" : "Convocar"}
+                </span>
+              </button>
             );
-          })
-        : filteredPlayers.map((player) => (
+          })}
+        </div>
+      ) : (
+        <div className="match-player-status-list">
+          {filteredPlayers.map((player) => (
             <Card
               key={player.match_player_id}
               className="mb-3 cursor-pointer"
@@ -558,20 +718,21 @@ export const MatchDetail = () => {
                 <FormField label="Posición hoy">
                   <Select
                     value={player.position || player.main_position || ""}
-                    onClick={(e) => e.stopPropagation()}
-                    onChange={(e) => {
-                      e.stopPropagation();
+                    onClick={(event) => event.stopPropagation()}
+                    onChange={(event) => {
+                      event.stopPropagation();
+
                       updatePlayerPosition(
                         player.match_player_id,
-                        e.target.value,
+                        event.target.value,
                       );
                     }}
                   >
                     <option value="">Sin definir</option>
 
-                    {POSITION_OPTIONS.map((pos) => (
-                      <option key={pos.value} value={pos.value}>
-                        {pos.label}
+                    {POSITION_OPTIONS.map((position) => (
+                      <option key={position.value} value={position.value}>
+                        {position.label}
                       </option>
                     ))}
                   </Select>
@@ -584,26 +745,18 @@ export const MatchDetail = () => {
                 </p>
               )}
 
-              {currentStep >= 1 && (
-                <>
-                  <p className="mb-1">
-                    Estado:{" "}
-                    {MATCH_STATUS_LABELS[player.attendance_status] ||
-                      "Sin estado"}
-                  </p>
-                  {currentStep === 1 && (
-                    <small className="text-muted">
-                      Toca para cambiar estado
-                    </small>
-                  )}
-                </>
-              )}
+              <p className="mb-1">
+                Estado:{" "}
+                {MATCH_STATUS_LABELS[player.attendance_status] || "Sin estado"}
+              </p>
+
+              <small className="text-muted">Toca para cambiar estado</small>
             </Card>
           ))}
-
+        </div>
+      )}
       {/* Footer CTA */}
-      {/* Footer CTA */}
-      <div className="mt-4 d-flex gap-2">
+      <div className="mt-4 mb-4 d-flex gap-2">
         {currentStep === 0 ? (
           <Button
             variant="primary"
@@ -637,6 +790,246 @@ export const MatchDetail = () => {
           )
         ) : null}
       </div>
+
+      {calledPlayersCount === 0 ? (
+        <Card className="match-referee-locked-card mb-4">
+          <div className="match-referee-locked-icon">
+            <DollarSign size={19} />
+          </div>
+
+          <div>
+            <strong>Arbitraje</strong>
+
+            <span>Disponible después de guardar la convocatoria.</span>
+          </div>
+        </Card>
+      ) : (
+        <Card className="match-referee-card mb-4">
+          <div className="match-referee-flow-title">
+            <span className="match-referee-step">3</span>
+
+            <div>
+              <h3>Costo de arbitraje</h3>
+
+              <p>
+                Revisa cómo se distribuirá el costo entre las deportistas
+                convocadas.
+              </p>
+            </div>
+          </div>
+
+          <div className="match-referee-heading">
+            <div className="match-referee-title-row">
+              <div className="match-referee-icon">
+                <DollarSign size={18} />
+              </div>
+
+              <div>
+                <h4>Distribución del arbitraje</h4>
+
+                <p>
+                  El partido calcula los cargos. Los pagos y recibos se
+                  administran después desde Pagos.
+                </p>
+              </div>
+            </div>
+
+            {refereeFeeConfigured && refereeFee > 0 && (
+              <strong className="match-referee-total">
+                {formatCurrency(refereeFee)}
+              </strong>
+            )}
+          </div>
+
+          <div className="match-referee-rule">
+            <Users size={17} />
+
+            <span>
+              El costo se divide entre todas las deportistas convocadas,
+              independientemente de su asistencia o participación.
+            </span>
+          </div>
+
+          {!refereeFeeConfigured && (
+            <div className="match-referee-alert">
+              <AlertCircle size={18} />
+
+              <p>Este partido no tiene un costo de arbitraje configurado.</p>
+            </div>
+          )}
+
+          {refereeFeeConfigured && refereeFee <= 0 && (
+            <div className="match-referee-alert">
+              <AlertCircle size={18} />
+
+              <p>El costo de arbitraje está configurado en cero.</p>
+            </div>
+          )}
+
+          {hasUnsavedRosterChanges && (
+            <div className="match-referee-alert">
+              <AlertCircle size={18} />
+
+              <p>
+                Guarda los cambios de la convocatoria antes de calcular el
+                reparto.
+              </p>
+            </div>
+          )}
+
+          {!refereePreview && (
+            <div className="match-referee-actions">
+              <Button
+                type="button"
+                variant="secondary"
+                onClick={loadRefereePreview}
+                disabled={loadingRefereePreview || !canPreviewRefereeCharges}
+              >
+                {loadingRefereePreview
+                  ? "Calculando..."
+                  : "Revisar distribución"}
+              </Button>
+            </div>
+          )}
+
+          {refereeError && (
+            <div
+              className={`match-referee-alert ${
+                refereeErrorCode === "REFEREE_CHARGES_LOCKED" ? "danger" : ""
+              }`}
+            >
+              <AlertCircle size={18} />
+              <p>{refereeError}</p>
+            </div>
+          )}
+
+          {refereePreview && (
+            <>
+              {hasGeneratedRefereeCharges && (
+                <div className="match-referee-success">
+                  <div className="match-referee-success-icon">
+                    <CircleCheck size={20} />
+                  </div>
+
+                  <div>
+                    <strong>
+                      {existingRefereeChargesCount}{" "}
+                      {existingRefereeChargesCount === 1
+                        ? "cargo creado"
+                        : "cargos creados"}
+                    </strong>
+
+                    <span>
+                      Registra los pagos y genera los recibos desde Pagos.
+                    </span>
+                  </div>
+                </div>
+              )}
+
+              <div className="match-referee-summary">
+                <div>
+                  <DollarSign size={18} />
+                  <span>Costo total</span>
+                  <strong>{formatCurrency(refereePreview.referee_fee)}</strong>
+                </div>
+
+                <div>
+                  <Users size={18} />
+                  <span>Convocadas</span>
+                  <strong>{refereePreview.called_players_count}</strong>
+                </div>
+
+                <div>
+                  <ReceiptText size={18} />
+                  <span>Cargos existentes</span>
+                  <strong>{refereePreview.existing_charges_count}</strong>
+                </div>
+              </div>
+
+              {refereePreview.has_paid_charges && (
+                <div className="match-referee-alert danger">
+                  <AlertCircle size={18} />
+
+                  <p>
+                    Ya existen cargos pagados o con recibo. La distribución no
+                    puede modificarse.
+                  </p>
+                </div>
+              )}
+
+              <div className="match-referee-list">
+                {refereePreview.players?.map((row) => {
+                  const paymentStatus = row.existing_charge
+                    ? getPaymentStatusData(row.existing_charge.status)
+                    : null;
+
+                  return (
+                    <div key={row.player_id} className="match-referee-row">
+                      <div className="match-referee-player">
+                        <strong>
+                          #{row.player_number} {row.player?.first_name}{" "}
+                          {row.player?.last_name}
+                        </strong>
+
+                        <span>
+                          {row.existing_charge ? "Cargo creado" : "Sin cargo"}
+                        </span>
+                      </div>
+
+                      <div className="match-referee-row-side">
+                        {paymentStatus && (
+                          <span
+                            className={`status-badge ${paymentStatus.className}`}
+                          >
+                            {paymentStatus.label}
+                          </span>
+                        )}
+
+                        <strong>{formatCurrency(row.amount)}</strong>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+
+              <div className="match-referee-actions">
+                <button
+                  type="button"
+                  className="match-referee-recalculate"
+                  onClick={loadRefereePreview}
+                  disabled={loadingRefereePreview}
+                >
+                  {loadingRefereePreview
+                    ? "Calculando..."
+                    : "Recalcular distribución"}
+                </button>
+
+                <Button
+                  type="button"
+                  variant={hasGeneratedRefereeCharges ? "secondary" : "primary"}
+                  onClick={handleGenerateRefereeCharges}
+                  disabled={
+                    generatingRefereeCharges || !refereePreview.can_generate
+                  }
+                >
+                  {generatingRefereeCharges
+                    ? "Procesando..."
+                    : hasGeneratedRefereeCharges
+                    ? "Actualizar distribución"
+                    : "Generar cargos"}
+                </Button>
+
+                {hasGeneratedRefereeCharges && (
+                  <Button type="button" onClick={handleGoToRefereePayments}>
+                    Ver cargos en Pagos
+                    <ArrowRight size={17} />
+                  </Button>
+                )}
+              </div>
+            </>
+          )}
+        </Card>
+      )}
     </>
   );
 };

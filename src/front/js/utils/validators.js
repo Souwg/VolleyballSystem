@@ -339,3 +339,47 @@ export const validateForgotPassword = ({ email }) => {
 
   return errors;
 };
+
+export const validateTournament = ({
+  name,
+  start_date,
+  end_date,
+  default_referee_fee,
+}) => {
+  const errors = {};
+
+  const cleanName = name?.trim() || "";
+  const cleanStartDate = start_date?.trim() || "";
+  const cleanEndDate = end_date?.trim() || "";
+
+  if (!cleanName) {
+    errors.TOURNAMENT_NAME_REQUIRED = true;
+  }
+
+  if (!cleanStartDate) {
+    errors.TOURNAMENT_START_DATE_REQUIRED = true;
+  }
+
+  if (cleanStartDate && cleanEndDate) {
+    const parsedStartDate = new Date(`${cleanStartDate}T00:00:00`);
+    const parsedEndDate = new Date(`${cleanEndDate}T00:00:00`);
+
+    if (parsedEndDate < parsedStartDate) {
+      errors.INVALID_TOURNAMENT_DATE_RANGE = true;
+    }
+  }
+
+  if (
+    default_referee_fee !== "" &&
+    default_referee_fee !== null &&
+    default_referee_fee !== undefined
+  ) {
+    const parsedAmount = Number(default_referee_fee);
+
+    if (Number.isNaN(parsedAmount) || parsedAmount < 0) {
+      errors.INVALID_AMOUNT = true;
+    }
+  }
+
+  return errors;
+};

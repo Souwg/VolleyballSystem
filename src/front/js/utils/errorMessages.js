@@ -81,6 +81,30 @@ export const errorMessages = {
   TRAINING_NOT_FOUND: "Entrenamiento no encontrado",
   INVALID_ATTENDANCE_STATUS: "Estado de asistencia inválido",
 
+  // TOURNAMENTS
+  TOURNAMENT_NAME_REQUIRED: "Ingresa el nombre del torneo",
+  TOURNAMENT_START_DATE_REQUIRED: "Selecciona la fecha de inicio",
+  TOURNAMENT_ALREADY_EXISTS:
+    "Ya existe un torneo con ese nombre y fecha de inicio",
+  TOURNAMENT_NOT_FOUND: "Torneo no encontrado",
+  INVALID_TOURNAMENT_DATE_RANGE:
+    "La fecha de finalización no puede ser anterior a la fecha de inicio",
+  INVALID_TOURNAMENT_STATUS: "Estado de torneo inválido",
+  INVALID_AMOUNT: "Ingresa un monto válido",
+  TOURNAMENT_TEAM_NOT_FOUND: "Participación de torneo no encontrada",
+  TEAM_ALREADY_IN_TOURNAMENT: "Este equipo ya está inscrito en el torneo",
+  TOURNAMENT_NOT_ACTIVE: "El torneo no está activo",
+  TOURNAMENT_TEAM_NOT_ACTIVE: "La participación del equipo no está activa",
+  PLAYER_NOT_IN_TEAM: "Una o más deportistas no pertenecen a este equipo",
+  INVALID_TOURNAMENT_PLAYERS: "La selección de deportistas no es válida",
+  TOURNAMENT_PLAYERS_REQUIRED: "Debes inscribir al menos una deportista",
+  INVALID_TOURNAMENT_REGISTRATION_FEE:
+    "El costo de inscripción debe ser mayor que cero",
+  TOURNAMENT_REGISTRATION_CHARGES_LOCKED:
+    "No puedes modificar los cargos porque alguno ya fue pagado o tiene recibo",
+  TOURNAMENT_PLAYERS_FINANCIALLY_LOCKED:
+    "No puedes cambiar las deportistas porque existen pagos registrados",
+
   // MATCHES
   MATCH_NOT_FOUND: "Partido no encontrado",
   OPPONENT_NAME_REQUIRED: "Ingresa el rival",
@@ -132,6 +156,16 @@ export const errorMessages = {
   INVALID_BLOCK_STATS: "Los bloqueos no cuadran",
   INVALID_POSITION: "Posición inválida",
   POSITION_REQUIRED: "Define la posición de las jugadoras que van a jugar",
+
+  REFEREE_FEE_NOT_CONFIGURED:
+    "Este partido no tiene costo de arbitraje configurado",
+  INVALID_REFEREE_FEE: "El costo de arbitraje debe ser mayor que cero",
+  REFEREE_CHARGES_LOCKED:
+    "No puedes recalcular el arbitraje porque existen pagos registrados",
+  MATCH_ROSTER_FINANCIALLY_LOCKED:
+    "No puedes cambiar la convocatoria porque existen pagos de arbitraje registrados",
+  TOURNAMENT_TEAM_MISMATCH:
+    "El torneo seleccionado no corresponde al equipo del partido",
 
   // IMAGES
   IMAGE_TOO_LARGE: "La imagen es demasiado pesada",

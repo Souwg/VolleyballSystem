@@ -1,4 +1,4 @@
-import React, { useState, useContext } from "react";
+import React, { useState, useContext, useEffect } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { Context } from "../../store/appContext";
 
@@ -25,6 +25,33 @@ export const CreateMatch = () => {
   const [notes, setNotes] = useState("");
   const [errors, setErrors] = useState({});
   const [loading, setLoading] = useState(false);
+
+  const [tournamentEntries, setTournamentEntries] = useState([]);
+  const [tournamentTeamId, setTournamentTeamId] = useState("");
+  const [refereeFee, setRefereeFee] = useState("");
+  const [loadingTournaments, setLoadingTournaments] = useState(true);
+
+  useEffect(() => {
+    const loadTournamentEntries = async () => {
+      setLoadingTournaments(true);
+
+      const result = await actions.getTeamTournamentEntries(team_id);
+
+      if (result.ok) {
+        setTournamentEntries(result.data.tournament_entries || []);
+      } else {
+        setTournamentEntries([]);
+      }
+
+      setLoadingTournaments(false);
+    };
+
+    loadTournamentEntries();
+  }, [team_id]);
+
+  const selectedTournamentEntry = tournamentEntries.find(
+    (entry) => entry.id === tournamentTeamId,
+  );
 
   const clearFieldError = (errorCode) => {
     setErrors((prev) => ({
@@ -65,6 +92,8 @@ export const CreateMatch = () => {
       match_type: matchType,
       location: location.trim(),
       notes: notes.trim(),
+      tournament_team_id: tournamentTeamId || null,
+      referee_fee: refereeFee === "" ? null : refereeFee,
     });
 
     setLoading(false);
@@ -147,6 +176,91 @@ export const CreateMatch = () => {
               <option value="friendly">Amistoso</option>
               <option value="scrimmage">Scrimmage</option>
             </Select>
+          </FormField>
+
+          <FormField
+            label="Competencia"
+            helper="Opcional. Selecciona un torneo activo o deja el partido como independiente."
+            error={
+              errors.TOURNAMENT_TEAM_MISMATCH
+                ? errorMessages.TOURNAMENT_TEAM_MISMATCH
+                : errors.TOURNAMENT_TEAM_NOT_FOUND
+                ? errorMessages.TOURNAMENT_TEAM_NOT_FOUND
+                : null
+            }
+          >
+            <Select
+              value={tournamentTeamId}
+              disabled={loadingTournaments}
+              className={
+                errors.TOURNAMENT_TEAM_MISMATCH ||
+                errors.TOURNAMENT_TEAM_NOT_FOUND
+                  ? "input-error"
+                  : ""
+              }
+              onChange={(e) => {
+                const selectedId = e.target.value;
+
+                setTournamentTeamId(selectedId);
+
+                const selectedEntry = tournamentEntries.find(
+                  (entry) => entry.id === selectedId,
+                );
+
+                setRefereeFee(
+                  selectedEntry
+                    ? String(
+                        selectedEntry.tournament?.default_referee_fee ?? "",
+                      )
+                    : "",
+                );
+
+                clearFieldError("TOURNAMENT_TEAM_MISMATCH");
+                clearFieldError("TOURNAMENT_TEAM_NOT_FOUND");
+              }}
+            >
+              <option value="">Partido independiente</option>
+
+              {tournamentEntries.map((entry) => (
+                <option key={entry.id} value={entry.id}>
+                  {entry.tournament?.name || "Torneo"}
+                </option>
+              ))}
+            </Select>
+          </FormField>
+
+          <FormField
+            label="Costo de arbitraje"
+            helper={
+              tournamentTeamId
+                ? "Se tomó el monto predeterminado del torneo. Puedes modificarlo para este partido."
+                : "Opcional. Si lo defines, luego podrás dividirlo entre las convocadas."
+            }
+            error={
+              errors.INVALID_AMOUNT
+                ? errorMessages.INVALID_AMOUNT
+                : errors.INVALID_REFEREE_FEE
+                ? errorMessages.INVALID_REFEREE_FEE
+                : null
+            }
+          >
+            <Input
+              type="number"
+              min="0"
+              step="0.01"
+              value={refereeFee}
+              className={
+                errors.INVALID_AMOUNT || errors.INVALID_REFEREE_FEE
+                  ? "input-error"
+                  : ""
+              }
+              onChange={(e) => {
+                setRefereeFee(e.target.value);
+                clearFieldError("INVALID_AMOUNT");
+                clearFieldError("INVALID_REFEREE_FEE");
+              }}
+              placeholder="Ej: 25.00"
+            />
           </FormField>
 
           <FormField

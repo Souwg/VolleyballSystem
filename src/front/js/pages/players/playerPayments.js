@@ -113,7 +113,7 @@ export const PlayerPayments = () => {
   const [savingSettings, setSavingSettings] = useState(false);
   const [customEnrollmentFee, setCustomEnrollmentFee] = useState(false);
   const [customMonthlyFee, setCustomMonthlyFee] = useState(false);
-  const [visiblePayments, setVisiblePayments] = useState(6);
+  const [visiblePayments, setVisiblePayments] = useState(5);
   const [formErrors, setFormErrors] = useState({});
   const [showPaymentSettings, setShowPaymentSettings] = useState(false);
   const [registeringPaymentId, setRegisteringPaymentId] = useState(null);
@@ -871,7 +871,7 @@ export const PlayerPayments = () => {
               <Button
                 type="button"
                 variant="secondary"
-                onClick={() => setVisiblePayments((prev) => prev + 6)}
+                onClick={() => setVisiblePayments((prev) => prev + 5)}
               >
                 Ver más pagos
               </Button>

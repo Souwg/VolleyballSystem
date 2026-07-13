@@ -41,6 +41,13 @@ const getState = ({ getStore, getActions, setStore }) => {
       matches: [],
       clubMatches: [],
       matchTeam: null,
+      tournaments: [],
+      currentTournament: null,
+      tournamentTeams: [],
+      tournamentPlayers: [],
+      registrationChargesPreview: null,
+      refereeChargesPreview: null,
+      teamTournamentEntries: [],
     },
 
     actions: {
@@ -767,6 +774,20 @@ const getState = ({ getStore, getActions, setStore }) => {
         }
       },
 
+      getPlayerPerformance: async (playerId) => {
+        try {
+          const resp = await authFetch(`/api/players/${playerId}/performance`);
+
+          const result = await parseResponse(resp);
+
+          if (!result.ok) return result;
+
+          return successResponse(result.data);
+        } catch (error) {
+          return networkError("Error loading player performance:", error);
+        }
+      },
+
       getAllTrainings: async () => {
         try {
           const resp = await authFetch("/api/trainings");
@@ -784,7 +805,312 @@ const getState = ({ getStore, getActions, setStore }) => {
           return networkError("Error loading all trainings:", error);
         }
       },
+      getTournaments: async (filters = {}) => {
+        try {
+          const params = new URLSearchParams();
 
+          if (filters.status) {
+            params.append("status", filters.status);
+          }
+
+          const queryString = params.toString();
+
+          const endpoint = queryString
+            ? `/api/tournaments?${queryString}`
+            : "/api/tournaments";
+
+          const resp = await authFetch(endpoint);
+          const result = await parseResponse(resp);
+
+          if (!result.ok) return result;
+
+          setStore({
+            tournaments: result.data.tournaments || [],
+          });
+
+          return successResponse(result.data);
+        } catch (error) {
+          return networkError("Error loading tournaments:", error);
+        }
+      },
+
+      createTournament: async (tournamentData) => {
+        try {
+          const resp = await authFetch("/api/tournaments", {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+            },
+            body: JSON.stringify(tournamentData),
+          });
+
+          const result = await parseResponse(resp);
+
+          if (!result.ok) return result;
+
+          const actions = getActions();
+          await actions.getTournaments();
+
+          return successResponse(result.data);
+        } catch (error) {
+          return networkError("Error creating tournament:", error);
+        }
+      },
+
+      getTournamentDetail: async (tournamentId) => {
+        try {
+          const resp = await authFetch(`/api/tournaments/${tournamentId}`);
+          const result = await parseResponse(resp);
+
+          if (!result.ok) return result;
+
+          setStore({
+            currentTournament: result.data.tournament || null,
+            tournamentTeams: result.data.tournament?.teams || [],
+          });
+
+          return successResponse(result.data);
+        } catch (error) {
+          return networkError("Error loading tournament detail:", error);
+        }
+      },
+
+      updateTournament: async (tournamentId, tournamentData) => {
+        try {
+          const resp = await authFetch(`/api/tournaments/${tournamentId}`, {
+            method: "PUT",
+            headers: {
+              "Content-Type": "application/json",
+            },
+            body: JSON.stringify(tournamentData),
+          });
+
+          const result = await parseResponse(resp);
+
+          if (!result.ok) return result;
+
+          const actions = getActions();
+
+          await actions.getTournamentDetail(tournamentId);
+          await actions.getTournaments();
+
+          return successResponse(result.data);
+        } catch (error) {
+          return networkError("Error updating tournament:", error);
+        }
+      },
+
+      addTeamToTournament: async (tournamentId, teamData) => {
+        try {
+          const resp = await authFetch(
+            `/api/tournaments/${tournamentId}/teams`,
+            {
+              method: "POST",
+              headers: {
+                "Content-Type": "application/json",
+              },
+              body: JSON.stringify(teamData),
+            },
+          );
+
+          const result = await parseResponse(resp);
+
+          if (!result.ok) return result;
+
+          const actions = getActions();
+          await actions.getTournamentDetail(tournamentId);
+
+          return successResponse(result.data);
+        } catch (error) {
+          return networkError("Error adding team to tournament:", error);
+        }
+      },
+
+      getTournamentTeams: async (tournamentId) => {
+        try {
+          const resp = await authFetch(
+            `/api/tournaments/${tournamentId}/teams`,
+          );
+
+          const result = await parseResponse(resp);
+
+          if (!result.ok) return result;
+
+          setStore({
+            tournamentTeams: result.data.teams || [],
+          });
+
+          return successResponse(result.data);
+        } catch (error) {
+          return networkError("Error loading tournament teams:", error);
+        }
+      },
+
+      getTournamentTeamPlayers: async (tournamentTeamId) => {
+        try {
+          const resp = await authFetch(
+            `/api/tournament-teams/${tournamentTeamId}/players`,
+          );
+
+          const result = await parseResponse(resp);
+
+          if (!result.ok) return result;
+
+          setStore({
+            tournamentPlayers: result.data.players || [],
+          });
+
+          return successResponse(result.data);
+        } catch (error) {
+          return networkError("Error loading tournament players:", error);
+        }
+      },
+
+      updateTournamentTeamPlayers: async (tournamentTeamId, playerIds) => {
+        try {
+          const resp = await authFetch(
+            `/api/tournament-teams/${tournamentTeamId}/players`,
+            {
+              method: "PUT",
+              headers: {
+                "Content-Type": "application/json",
+              },
+              body: JSON.stringify({
+                player_ids: playerIds,
+              }),
+            },
+          );
+
+          const result = await parseResponse(resp);
+
+          if (!result.ok) return result;
+
+          const actions = getActions();
+          await actions.getTournamentTeamPlayers(tournamentTeamId);
+
+          return successResponse(result.data);
+        } catch (error) {
+          return networkError("Error updating tournament players:", error);
+        }
+      },
+
+      previewRegistrationCharges: async (tournamentTeamId) => {
+        try {
+          const resp = await authFetch(
+            `/api/tournament-teams/${tournamentTeamId}/registration-charges/preview`,
+          );
+
+          const result = await parseResponse(resp);
+
+          if (!result.ok) return result;
+
+          setStore({
+            registrationChargesPreview: result.data,
+          });
+
+          return successResponse(result.data);
+        } catch (error) {
+          return networkError(
+            "Error loading registration charges preview:",
+            error,
+          );
+        }
+      },
+
+      generateRegistrationCharges: async (tournamentTeamId) => {
+        try {
+          const resp = await authFetch(
+            `/api/tournament-teams/${tournamentTeamId}/registration-charges`,
+            {
+              method: "POST",
+            },
+          );
+
+          const result = await parseResponse(resp);
+
+          if (!result.ok) return result;
+
+          const actions = getActions();
+
+          await actions.previewRegistrationCharges(tournamentTeamId);
+
+          return successResponse(result.data);
+        } catch (error) {
+          return networkError("Error generating registration charges:", error);
+        }
+      },
+
+      getTeamTournamentEntries: async (teamId) => {
+        try {
+          const resp = await authFetch(
+            `/api/teams/${teamId}/tournament-entries`,
+          );
+
+          const result = await parseResponse(resp);
+
+          if (!result.ok) return result;
+
+          setStore({
+            teamTournamentEntries: result.data.tournament_entries || [],
+          });
+
+          return successResponse(result.data);
+        } catch (error) {
+          return networkError("Error loading team tournament entries:", error);
+        }
+      },
+
+      previewRegistrationCharges: async (tournamentTeamId) => {
+        try {
+          const resp = await authFetch(
+            `/api/tournament-teams/${tournamentTeamId}/registration-charges/preview`,
+          );
+
+          const result = await parseResponse(resp);
+
+          if (!result.ok) return result;
+
+          setStore({
+            registrationChargesPreview: result.data,
+          });
+
+          return successResponse(result.data);
+        } catch (error) {
+          return networkError(
+            "Error loading registration charges preview:",
+            error,
+          );
+        }
+      },
+
+      generateRegistrationCharges: async (tournamentTeamId) => {
+        try {
+          const resp = await authFetch(
+            `/api/tournament-teams/${tournamentTeamId}/registration-charges`,
+            {
+              method: "POST",
+            },
+          );
+
+          const result = await parseResponse(resp);
+
+          if (!result.ok) return result;
+
+          const actions = getActions();
+
+          await actions.previewRegistrationCharges(tournamentTeamId);
+
+          return successResponse(result.data);
+        } catch (error) {
+          return networkError("Error generating registration charges:", error);
+        }
+      },
+
+      clearRegistrationChargesPreview: () => {
+        setStore({
+          registrationChargesPreview: null,
+        });
+      },
       getClubMatches: async () => {
         try {
           const resp = await authFetch("/api/matches");
@@ -852,6 +1178,49 @@ const getState = ({ getStore, getActions, setStore }) => {
           return successResponse(result.data);
         } catch (error) {
           return networkError("Error loading match detail:", error);
+        }
+      },
+
+      previewRefereeCharges: async (matchId) => {
+        try {
+          const resp = await authFetch(
+            `/api/matches/${matchId}/referee-charges/preview`,
+          );
+
+          const result = await parseResponse(resp);
+
+          if (!result.ok) return result;
+
+          setStore({
+            refereeChargesPreview: result.data,
+          });
+
+          return successResponse(result.data);
+        } catch (error) {
+          return networkError("Error loading referee charges preview:", error);
+        }
+      },
+
+      generateRefereeCharges: async (matchId) => {
+        try {
+          const resp = await authFetch(
+            `/api/matches/${matchId}/referee-charges`,
+            {
+              method: "POST",
+            },
+          );
+
+          const result = await parseResponse(resp);
+
+          if (!result.ok) return result;
+
+          const actions = getActions();
+
+          await actions.previewRefereeCharges(matchId);
+
+          return successResponse(result.data);
+        } catch (error) {
+          return networkError("Error generating referee charges:", error);
         }
       },
 
