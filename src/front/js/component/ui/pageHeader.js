@@ -6,6 +6,7 @@ export const PageHeader = ({
   subtitle,
   actions,
   eyebrow,
+  badge,
   className = "",
   variant = "default",
   tone = "default",
@@ -39,25 +40,38 @@ export const PageHeader = ({
           </button>
         )}
 
-        {showAvatar ? (
-          <div className="page-header-avatar">
-            {avatar ? (
-              <img src={getAssetUrl(avatar)} alt={title} />
-            ) : (
-              <span>{getInitials(fallback)}</span>
+        <div
+          className={`page-header-main ${
+            showIcon ? "page-header-main-with-icon" : ""
+          } ${showAvatar ? "page-header-main-with-avatar" : ""}`}
+        >
+          {showAvatar ? (
+            <div className="page-header-avatar">
+              {avatar ? (
+                <img src={getAssetUrl(avatar)} alt={title} />
+              ) : (
+                <span>{getInitials(fallback)}</span>
+              )}
+            </div>
+          ) : showIcon ? (
+            <div className="page-header-icon">
+              <Icon size={22} strokeWidth={2.4} />
+            </div>
+          ) : null}
+
+          <div className="page-header-copy">
+            {(eyebrow || badge) && (
+              <div className="page-header-eyebrow-row">
+                {eyebrow && <span className="page-eyebrow">{eyebrow}</span>}
+                {badge}
+              </div>
             )}
-          </div>
-        ) : showIcon ? (
-          <div className="page-header-icon">
-            <Icon size={22} strokeWidth={2.4} />
-          </div>
-        ) : null}
 
-        {eyebrow && <span className="page-eyebrow">{eyebrow}</span>}
-
-        <div>
-          <h1>{title}</h1>
-          {subtitle && <p>{subtitle}</p>}
+            <div className="page-header-text">
+              <h1>{title}</h1>
+              {subtitle && <p>{subtitle}</p>}
+            </div>
+          </div>
         </div>
       </div>
 
