@@ -36,7 +36,7 @@ import { MatchSessions } from "./pages/matches/matchSessions";
 import { Matches } from "./pages/matches/matches";
 import { CreateMatch } from "./pages/matches/createMatch";
 import { MatchDetail } from "./pages/matches/matchDetail";
-import { LiveMatch } from "./pages/matches/liveMatch";
+import { LiveMatch } from "./pages/matches/LiveMatch";
 import { PlayerMatchStats } from "./pages/matches/playerMatchStats";
 import { MatchStatsAdjust } from "./pages/matches/matchStatsAdjust";
 import { ClubProfile } from "./pages/club/clubProfile";

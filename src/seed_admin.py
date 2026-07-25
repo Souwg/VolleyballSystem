@@ -1,12 +1,26 @@
+import os
+
 from src.app import app
 from src.api.models import db, User
 from src.api.extensions import bcrypt
 
 
 def seed_admin():
+    admin_email = os.getenv(
+        "ADMIN_EMAIL",
+        "admin@sportflow.club"
+    ).strip().lower()
+
+    admin_password = os.getenv("ADMIN_PASSWORD")
+
+    if not admin_password:
+        raise RuntimeError(
+            "La variable ADMIN_PASSWORD no está configurada."
+        )
+
     with app.app_context():
         existing = User.query.filter_by(
-            email="admin@system.com"
+            email=admin_email
         ).first()
 
         if existing:
@@ -15,9 +29,9 @@ def seed_admin():
 
         admin = User(
             full_name="System Admin",
-            email="admin@system.com",
+            email=admin_email,
             password=bcrypt.generate_password_hash(
-                "12345678"
+                admin_password
             ).decode("utf-8"),
             role="system_admin",
             first_login=False,
@@ -28,8 +42,7 @@ def seed_admin():
         db.session.commit()
 
         print("🔥 Admin creado")
-        print("email: admin@system.com")
-        print("password: 12345678")
+        print(f"email: {admin_email}")
 
 
 if __name__ == "__main__":
