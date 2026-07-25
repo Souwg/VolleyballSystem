@@ -17,3 +17,22 @@ ReactDOM.render(
   </ToastProvider>,
   document.querySelector("#app"),
 );
+
+if ("serviceWorker" in navigator) {
+  window.addEventListener("load", () => {
+    navigator.serviceWorker
+      .register("/service-worker.js")
+      .then((registration) => {
+        console.info(
+          "✅ Service worker registrado:",
+          registration.scope,
+        );
+      })
+      .catch((error) => {
+        console.error(
+          "❌ No se pudo registrar el service worker:",
+          error,
+        );
+      });
+  });
+}
