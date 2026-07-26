@@ -8,6 +8,7 @@ import { BackendURL } from "./component/backendURL";
 import { PublicRoute } from "./component/publicRoute";
 import { ProtectedRoute } from "./component/protectedRoute";
 import { OnboardingRoute } from "./component/onboardingRoute";
+import { SplashScreen } from "./component/splashScreen";
 
 import { Clients } from "./pages/admin/clients";
 import { Login } from "./pages/auth/login";
@@ -50,6 +51,10 @@ const Layout = () => {
 
   const [loadingSession, setLoadingSession] = useState(true);
 
+  const [showSplash, setShowSplash] = useState(() => {
+    return sessionStorage.getItem("sportflow_splash_seen") !== "true";
+  });
+
   useEffect(() => {
     const initSession = async () => {
       try {
@@ -72,10 +77,26 @@ const Layout = () => {
     initSession();
   }, []);
 
-  if (!process.env.BACKEND_URL || process.env.BACKEND_URL == "")
-    return <BackendURL />;
+  useEffect(() => {
+    if (!showSplash) return;
 
-  if (loadingSession) return null;
+    const splashTimer = window.setTimeout(() => {
+      sessionStorage.setItem("sportflow_splash_seen", "true");
+      setShowSplash(false);
+    }, 2500);
+
+    return () => {
+      window.clearTimeout(splashTimer);
+    };
+  }, [showSplash]);
+
+  if (!process.env.BACKEND_URL || process.env.BACKEND_URL == "") {
+    return <BackendURL />;
+  }
+
+  if (showSplash || loadingSession) {
+    return <SplashScreen />;
+  }
 
   return (
     <BrowserRouter basename={basename}>

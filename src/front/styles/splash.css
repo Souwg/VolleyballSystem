@@ -1,0 +1,167 @@
+.splash-screen {
+  position: fixed;
+  inset: 0;
+  z-index: 9999;
+
+  display: flex;
+  align-items: center;
+  justify-content: center;
+
+  min-height: 100vh;
+  padding: 24px;
+
+  background: #f8fafc;
+
+  animation: splash-fade-out 0.45s ease 2.05s forwards;
+}
+
+.splash-screen__content {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+
+  animation: splash-content-enter 0.65s ease both;
+}
+
+.splash-screen__isotype {
+  width: clamp(88px, 24vw, 122px);
+  height: auto;
+  object-fit: contain;
+
+  animation: splash-isotype-enter 0.7s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+.splash-screen__logo {
+  width: clamp(160px, 48vw, 220px);
+  height: auto;
+  object-fit: contain;
+
+  margin-top: 22px;
+
+  opacity: 0;
+  transform: translateY(8px);
+
+  animation: splash-logo-enter 0.5s ease 0.28s forwards;
+}
+
+.splash-screen__subtitle {
+  margin: 14px 0 0;
+
+  color: #64748b;
+  font-size: 14px;
+  font-weight: 500;
+  line-height: 1.5;
+  letter-spacing: 0.01em;
+
+  opacity: 0;
+  transform: translateY(6px);
+
+  animation: splash-subtitle-enter 0.45s ease 0.48s forwards;
+}
+
+.splash-screen__loader {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+
+  margin-top: 28px;
+
+  opacity: 0;
+
+  animation: splash-loader-enter 0.3s ease 0.65s forwards;
+}
+
+.splash-screen__loader span {
+  width: 7px;
+  height: 7px;
+
+  border-radius: 50%;
+  background: #1e3a8a;
+
+  animation: splash-dot 0.9s ease-in-out infinite;
+}
+
+.splash-screen__loader span:nth-child(2) {
+  animation-delay: 0.15s;
+}
+
+.splash-screen__loader span:nth-child(3) {
+  animation-delay: 0.3s;
+}
+
+@keyframes splash-content-enter {
+  from {
+    opacity: 0;
+  }
+
+  to {
+    opacity: 1;
+  }
+}
+
+@keyframes splash-isotype-enter {
+  from {
+    opacity: 0;
+    transform: scale(0.82);
+  }
+
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+@keyframes splash-logo-enter {
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes splash-subtitle-enter {
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes splash-loader-enter {
+  to {
+    opacity: 1;
+  }
+}
+
+@keyframes splash-dot {
+  0%,
+  100% {
+    opacity: 0.35;
+    transform: translateY(0);
+  }
+
+  50% {
+    opacity: 1;
+    transform: translateY(-4px);
+  }
+}
+
+@keyframes splash-fade-out {
+  to {
+    opacity: 0;
+    visibility: hidden;
+    pointer-events: none;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .splash-screen,
+  .splash-screen__content,
+  .splash-screen__isotype,
+  .splash-screen__logo,
+  .splash-screen__subtitle,
+  .splash-screen__loader,
+  .splash-screen__loader span {
+    animation: none;
+  }
+}
