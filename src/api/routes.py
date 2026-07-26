@@ -7,7 +7,10 @@ import uuid
 import calendar
 import secrets
 import hashlib
-from src.api.email_service import send_password_reset_email
+from src.api.email_service import (
+    send_password_reset_email,
+    send_welcome_email
+)
 from src.api.receipt_service import (
     generate_receipt_number,
     generate_payment_receipt_pdf
@@ -931,14 +934,49 @@ def create_client():
 
     db.session.commit()
 
+    frontend_url = os.getenv(
+        "FRONTEND_URL",
+        "http://localhost:3000"
+    ).rstrip("/")
+
+    login_url = f"{frontend_url}/login"
+
+    email_sent = True
+    email_warning = None
+
+    try:
+        send_welcome_email(
+            recipient_email=new_user.email,
+            recipient_name=new_user.full_name,
+            club_name=club.name,
+            temporary_password=temp_password,
+            login_url=login_url
+        )
+
+    except Exception as error:
+        email_sent = False
+        email_warning = (
+            "El cliente fue creado, pero no se pudo enviar "
+            "el correo de bienvenida."
+        )
+
+        current_app.logger.exception(
+            "No se pudo enviar el correo de bienvenida "
+            "al cliente %s",
+            new_user.email,
+            exc_info=error
+        )
+
     return jsonify({
-    "message": "Cliente creado exitosamente",
-    "credentials": {
-        "email": email,
-        "temporary_password": temp_password
-    },
-    "user": new_user.serialize()
-}), 201
+        "message": "Cliente creado exitosamente",
+        "email_sent": email_sent,
+        "email_warning": email_warning,
+        "credentials": {
+            "email": email,
+            "temporary_password": temp_password
+        },
+        "user": new_user.serialize()
+    }), 201
 
 @api.route('/admin/clients', methods=['GET'])
 @jwt_required()

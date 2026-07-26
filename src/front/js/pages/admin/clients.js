@@ -71,6 +71,8 @@ export const Clients = () => {
     setCreatedCredentials({
       email: credentials.email,
       password: credentials.temporary_password,
+      emailSent: result.data.email_sent,
+      emailWarning: result.data.email_warning,
     });
 
     setTimeout(() => {
@@ -105,9 +107,16 @@ export const Clients = () => {
         <div className="card success-card">
           <h3>✅ Cliente creado correctamente</h3>
 
-          <p className="text-muted">
-            Envía estas credenciales al cliente para que acceda al sistema
-          </p>
+          {createdCredentials.emailSent ? (
+            <p className="text-muted">
+              El correo de bienvenida fue enviado automáticamente al cliente.
+            </p>
+          ) : (
+            <p className="text-muted">
+              {createdCredentials.emailWarning ||
+                "No se pudo enviar el correo. Comparte las credenciales manualmente."}
+            </p>
+          )}
 
           <div className="credentials-box">
             <div className="credential-item">
@@ -139,7 +148,17 @@ export const Clients = () => {
             <Button
               onClick={() =>
                 copyToClipboard(
-                  `Email: ${createdCredentials.email}\nPassword: ${createdCredentials.password}`,
+                  `¡Bienvenido a SportFlow!
+
+                    Tu cuenta ya está lista.
+
+                    Correo: ${createdCredentials.email}
+                    Contraseña temporal: ${createdCredentials.password}
+
+                    Ingresa en:
+                    https://sportflow.club/login
+
+                    En tu primer acceso deberás crear una nueva contraseña.`,
                 )
               }
             >
