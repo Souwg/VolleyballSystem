@@ -5,9 +5,14 @@ import sportflowLogo from "../../img/sportflow-logo.svg";
 
 import "../../styles/splash.css";
 
-export const SplashScreen = () => {
+export const SplashScreen = ({ isLeaving = false }) => {
   return (
-    <div className="splash-screen" aria-label="Cargando SportFlow">
+    <div
+      className={`splash-screen ${isLeaving ? "splash-screen--leaving" : ""}`}
+      role="status"
+      aria-live="polite"
+      aria-label="Cargando SportFlow"
+    >
       <div className="splash-screen__content">
         <img src={sportflowIsotype} alt="" className="splash-screen__isotype" />
 

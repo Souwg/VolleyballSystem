@@ -11,6 +11,16 @@
   padding: 24px;
 
   background: #f8fafc;
+  opacity: 1;
+  visibility: visible;
+
+  transition: opacity 0.45s ease, visibility 0.45s ease;
+}
+
+.splash-screen--leaving {
+  opacity: 0;
+  visibility: hidden;
+  pointer-events: none;
 }
 
 .splash-screen__content {

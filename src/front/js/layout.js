@@ -54,6 +54,7 @@ const Layout = () => {
   const [showSplash, setShowSplash] = useState(() => {
     return sessionStorage.getItem("sportflow_splash_seen") !== "true";
   });
+  const [isSplashLeaving, setIsSplashLeaving] = useState(false);
 
   useEffect(() => {
     const initSession = async () => {
@@ -80,13 +81,18 @@ const Layout = () => {
   useEffect(() => {
     if (!showSplash) return;
 
-    const splashTimer = window.setTimeout(() => {
+    const leaveTimer = window.setTimeout(() => {
+      setIsSplashLeaving(true);
+    }, 2050);
+
+    const removeTimer = window.setTimeout(() => {
       sessionStorage.setItem("sportflow_splash_seen", "true");
       setShowSplash(false);
     }, 2500);
 
     return () => {
-      window.clearTimeout(splashTimer);
+      window.clearTimeout(leaveTimer);
+      window.clearTimeout(removeTimer);
     };
   }, [showSplash]);
 
@@ -94,125 +100,131 @@ const Layout = () => {
     return <BackendURL />;
   }
 
-  if (showSplash || loadingSession) {
+  if (loadingSession) {
     return <SplashScreen />;
   }
 
   return (
-    <BrowserRouter basename={basename}>
-      <ScrollToTop>
-        <Routes>
-          <Route
-            path="/login"
-            element={
-              <PublicRoute>
-                <Login />
-              </PublicRoute>
-            }
-          />
-          <Route
-            path="/forgot-password"
-            element={
-              <PublicRoute>
-                <ForgotPassword />
-              </PublicRoute>
-            }
-          />
+    <>
+      <BrowserRouter basename={basename}>
+        <ScrollToTop>
+          <Routes>
+            <Route
+              path="/login"
+              element={
+                <PublicRoute>
+                  <Login />
+                </PublicRoute>
+              }
+            />
+            <Route
+              path="/forgot-password"
+              element={
+                <PublicRoute>
+                  <ForgotPassword />
+                </PublicRoute>
+              }
+            />
 
-          <Route
-            path="/reset-password"
-            element={
-              <PublicRoute>
-                <ResetPassword />
-              </PublicRoute>
-            }
-          />
-          <Route element={<ProtectedRoute />}>
-            <Route element={<AdminShell />}>
-              <Route path="/admin/clients" element={<Clients />} />
+            <Route
+              path="/reset-password"
+              element={
+                <PublicRoute>
+                  <ResetPassword />
+                </PublicRoute>
+              }
+            />
+            <Route element={<ProtectedRoute />}>
+              <Route element={<AdminShell />}>
+                <Route path="/admin/clients" element={<Clients />} />
+              </Route>
             </Route>
-          </Route>
 
-          <Route element={<ProtectedRoute />}>
-            <Route element={<AppShell />}>
-              <Route path="/dashboard" element={<Dashboard />} />
-              <Route path="/club/profile" element={<ClubProfile />} />
-              <Route path="/payments" element={<Payments />} />
-              <Route path="/categories" element={<Categories />} />
-              <Route
-                path="/categories/:category_id"
-                element={<CategoryDetail />}
-              />
-              <Route path="/teams/:team_id" element={<TeamDetail />} />
-              <Route path="/trainings" element={<Trainings />} />
-              <Route
-                path="/teams/:team_id/trainings"
-                element={<TeamTrainings />}
-              />
-              <Route
-                path="/trainings/:training_id"
-                element={<TrainingDetail />}
-              />
-              <Route path="/trainings/new" element={<CreateTraining />} />
-              <Route
-                path="/teams/:team_id/trainings/new"
-                element={<CreateTraining />}
-              />
-              <Route path="/matches" element={<Matches />} />
-              <Route path="/tournaments" element={<Tournaments />} />
-              <Route
-                path="/tournaments/:tournament_id"
-                element={<TournamentDetail />}
-              />
-              <Route
-                path="/tournament-teams/:tournament_team_id"
-                element={<TournamentTeamDetail />}
-              />
-              <Route
-                path="/teams/:team_id/matches"
-                element={<MatchSessions />}
-              />
-              <Route
-                path="/teams/:team_id/matches/new"
-                element={<CreateMatch />}
-              />
+            <Route element={<ProtectedRoute />}>
+              <Route element={<AppShell />}>
+                <Route path="/dashboard" element={<Dashboard />} />
+                <Route path="/club/profile" element={<ClubProfile />} />
+                <Route path="/payments" element={<Payments />} />
+                <Route path="/categories" element={<Categories />} />
+                <Route
+                  path="/categories/:category_id"
+                  element={<CategoryDetail />}
+                />
+                <Route path="/teams/:team_id" element={<TeamDetail />} />
+                <Route path="/trainings" element={<Trainings />} />
+                <Route
+                  path="/teams/:team_id/trainings"
+                  element={<TeamTrainings />}
+                />
+                <Route
+                  path="/trainings/:training_id"
+                  element={<TrainingDetail />}
+                />
+                <Route path="/trainings/new" element={<CreateTraining />} />
+                <Route
+                  path="/teams/:team_id/trainings/new"
+                  element={<CreateTraining />}
+                />
+                <Route path="/matches" element={<Matches />} />
+                <Route path="/tournaments" element={<Tournaments />} />
+                <Route
+                  path="/tournaments/:tournament_id"
+                  element={<TournamentDetail />}
+                />
+                <Route
+                  path="/tournament-teams/:tournament_team_id"
+                  element={<TournamentTeamDetail />}
+                />
+                <Route
+                  path="/teams/:team_id/matches"
+                  element={<MatchSessions />}
+                />
+                <Route
+                  path="/teams/:team_id/matches/new"
+                  element={<CreateMatch />}
+                />
 
-              <Route path="/matches/:match_id" element={<MatchDetail />} />
-              <Route path="/matches/:match_id/live" element={<LiveMatch />} />
-              <Route
-                path="/matches/:match_id/stats"
-                element={<MatchStatsAdjust />}
-              />
-              <Route
-                path="/match-players/:match_player_id/stats"
-                element={<PlayerMatchStats />}
-              />
-              <Route path="/players" element={<Players />} />
-              <Route path="/players/:player_id/edit" element={<EditPlayer />} />
-              <Route
-                path="/players/:player_id/payments"
-                element={<PlayerPayments />}
-              />
-              <Route path="/players/:player_id" element={<PlayerDetail />} />
+                <Route path="/matches/:match_id" element={<MatchDetail />} />
+                <Route path="/matches/:match_id/live" element={<LiveMatch />} />
+                <Route
+                  path="/matches/:match_id/stats"
+                  element={<MatchStatsAdjust />}
+                />
+                <Route
+                  path="/match-players/:match_player_id/stats"
+                  element={<PlayerMatchStats />}
+                />
+                <Route path="/players" element={<Players />} />
+                <Route
+                  path="/players/:player_id/edit"
+                  element={<EditPlayer />}
+                />
+                <Route
+                  path="/players/:player_id/payments"
+                  element={<PlayerPayments />}
+                />
+                <Route path="/players/:player_id" element={<PlayerDetail />} />
+              </Route>
             </Route>
-          </Route>
 
-          <Route element={<ProtectedRoute allowFirstLogin={true} />}>
-            <Route path="/set-password" element={<SetPassword />} />
-          </Route>
-          <Route
-            path="/onboarding"
-            element={
-              <OnboardingRoute>
-                <Onboarding />
-              </OnboardingRoute>
-            }
-          />
-          <Route path="/" element={<RoleRedirect />} />
-          <Route path="*" element={<h1>Not found!</h1>} />
-        </Routes>
-      </ScrollToTop>
-    </BrowserRouter>
+            <Route element={<ProtectedRoute allowFirstLogin={true} />}>
+              <Route path="/set-password" element={<SetPassword />} />
+            </Route>
+            <Route
+              path="/onboarding"
+              element={
+                <OnboardingRoute>
+                  <Onboarding />
+                </OnboardingRoute>
+              }
+            />
+            <Route path="/" element={<RoleRedirect />} />
+            <Route path="*" element={<h1>Not found!</h1>} />
+          </Routes>
+        </ScrollToTop>
+      </BrowserRouter>
+      {showSplash && <SplashScreen isLeaving={isSplashLeaving} />}
+    </>
   );
 };
 
