@@ -719,6 +719,40 @@ const getState = ({ getStore, getActions, setStore }) => {
         }
       },
 
+      getTrainingDetail: async (trainingId) => {
+        try {
+          const resp = await authFetch(`/api/trainings/${trainingId}`);
+
+          const result = await parseResponse(resp);
+
+          if (!result.ok) return result;
+
+          return successResponse(result.data);
+        } catch (error) {
+          return networkError("Error loading training detail:", error);
+        }
+      },
+
+      updateTraining: async (trainingId, trainingData) => {
+        try {
+          const resp = await authFetch(`/api/trainings/${trainingId}`, {
+            method: "PUT",
+            headers: {
+              "Content-Type": "application/json",
+            },
+            body: JSON.stringify(trainingData),
+          });
+
+          const result = await parseResponse(resp);
+
+          if (!result.ok) return result;
+
+          return successResponse(result.data);
+        } catch (error) {
+          return networkError("Error updating training:", error);
+        }
+      },
+
       saveAttendance: async (trainingId, attendanceList) => {
         try {
           const resp = await authFetch(

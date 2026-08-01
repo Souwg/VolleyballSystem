@@ -211,18 +211,41 @@ export const validatePlayerAssignment = ({
   return errors;
 };
 
-export const validateTraining = ({ team_id, date, location }) => {
+export const validateTraining = ({
+  team_id,
+  date,
+  start_time,
+  end_time,
+  location,
+}) => {
   const errors = {};
+
+  const cleanDate = date?.trim() || "";
+  const cleanStartTime = start_time?.trim() || "";
+  const cleanEndTime = end_time?.trim() || "";
+  const cleanLocation = location?.trim() || "";
 
   if (!team_id) {
     errors.TEAM_ID_REQUIRED = true;
   }
 
-  if (!date?.trim()) {
+  if (!cleanDate) {
     errors.TRAINING_DATE_REQUIRED = true;
   }
 
-  if (!location?.trim()) {
+  if (!cleanStartTime) {
+    errors.TRAINING_START_TIME_REQUIRED = true;
+  }
+
+  if (!cleanEndTime) {
+    errors.TRAINING_END_TIME_REQUIRED = true;
+  }
+
+  if (cleanStartTime && cleanEndTime && cleanEndTime <= cleanStartTime) {
+    errors.INVALID_TRAINING_TIME_RANGE = true;
+  }
+
+  if (!cleanLocation) {
     errors.TRAINING_LOCATION_REQUIRED = true;
   }
 

@@ -16,6 +16,8 @@ export const CreateTraining = () => {
   const { team_id } = useParams();
 
   const [date, setDate] = useState("");
+  const [startTime, setStartTime] = useState("");
+  const [endTime, setEndTime] = useState("");
   const [location, setLocation] = useState("");
   const [selectedTeam, setSelectedTeam] = useState(team_id || "");
   const [loading, setLoading] = useState(false);
@@ -40,6 +42,8 @@ export const CreateTraining = () => {
     const newErrors = validateTraining({
       team_id: selectedTeam,
       date,
+      start_time: startTime,
+      end_time: endTime,
       location,
     });
 
@@ -53,6 +57,8 @@ export const CreateTraining = () => {
     const result = await actions.createTraining({
       team_id: selectedTeam,
       date: date.trim(),
+      start_time: startTime.trim(),
+      end_time: endTime.trim(),
       location: location.trim(),
     });
 
@@ -147,6 +153,81 @@ export const CreateTraining = () => {
               }}
             />
           </FormField>
+
+          <div className="training-time-grid">
+            <FormField
+              label="Hora de inicio"
+              error={
+                errors.TRAINING_START_TIME_REQUIRED
+                  ? errorMessages.TRAINING_START_TIME_REQUIRED
+                  : null
+              }
+            >
+              <Input
+                type="time"
+                value={startTime}
+                className={
+                  errors.TRAINING_START_TIME_REQUIRED ||
+                  errors.INVALID_TRAINING_TIME_RANGE
+                    ? "input-error"
+                    : ""
+                }
+                onChange={(e) => {
+                  setStartTime(e.target.value);
+
+                  setErrors((prev) => ({
+                    ...prev,
+                    TRAINING_START_TIME_REQUIRED: false,
+                    INVALID_TIME_FORMAT: false,
+                    INVALID_TRAINING_TIME_RANGE: false,
+                    TEAM_NOT_FOUND: false,
+                    FORBIDDEN: false,
+                    CLUB_REQUIRED: false,
+                    SESSION_EXPIRED: false,
+                    NETWORK_ERROR: false,
+                  }));
+                }}
+              />
+            </FormField>
+
+            <FormField
+              label="Hora de finalización"
+              error={
+                errors.TRAINING_END_TIME_REQUIRED
+                  ? errorMessages.TRAINING_END_TIME_REQUIRED
+                  : errors.INVALID_TRAINING_TIME_RANGE
+                  ? errorMessages.INVALID_TRAINING_TIME_RANGE
+                  : null
+              }
+            >
+              <Input
+                type="time"
+                value={endTime}
+                className={
+                  errors.TRAINING_END_TIME_REQUIRED ||
+                  errors.INVALID_TRAINING_TIME_RANGE
+                    ? "input-error"
+                    : ""
+                }
+                onChange={(e) => {
+                  setEndTime(e.target.value);
+
+                  setErrors((prev) => ({
+                    ...prev,
+                    TRAINING_END_TIME_REQUIRED: false,
+                    INVALID_TIME_FORMAT: false,
+                    INVALID_TRAINING_TIME_RANGE: false,
+                    TEAM_NOT_FOUND: false,
+                    FORBIDDEN: false,
+                    CLUB_REQUIRED: false,
+                    SESSION_EXPIRED: false,
+                    NETWORK_ERROR: false,
+                  }));
+                }}
+              />
+            </FormField>
+          </div>
+
           <FormField
             label="Ubicación"
             helper="Ej: Cancha central, Gimnasio municipal, Colegio..."
@@ -175,13 +256,16 @@ export const CreateTraining = () => {
               }}
             />
           </FormField>
-          {(errors.TEAM_NOT_FOUND ||
+          {(errors.INVALID_TIME_FORMAT ||
+            errors.TEAM_NOT_FOUND ||
             errors.FORBIDDEN ||
             errors.CLUB_REQUIRED ||
             errors.SESSION_EXPIRED ||
             errors.NETWORK_ERROR) && (
             <p className="form-error">
-              {errors.TEAM_NOT_FOUND
+              {errors.INVALID_TIME_FORMAT
+                ? errorMessages.INVALID_TIME_FORMAT
+                : errors.TEAM_NOT_FOUND
                 ? errorMessages.TEAM_NOT_FOUND
                 : errors.FORBIDDEN
                 ? errorMessages.FORBIDDEN

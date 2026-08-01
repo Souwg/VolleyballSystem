@@ -76,6 +76,11 @@ export const errorMessages = {
 
   // TRAININGS / ATTENDANCE
   TRAINING_DATE_REQUIRED: "Selecciona una fecha",
+  TRAINING_START_TIME_REQUIRED: "Selecciona la hora de inicio",
+  TRAINING_END_TIME_REQUIRED: "Selecciona la hora de finalización",
+  INVALID_TIME_FORMAT: "El formato de la hora no es válido",
+  INVALID_TRAINING_TIME_RANGE:
+    "La hora de finalización debe ser posterior a la hora de inicio",
   TRAINING_LOCATION_REQUIRED: "La ubicación es obligatoria",
   ATTENDANCE_REQUIRED: "Debes marcar al menos una asistencia.",
   TRAINING_NOT_FOUND: "Entrenamiento no encontrado",

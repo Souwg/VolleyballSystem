@@ -16,6 +16,23 @@ const formatDate = (date) =>
     year: "numeric",
   });
 
+const formatTime = (time) => {
+  if (!time) return "Sin horario";
+
+  const [hours, minutes] = time.slice(0, 5).split(":");
+
+  return new Date(
+    2000,
+    0,
+    1,
+    Number(hours),
+    Number(minutes),
+  ).toLocaleTimeString("es-ES", {
+    hour: "numeric",
+    minute: "2-digit",
+  });
+};
+
 export const Trainings = () => {
   const { store, actions } = useContext(Context);
   const navigate = useNavigate();
@@ -86,6 +103,13 @@ export const Trainings = () => {
                     </span>
 
                     <h3>{formatDate(training.date)}</h3>
+
+                    {training.start_time && training.end_time && (
+                      <p className="training-card-time">
+                        {formatTime(training.start_time)} –{" "}
+                        {formatTime(training.end_time)}
+                      </p>
+                    )}
 
                     <p>{training.location || "Sin ubicación"}</p>
                   </div>

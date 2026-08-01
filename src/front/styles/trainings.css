@@ -69,3 +69,14 @@
   font-size: var(--font-size-lg);
   font-weight: var(--font-weight-bold);
 }
+.training-time-grid {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 12px;
+}
+
+@media (min-width: 640px) {
+  .training-time-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}

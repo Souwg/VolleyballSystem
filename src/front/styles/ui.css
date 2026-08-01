@@ -460,7 +460,8 @@
   font-size: 16px;
 }
 
-input[type="date"] {
+input[type="date"],
+input[type="time"] {
   -webkit-appearance: none;
   appearance: none;
   min-height: 46px;

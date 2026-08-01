@@ -4213,6 +4213,8 @@ def create_training():
 
     team_id = body.get("team_id")
     date = body.get("date")
+    start_time = body.get("start_time")
+    end_time = body.get("end_time")
     location = body.get("location")
 
     # ✅ VALIDACIONES VAN AQUÍ
@@ -4230,6 +4232,20 @@ def create_training():
             400
         )
 
+    if not start_time:
+        return error_response(
+            "La hora de inicio es obligatoria",
+            "TRAINING_START_TIME_REQUIRED",
+            400
+        )
+
+    if not end_time:
+        return error_response(
+            "La hora de finalización es obligatoria",
+            "TRAINING_END_TIME_REQUIRED",
+            400
+        )
+
     if not location or not str(location).strip():
         return error_response(
             "La ubicación del entrenamiento es obligatoria",
@@ -4243,6 +4259,31 @@ def create_training():
         return error_response(
             "Formato de fecha inválido. Usa YYYY-MM-DD",
             "INVALID_DATE_FORMAT",
+            400
+        )
+    
+    try:
+        parsed_start_time = datetime.strptime(
+            start_time,
+            "%H:%M"
+        ).time()
+
+        parsed_end_time = datetime.strptime(
+            end_time,
+            "%H:%M"
+        ).time()
+
+    except (ValueError, TypeError):
+        return error_response(
+            "Formato de hora inválido. Usa HH:MM",
+            "INVALID_TIME_FORMAT",
+            400
+        )
+
+    if parsed_end_time <= parsed_start_time:
+        return error_response(
+            "La hora de finalización debe ser posterior a la hora de inicio",
+            "INVALID_TRAINING_TIME_RANGE",
             400
         )
 
@@ -4267,6 +4308,8 @@ def create_training():
     training = TrainingSession(
         team_id=team.id,
         date=parsed_date,
+        start_time=parsed_start_time,
+        end_time=parsed_end_time,
         location=location,
         created_by=user.id
     )
@@ -4292,6 +4335,190 @@ def create_training():
         "message": "Entrenamiento creado",
         "training": training.serialize()
     }), 201
+
+@api.route("/trainings/<string:training_id>", methods=["GET"])
+@jwt_required()
+def get_training_detail(training_id):
+
+    user = get_current_user()
+
+    if not user.club_id:
+        return error_response(
+            "El usuario no pertenece a ningún club",
+            "CLUB_REQUIRED",
+            400
+        )
+
+    if user.role not in ["club_owner", "coach"]:
+        return error_response(
+            "No tienes permisos para ver entrenamientos",
+            "FORBIDDEN",
+            403
+        )
+
+    training = TrainingSession.query.get(training_id)
+
+    if not training:
+        return error_response(
+            "Entrenamiento no encontrado",
+            "TRAINING_NOT_FOUND",
+            404
+        )
+
+    team = Team.query.get(training.team_id)
+
+    if not team or team.club_id != user.club_id:
+        return error_response(
+            "No tienes acceso a este entrenamiento",
+            "FORBIDDEN",
+            403
+        )
+
+    return jsonify({
+        "training": {
+            **training.serialize(),
+            "team_name": team.name,
+            "team_gender": team.gender,
+            "category_id": team.category_id,
+            "category_name": (
+                team.category.name
+                if team.category
+                else None
+            )
+        }
+    }), 200
+
+@api.route("/trainings/<string:training_id>", methods=["PUT"])
+@jwt_required()
+def update_training(training_id):
+
+    user = get_current_user()
+
+    if not user.club_id:
+        return error_response(
+            "El usuario no pertenece a ningún club",
+            "CLUB_REQUIRED",
+            400
+        )
+
+    if user.role not in ["club_owner", "coach"]:
+        return error_response(
+            "No tienes permisos para editar entrenamientos",
+            "FORBIDDEN",
+            403
+        )
+
+    training = TrainingSession.query.get(training_id)
+
+    if not training:
+        return error_response(
+            "Entrenamiento no encontrado",
+            "TRAINING_NOT_FOUND",
+            404
+        )
+
+    team = Team.query.get(training.team_id)
+
+    if not team or team.club_id != user.club_id:
+        return error_response(
+            "No tienes acceso a este entrenamiento",
+            "FORBIDDEN",
+            403
+        )
+
+    body = request.get_json() or {}
+
+    date = body.get("date")
+    start_time = body.get("start_time")
+    end_time = body.get("end_time")
+    location = body.get("location")
+
+    if not date:
+        return error_response(
+            "La fecha del entrenamiento es obligatoria",
+            "TRAINING_DATE_REQUIRED",
+            400
+        )
+
+    if not start_time:
+        return error_response(
+            "La hora de inicio es obligatoria",
+            "TRAINING_START_TIME_REQUIRED",
+            400
+        )
+
+    if not end_time:
+        return error_response(
+            "La hora de finalización es obligatoria",
+            "TRAINING_END_TIME_REQUIRED",
+            400
+        )
+
+    if not location or not str(location).strip():
+        return error_response(
+            "La ubicación del entrenamiento es obligatoria",
+            "TRAINING_LOCATION_REQUIRED",
+            400
+        )
+    try:
+        parsed_date = datetime.strptime(
+            date,
+            "%Y-%m-%d"
+        ).date()
+
+    except (ValueError, TypeError):
+        return error_response(
+            "Formato de fecha inválido. Usa YYYY-MM-DD",
+            "INVALID_DATE_FORMAT",
+            400
+        )
+
+    try:
+        parsed_start_time = datetime.strptime(
+            start_time,
+            "%H:%M"
+        ).time()
+
+        parsed_end_time = datetime.strptime(
+            end_time,
+            "%H:%M"
+        ).time()
+
+    except (ValueError, TypeError):
+        return error_response(
+            "Formato de hora inválido. Usa HH:MM",
+            "INVALID_TIME_FORMAT",
+            400
+        )
+
+    if parsed_end_time <= parsed_start_time:
+        return error_response(
+            "La hora de finalización debe ser posterior a la hora de inicio",
+            "INVALID_TRAINING_TIME_RANGE",
+            400
+        )
+
+    training.date = parsed_date
+    training.start_time = parsed_start_time
+    training.end_time = parsed_end_time
+    training.location = str(location).strip()
+
+    db.session.commit()
+
+    return jsonify({
+        "message": "Entrenamiento actualizado correctamente",
+        "training": {
+            **training.serialize(),
+            "team_name": team.name,
+            "team_gender": team.gender,
+            "category_id": team.category_id,
+            "category_name": (
+                team.category.name
+                if team.category
+                else None
+            )
+        }
+    }), 200
 
 @api.route("/teams/<string:team_id>/trainings", methods=["GET"])
 @jwt_required()
