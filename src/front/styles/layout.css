@@ -98,12 +98,14 @@
 
 .sidebar-club-info strong {
   display: -webkit-box;
+
   -webkit-line-clamp: 2;
+  line-clamp: 2;
+
   -webkit-box-orient: vertical;
-
   overflow: hidden;
-  line-height: 1.15;
 
+  line-height: 1.15;
   font-size: var(--font-size-sm);
   font-weight: var(--font-weight-bold);
   color: var(--color-text);
