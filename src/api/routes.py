@@ -4305,6 +4305,17 @@ def create_training():
             403
         )
 
+    current_roster = TeamPlayer.query.filter_by(
+        team_id=team.id
+    ).all()
+
+    if not current_roster:
+        return error_response(
+            "El equipo debe tener al menos un deportista para crear un entrenamiento",
+            "TEAM_HAS_NO_PLAYERS",
+            409
+        )
+
     training = TrainingSession(
         team_id=team.id,
         date=parsed_date,
@@ -4316,10 +4327,6 @@ def create_training():
 
     db.session.add(training)
     db.session.flush()
-
-    current_roster = TeamPlayer.query.filter_by(
-        team_id=team.id
-    ).all()
 
     for member in current_roster:
         snapshot = TrainingPlayer(

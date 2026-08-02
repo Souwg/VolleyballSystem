@@ -85,6 +85,8 @@ export const errorMessages = {
   ATTENDANCE_REQUIRED: "Debes marcar al menos una asistencia.",
   TRAINING_NOT_FOUND: "Entrenamiento no encontrado",
   INVALID_ATTENDANCE_STATUS: "Estado de asistencia inválido",
+  TEAM_HAS_NO_PLAYERS:
+    "Agrega al menos un deportista al equipo antes de crear un entrenamiento.",
 
   // TOURNAMENTS
   TOURNAMENT_NAME_REQUIRED: "Ingresa el nombre del torneo",
