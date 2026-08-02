@@ -284,7 +284,7 @@ export const TrainingDetail = () => {
     return <p>Cargando asistencia...</p>;
   }
   return (
-    <div className="training-detail-page">
+    <>
       <PageHeader
         variant="detail"
         eyebrow="Entrenamiento"
@@ -292,264 +292,267 @@ export const TrainingDetail = () => {
         subtitle="Marca la asistencia de los deportistas convocados a esta sesión."
         onBack={() => navigate("/trainings")}
       />
+      <div className="training-detail-page">
+        <Card className="training-info-card">
+          <div className="training-info-header">
+            <div>
+              <span className="training-info-eyebrow">
+                {training?.category_name || "Entrenamiento"}
+              </span>
 
-      <Card className="training-info-card">
-        <div className="training-info-header">
-          <div>
-            <span className="training-info-eyebrow">
-              {training?.category_name || "Entrenamiento"}
-            </span>
-
-            <h3>{training?.team_name || "Entrenamiento"}</h3>
-          </div>
-
-          {!editingTraining && training && (
-            <button
-              type="button"
-              className="training-info-edit-button"
-              onClick={() => {
-                setErrors({});
-                setEditingTraining(true);
-              }}
-              aria-label="Editar información del entrenamiento"
-            >
-              <Pencil size={17} />
-            </button>
-          )}
-        </div>
-
-        {editingTraining ? (
-          <div className="training-info-form">
-            <FormField
-              label="Fecha"
-              error={
-                errors.TRAINING_DATE_REQUIRED
-                  ? errorMessages.TRAINING_DATE_REQUIRED
-                  : null
-              }
-            >
-              <Input
-                type="date"
-                value={trainingForm.date}
-                className={errors.TRAINING_DATE_REQUIRED ? "input-error" : ""}
-                onChange={(event) =>
-                  handleTrainingFormChange("date", event.target.value)
-                }
-              />
-            </FormField>
-
-            <div className="training-time-grid">
-              <FormField
-                label="Hora de inicio"
-                error={
-                  errors.TRAINING_START_TIME_REQUIRED
-                    ? errorMessages.TRAINING_START_TIME_REQUIRED
-                    : null
-                }
-              >
-                <Input
-                  type="time"
-                  value={trainingForm.start_time}
-                  className={
-                    errors.TRAINING_START_TIME_REQUIRED ||
-                    errors.INVALID_TRAINING_TIME_RANGE
-                      ? "input-error"
-                      : ""
-                  }
-                  onChange={(event) =>
-                    handleTrainingFormChange("start_time", event.target.value)
-                  }
-                />
-              </FormField>
-
-              <FormField
-                label="Hora de finalización"
-                error={
-                  errors.TRAINING_END_TIME_REQUIRED
-                    ? errorMessages.TRAINING_END_TIME_REQUIRED
-                    : errors.INVALID_TRAINING_TIME_RANGE
-                    ? errorMessages.INVALID_TRAINING_TIME_RANGE
-                    : null
-                }
-              >
-                <Input
-                  type="time"
-                  value={trainingForm.end_time}
-                  className={
-                    errors.TRAINING_END_TIME_REQUIRED ||
-                    errors.INVALID_TRAINING_TIME_RANGE
-                      ? "input-error"
-                      : ""
-                  }
-                  onChange={(event) =>
-                    handleTrainingFormChange("end_time", event.target.value)
-                  }
-                />
-              </FormField>
+              <h3>{training?.team_name || "Entrenamiento"}</h3>
             </div>
 
-            <FormField
-              label="Ubicación"
-              error={
-                errors.TRAINING_LOCATION_REQUIRED
-                  ? errorMessages.TRAINING_LOCATION_REQUIRED
-                  : null
-              }
-            >
-              <Input
-                type="text"
-                value={trainingForm.location}
-                placeholder="Ej: Cancha central"
-                className={
-                  errors.TRAINING_LOCATION_REQUIRED ? "input-error" : ""
-                }
-                onChange={(event) =>
-                  handleTrainingFormChange("location", event.target.value)
-                }
-              />
-            </FormField>
-
-            {(errors.INVALID_TIME_FORMAT ||
-              errors.TRAINING_NOT_FOUND ||
-              errors.FORBIDDEN ||
-              errors.CLUB_REQUIRED ||
-              errors.SESSION_EXPIRED ||
-              errors.NETWORK_ERROR) && (
-              <p className="form-error">
-                {errors.INVALID_TIME_FORMAT
-                  ? errorMessages.INVALID_TIME_FORMAT
-                  : errors.TRAINING_NOT_FOUND
-                  ? errorMessages.TRAINING_NOT_FOUND
-                  : errors.FORBIDDEN
-                  ? errorMessages.FORBIDDEN
-                  : errors.CLUB_REQUIRED
-                  ? errorMessages.CLUB_REQUIRED
-                  : errors.SESSION_EXPIRED
-                  ? errorMessages.SESSION_EXPIRED
-                  : errorMessages.NETWORK_ERROR}
-              </p>
+            {!editingTraining && training && (
+              <button
+                type="button"
+                className="training-info-edit-button"
+                onClick={() => {
+                  setErrors({});
+                  setEditingTraining(true);
+                }}
+                aria-label="Editar información del entrenamiento"
+              >
+                <Pencil size={17} />
+              </button>
             )}
-
-            <div className="training-info-form-actions">
-              <Button
-                type="button"
-                variant="secondary"
-                onClick={handleCancelTrainingEdit}
-                disabled={savingTraining}
-              >
-                Cancelar
-              </Button>
-
-              <Button
-                type="button"
-                onClick={handleSaveTraining}
-                disabled={savingTraining}
-              >
-                {savingTraining ? "Guardando..." : "Guardar cambios"}
-              </Button>
-            </div>
           </div>
-        ) : training ? (
-          <div className="training-info-compact">
-            <div className="training-info-meta">
-              <span>{formatTrainingDate(training.date)}</span>
 
-              <span className="training-info-separator" aria-hidden="true">
-                •
-              </span>
+          {editingTraining ? (
+            <div className="training-info-form">
+              <FormField
+                label="Fecha"
+                error={
+                  errors.TRAINING_DATE_REQUIRED
+                    ? errorMessages.TRAINING_DATE_REQUIRED
+                    : null
+                }
+              >
+                <Input
+                  type="date"
+                  value={trainingForm.date}
+                  className={errors.TRAINING_DATE_REQUIRED ? "input-error" : ""}
+                  onChange={(event) =>
+                    handleTrainingFormChange("date", event.target.value)
+                  }
+                />
+              </FormField>
 
-              <span>
-                {formatTrainingTime(training.start_time)}
-                {" – "}
-                {formatTrainingTime(training.end_time)}
-              </span>
-            </div>
-
-            <p className="training-info-location">
-              {training.location || "Sin ubicación"}
-            </p>
-          </div>
-        ) : (
-          <p className="training-info-empty">
-            No se pudo cargar la información del entrenamiento.
-          </p>
-        )}
-      </Card>
-
-      <Card>
-        {store.players.length === 0 ? (
-          <p>No hay deportistas en esta categoría.</p>
-        ) : (
-          <div className="attendance-list">
-            {store.players.map((player) => {
-              const status = attendance[player.id] || null;
-
-              return (
-                <div key={player.id} className="attendance-row">
-                  <div className="attendance-player">
-                    <span className="player-number">
-                      #{player.player_number}
-                    </span>
-
-                    <span className="player-name">
-                      {player.first_name} {player.last_name}
-                    </span>
-                  </div>
-
-                  <AttendanceToggle
-                    value={status}
-                    onChange={(newStatus) =>
-                      handleAttendanceChange(player.id, newStatus)
+              <div className="training-time-grid">
+                <FormField
+                  label="Hora de inicio"
+                  error={
+                    errors.TRAINING_START_TIME_REQUIRED
+                      ? errorMessages.TRAINING_START_TIME_REQUIRED
+                      : null
+                  }
+                >
+                  <Input
+                    type="time"
+                    value={trainingForm.start_time}
+                    className={
+                      errors.TRAINING_START_TIME_REQUIRED ||
+                      errors.INVALID_TRAINING_TIME_RANGE
+                        ? "input-error"
+                        : ""
+                    }
+                    onChange={(event) =>
+                      handleTrainingFormChange("start_time", event.target.value)
                     }
                   />
-                </div>
-              );
-            })}
-          </div>
+                </FormField>
+
+                <FormField
+                  label="Hora de finalización"
+                  error={
+                    errors.TRAINING_END_TIME_REQUIRED
+                      ? errorMessages.TRAINING_END_TIME_REQUIRED
+                      : errors.INVALID_TRAINING_TIME_RANGE
+                      ? errorMessages.INVALID_TRAINING_TIME_RANGE
+                      : null
+                  }
+                >
+                  <Input
+                    type="time"
+                    value={trainingForm.end_time}
+                    className={
+                      errors.TRAINING_END_TIME_REQUIRED ||
+                      errors.INVALID_TRAINING_TIME_RANGE
+                        ? "input-error"
+                        : ""
+                    }
+                    onChange={(event) =>
+                      handleTrainingFormChange("end_time", event.target.value)
+                    }
+                  />
+                </FormField>
+              </div>
+
+              <FormField
+                label="Ubicación"
+                error={
+                  errors.TRAINING_LOCATION_REQUIRED
+                    ? errorMessages.TRAINING_LOCATION_REQUIRED
+                    : null
+                }
+              >
+                <Input
+                  type="text"
+                  value={trainingForm.location}
+                  placeholder="Ej: Cancha central"
+                  className={
+                    errors.TRAINING_LOCATION_REQUIRED ? "input-error" : ""
+                  }
+                  onChange={(event) =>
+                    handleTrainingFormChange("location", event.target.value)
+                  }
+                />
+              </FormField>
+
+              {(errors.INVALID_TIME_FORMAT ||
+                errors.TRAINING_NOT_FOUND ||
+                errors.FORBIDDEN ||
+                errors.CLUB_REQUIRED ||
+                errors.SESSION_EXPIRED ||
+                errors.NETWORK_ERROR) && (
+                <p className="form-error">
+                  {errors.INVALID_TIME_FORMAT
+                    ? errorMessages.INVALID_TIME_FORMAT
+                    : errors.TRAINING_NOT_FOUND
+                    ? errorMessages.TRAINING_NOT_FOUND
+                    : errors.FORBIDDEN
+                    ? errorMessages.FORBIDDEN
+                    : errors.CLUB_REQUIRED
+                    ? errorMessages.CLUB_REQUIRED
+                    : errors.SESSION_EXPIRED
+                    ? errorMessages.SESSION_EXPIRED
+                    : errorMessages.NETWORK_ERROR}
+                </p>
+              )}
+
+              <div className="training-info-form-actions">
+                <Button
+                  type="button"
+                  variant="secondary"
+                  onClick={handleCancelTrainingEdit}
+                  disabled={savingTraining}
+                >
+                  Cancelar
+                </Button>
+
+                <Button
+                  type="button"
+                  onClick={handleSaveTraining}
+                  disabled={savingTraining}
+                >
+                  {savingTraining ? "Guardando..." : "Guardar cambios"}
+                </Button>
+              </div>
+            </div>
+          ) : training ? (
+            <div className="training-info-compact">
+              <div className="training-info-meta">
+                <span>{formatTrainingDate(training.date)}</span>
+
+                <span className="training-info-separator" aria-hidden="true">
+                  •
+                </span>
+
+                <span>
+                  {formatTrainingTime(training.start_time)}
+                  {" – "}
+                  {formatTrainingTime(training.end_time)}
+                </span>
+              </div>
+
+              <p className="training-info-location">
+                {training.location || "Sin ubicación"}
+              </p>
+            </div>
+          ) : (
+            <p className="training-info-empty">
+              No se pudo cargar la información del entrenamiento.
+            </p>
+          )}
+        </Card>
+
+        <Card>
+          {store.players.length === 0 ? (
+            <p>No hay deportistas en esta categoría.</p>
+          ) : (
+            <div className="attendance-list">
+              {store.players.map((player) => {
+                const status = attendance[player.id] || null;
+
+                return (
+                  <div key={player.id} className="attendance-row">
+                    <div className="attendance-player">
+                      <span className="player-number">
+                        #{player.player_number}
+                      </span>
+
+                      <span className="player-name">
+                        {player.first_name} {player.last_name}
+                      </span>
+                    </div>
+
+                    <AttendanceToggle
+                      value={status}
+                      onChange={(newStatus) =>
+                        handleAttendanceChange(player.id, newStatus)
+                      }
+                    />
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </Card>
+        {errors.ATTENDANCE_REQUIRED && (
+          <p className="form-error">{errorMessages.ATTENDANCE_REQUIRED}</p>
         )}
-      </Card>
-      {errors.ATTENDANCE_REQUIRED && (
-        <p className="form-error">{errorMessages.ATTENDANCE_REQUIRED}</p>
-      )}
 
-      {errors.TRAINING_NOT_FOUND && (
-        <p className="form-error">{errorMessages.TRAINING_NOT_FOUND}</p>
-      )}
+        {errors.TRAINING_NOT_FOUND && (
+          <p className="form-error">{errorMessages.TRAINING_NOT_FOUND}</p>
+        )}
 
-      {errors.FORBIDDEN && (
-        <p className="form-error">{errorMessages.FORBIDDEN}</p>
-      )}
+        {errors.FORBIDDEN && (
+          <p className="form-error">{errorMessages.FORBIDDEN}</p>
+        )}
 
-      {errors.INVALID_ATTENDANCE_STATUS && (
-        <p className="form-error">{errorMessages.INVALID_ATTENDANCE_STATUS}</p>
-      )}
-      <div className="attendance-sticky-bar">
-        <div>
-          <div className="attendance-progress">
-            {markedCount} / {totalPlayers} deportistas marcados
+        {errors.INVALID_ATTENDANCE_STATUS && (
+          <p className="form-error">
+            {errorMessages.INVALID_ATTENDANCE_STATUS}
+          </p>
+        )}
+        <div className="attendance-sticky-bar">
+          <div>
+            <div className="attendance-progress">
+              {markedCount} / {totalPlayers} deportistas marcados
+            </div>
+
+            <div className="attendance-summary">
+              <span>{presentCount} presentes</span>
+              <span>{lateCount} tarde</span>
+              <span>{absentCount} ausente</span>
+            </div>
           </div>
 
-          <div className="attendance-summary">
-            <span>{presentCount} presentes</span>
-            <span>{lateCount} tarde</span>
-            <span>{absentCount} ausente</span>
-          </div>
+          <Button
+            className="button-primary"
+            onClick={handleSaveAttendance}
+            disabled={saving || !hasChanges || !allMarked}
+          >
+            {saving
+              ? "Guardando..."
+              : !allMarked
+              ? `Faltan ${totalPlayers - markedCount}`
+              : hasChanges
+              ? "Guardar asistencia"
+              : "Sin cambios"}
+          </Button>
         </div>
-
-        <Button
-          className="button-primary"
-          onClick={handleSaveAttendance}
-          disabled={saving || !hasChanges || !allMarked}
-        >
-          {saving
-            ? "Guardando..."
-            : !allMarked
-            ? `Faltan ${totalPlayers - markedCount}`
-            : hasChanges
-            ? "Guardar asistencia"
-            : "Sin cambios"}
-        </Button>
       </div>
-    </div>
+    </>
   );
 };

@@ -190,8 +190,7 @@
   z-index: 900;
   height: 68px;
   padding: 10px 16px;
-  background: var(--color-primary-light);
-  border-bottom: 1px solid rgba(255, 255, 255, 0.42);
+  border-bottom: none;
   backdrop-filter: blur(14px);
   -webkit-backdrop-filter: blur(14px);
   display: grid;
@@ -215,7 +214,7 @@
 
   border-radius: 14px;
   border: 1px solid rgba(30, 58, 138, 0.16);
-  background: rgba(255, 255, 255, 0.28);
+  background: transparent;
   color: var(--color-primary-dark);
 
   box-shadow: 0 6px 16px rgba(15, 23, 42, 0.06);
@@ -323,13 +322,13 @@
   }
 
   .topbar {
-    height: 68px;
+    height: 48px;
     padding: 10px 16px;
   }
 
   .topbar-menu-button {
-    width: 42px;
-    height: 42px;
+    width: 48px;
+    height: 48px;
   }
 
   .content {

@@ -162,7 +162,7 @@ export const CategoryDetail = () => {
   }
 
   return (
-    <div className="team-detail-page">
+    <>
       <PageHeader
         variant="detail"
         eyebrow="Categoría"
@@ -186,209 +186,214 @@ export const CategoryDetail = () => {
           )
         }
       />
-
-      {showForm && (
-        <Card>
-          <h4>Nuevo equipo</h4>
-
-          <form onSubmit={handleCreateTeam} className="form">
-            <FormField
-              label="Nombre del equipo"
-              error={
-                errors.TEAM_NAME_REQUIRED
-                  ? errorMessages.TEAM_NAME_REQUIRED
-                  : errors.TEAM_ALREADY_EXISTS
-                  ? errorMessages.TEAM_ALREADY_EXISTS
-                  : null
-              }
-            >
-              <Input
-                type="text"
-                placeholder="Ej: Iniciación A, U14 Femenino..."
-                value={teamName}
-                className={
-                  errors.TEAM_NAME_REQUIRED || errors.TEAM_ALREADY_EXISTS
-                    ? "input-error"
-                    : ""
-                }
-                onChange={(e) => {
-                  setTeamName(e.target.value);
-                  setErrors((prev) => ({
-                    ...prev,
-                    TEAM_NAME_REQUIRED: false,
-                    TEAM_ALREADY_EXISTS: false,
-                  }));
-                }}
-              />
-            </FormField>
-
-            <FormField
-              label="Género del equipo"
-              error={
-                errors.INVALID_TEAM_GENDER
-                  ? errorMessages.INVALID_TEAM_GENDER
-                  : null
-              }
-            >
-              <Select
-                value={teamGender}
-                className={errors.INVALID_TEAM_GENDER ? "input-error" : ""}
-                onChange={(e) => {
-                  setTeamGender(e.target.value);
-                  setErrors((prev) => ({
-                    ...prev,
-                    INVALID_TEAM_GENDER: false,
-                  }));
-                }}
-              >
-                <option value="">Selecciona el género</option>
-                <option value="female">Femenino</option>
-                <option value="male">Masculino</option>
-                <option value="mixed">Mixto</option>
-              </Select>
-            </FormField>
-
-            <div className="form-actions">
-              <Button
-                type="button"
-                variant="secondary"
-                onClick={closeCreateForm}
-              >
-                Cancelar
-              </Button>
-
-              <Button type="submit" disabled={loadingSubmit}>
-                {loadingSubmit ? "Creando..." : "Crear equipo"}
-              </Button>
-            </div>
-          </form>
-        </Card>
-      )}
-
-      {editingTeamId && (
-        <Card>
-          <h4>Editar equipo</h4>
-
-          <form onSubmit={handleUpdateTeam} className="form">
-            <FormField
-              label="Nombre del equipo"
-              error={
-                errors.TEAM_NAME_REQUIRED
-                  ? errorMessages.TEAM_NAME_REQUIRED
-                  : errors.TEAM_ALREADY_EXISTS
-                  ? errorMessages.TEAM_ALREADY_EXISTS
-                  : null
-              }
-            >
-              <Input
-                type="text"
-                placeholder="Ej: Iniciación A, U14 Femenino..."
-                value={editTeamName}
-                className={
-                  errors.TEAM_NAME_REQUIRED || errors.TEAM_ALREADY_EXISTS
-                    ? "input-error"
-                    : ""
-                }
-                onChange={(e) => {
-                  setEditTeamName(e.target.value);
-                  setErrors((prev) => ({
-                    ...prev,
-                    TEAM_NAME_REQUIRED: false,
-                    TEAM_ALREADY_EXISTS: false,
-                  }));
-                }}
-              />
-            </FormField>
-
-            <FormField
-              label="Género del equipo"
-              error={
-                errors.INVALID_TEAM_GENDER
-                  ? errorMessages.INVALID_TEAM_GENDER
-                  : errors.TEAM_GENDER_HAS_PLAYERS
-                  ? errorMessages.TEAM_GENDER_HAS_PLAYERS
-                  : null
-              }
-            >
-              <Select
-                value={editTeamGender}
-                className={
-                  errors.INVALID_TEAM_GENDER || errors.TEAM_GENDER_HAS_PLAYERS
-                    ? "input-error"
-                    : ""
-                }
-                onChange={(e) => {
-                  setEditTeamGender(e.target.value);
-                  setErrors((prev) => ({
-                    ...prev,
-                    INVALID_TEAM_GENDER: false,
-                    TEAM_GENDER_HAS_PLAYERS: false,
-                  }));
-                }}
-              >
-                <option value="">Selecciona el género</option>
-                <option value="female">Femenino</option>
-                <option value="male">Masculino</option>
-                <option value="mixed">Mixto</option>
-              </Select>
-            </FormField>
-
-            <div className="form-actions">
-              <Button type="button" variant="secondary" onClick={closeEditTeam}>
-                Cancelar
-              </Button>
-
-              <Button type="submit" disabled={loadingEditTeam}>
-                {loadingEditTeam ? "Guardando..." : "Guardar cambios"}
-              </Button>
-            </div>
-          </form>
-        </Card>
-      )}
-
-      {!showForm &&
-        !editingTeamId &&
-        (teams.length === 0 ? (
+      <div className="team-detail-page">
+        {showForm && (
           <Card>
-            <h4>Aún no tienes equipos</h4>
-            <p>Crea el primer equipo dentro de {category.name}.</p>
-          </Card>
-        ) : (
-          <div className="teams-grid">
-            {teams.map((team) => (
-              <Card
-                key={team.id}
-                className="team-card card-interactive category-card"
-                onClick={() => navigate(`/teams/${team.id}`)}
+            <h4>Nuevo equipo</h4>
+
+            <form onSubmit={handleCreateTeam} className="form">
+              <FormField
+                label="Nombre del equipo"
+                error={
+                  errors.TEAM_NAME_REQUIRED
+                    ? errorMessages.TEAM_NAME_REQUIRED
+                    : errors.TEAM_ALREADY_EXISTS
+                    ? errorMessages.TEAM_ALREADY_EXISTS
+                    : null
+                }
               >
-                <div className="category-card-header">
-                  <h3 className="team-card-title">{team.name}</h3>
+                <Input
+                  type="text"
+                  placeholder="Ej: Iniciación A, U14 Femenino..."
+                  value={teamName}
+                  className={
+                    errors.TEAM_NAME_REQUIRED || errors.TEAM_ALREADY_EXISTS
+                      ? "input-error"
+                      : ""
+                  }
+                  onChange={(e) => {
+                    setTeamName(e.target.value);
+                    setErrors((prev) => ({
+                      ...prev,
+                      TEAM_NAME_REQUIRED: false,
+                      TEAM_ALREADY_EXISTS: false,
+                    }));
+                  }}
+                />
+              </FormField>
 
-                  <button
-                    type="button"
-                    className="category-edit-button"
-                    aria-label={`Editar equipo ${team.name}`}
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      openEditTeam(team);
-                    }}
-                  >
-                    <Pencil size={16} />
-                  </button>
-                </div>
+              <FormField
+                label="Género del equipo"
+                error={
+                  errors.INVALID_TEAM_GENDER
+                    ? errorMessages.INVALID_TEAM_GENDER
+                    : null
+                }
+              >
+                <Select
+                  value={teamGender}
+                  className={errors.INVALID_TEAM_GENDER ? "input-error" : ""}
+                  onChange={(e) => {
+                    setTeamGender(e.target.value);
+                    setErrors((prev) => ({
+                      ...prev,
+                      INVALID_TEAM_GENDER: false,
+                    }));
+                  }}
+                >
+                  <option value="">Selecciona el género</option>
+                  <option value="female">Femenino</option>
+                  <option value="male">Masculino</option>
+                  <option value="mixed">Mixto</option>
+                </Select>
+              </FormField>
 
-                <p className="team-meta">
-                  {team.gender === "female"
-                    ? "Femenino"
-                    : team.gender === "male"
-                    ? "Masculino"
-                    : "Mixto"}{" "}
-                  · {team.total_players || 0} deportistas
-                </p>
-              </Card>
-            ))}
-          </div>
-        ))}
-    </div>
+              <div className="form-actions">
+                <Button
+                  type="button"
+                  variant="secondary"
+                  onClick={closeCreateForm}
+                >
+                  Cancelar
+                </Button>
+
+                <Button type="submit" disabled={loadingSubmit}>
+                  {loadingSubmit ? "Creando..." : "Crear equipo"}
+                </Button>
+              </div>
+            </form>
+          </Card>
+        )}
+
+        {editingTeamId && (
+          <Card>
+            <h4>Editar equipo</h4>
+
+            <form onSubmit={handleUpdateTeam} className="form">
+              <FormField
+                label="Nombre del equipo"
+                error={
+                  errors.TEAM_NAME_REQUIRED
+                    ? errorMessages.TEAM_NAME_REQUIRED
+                    : errors.TEAM_ALREADY_EXISTS
+                    ? errorMessages.TEAM_ALREADY_EXISTS
+                    : null
+                }
+              >
+                <Input
+                  type="text"
+                  placeholder="Ej: Iniciación A, U14 Femenino..."
+                  value={editTeamName}
+                  className={
+                    errors.TEAM_NAME_REQUIRED || errors.TEAM_ALREADY_EXISTS
+                      ? "input-error"
+                      : ""
+                  }
+                  onChange={(e) => {
+                    setEditTeamName(e.target.value);
+                    setErrors((prev) => ({
+                      ...prev,
+                      TEAM_NAME_REQUIRED: false,
+                      TEAM_ALREADY_EXISTS: false,
+                    }));
+                  }}
+                />
+              </FormField>
+
+              <FormField
+                label="Género del equipo"
+                error={
+                  errors.INVALID_TEAM_GENDER
+                    ? errorMessages.INVALID_TEAM_GENDER
+                    : errors.TEAM_GENDER_HAS_PLAYERS
+                    ? errorMessages.TEAM_GENDER_HAS_PLAYERS
+                    : null
+                }
+              >
+                <Select
+                  value={editTeamGender}
+                  className={
+                    errors.INVALID_TEAM_GENDER || errors.TEAM_GENDER_HAS_PLAYERS
+                      ? "input-error"
+                      : ""
+                  }
+                  onChange={(e) => {
+                    setEditTeamGender(e.target.value);
+                    setErrors((prev) => ({
+                      ...prev,
+                      INVALID_TEAM_GENDER: false,
+                      TEAM_GENDER_HAS_PLAYERS: false,
+                    }));
+                  }}
+                >
+                  <option value="">Selecciona el género</option>
+                  <option value="female">Femenino</option>
+                  <option value="male">Masculino</option>
+                  <option value="mixed">Mixto</option>
+                </Select>
+              </FormField>
+
+              <div className="form-actions">
+                <Button
+                  type="button"
+                  variant="secondary"
+                  onClick={closeEditTeam}
+                >
+                  Cancelar
+                </Button>
+
+                <Button type="submit" disabled={loadingEditTeam}>
+                  {loadingEditTeam ? "Guardando..." : "Guardar cambios"}
+                </Button>
+              </div>
+            </form>
+          </Card>
+        )}
+
+        {!showForm &&
+          !editingTeamId &&
+          (teams.length === 0 ? (
+            <Card>
+              <h4>Aún no tienes equipos</h4>
+              <p>Crea el primer equipo dentro de {category.name}.</p>
+            </Card>
+          ) : (
+            <div className="teams-grid">
+              {teams.map((team) => (
+                <Card
+                  key={team.id}
+                  className="team-card card-interactive category-card"
+                  onClick={() => navigate(`/teams/${team.id}`)}
+                >
+                  <div className="category-card-header">
+                    <h3 className="team-card-title">{team.name}</h3>
+
+                    <button
+                      type="button"
+                      className="category-edit-button"
+                      aria-label={`Editar equipo ${team.name}`}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        openEditTeam(team);
+                      }}
+                    >
+                      <Pencil size={16} />
+                    </button>
+                  </div>
+
+                  <p className="team-meta">
+                    {team.gender === "female"
+                      ? "Femenino"
+                      : team.gender === "male"
+                      ? "Masculino"
+                      : "Mixto"}{" "}
+                    · {team.total_players || 0} deportistas
+                  </p>
+                </Card>
+              ))}
+            </div>
+          ))}
+      </div>
+    </>
   );
 };
