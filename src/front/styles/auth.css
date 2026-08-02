@@ -3,7 +3,7 @@
 .auth-page {
   display: grid;
   grid-template-columns: minmax(0, 1.2fr) minmax(420px, 0.8fr);
-  min-height: 100vh;
+  min-height: 100dvh;
   background: var(--color-bg);
 }
 
@@ -369,7 +369,9 @@
 @media (max-width: 900px) {
   .auth-page {
     grid-template-columns: 1fr;
-    min-height: 100svh;
+    min-height: 100dvh;
+    background-color: #0f172a;
+
     background-image: radial-gradient(
         circle at 50% 12%,
         rgba(34, 197, 94, 0.16),
@@ -382,11 +384,11 @@
         rgba(15, 23, 42, 0.9) 100%
       ),
       var(--auth-hero-image);
+
     background-size: cover;
     background-position: center;
     background-attachment: scroll;
   }
-
   .auth-hero,
   .auth-hero-content {
     display: none;
@@ -395,8 +397,13 @@
   .auth-panel {
     position: relative;
     z-index: 2;
-    min-height: 100svh;
-    padding: 28px 18px;
+    min-height: 100dvh;
+
+    padding-top: calc(28px + env(safe-area-inset-top, 0px));
+    padding-right: max(18px, env(safe-area-inset-right, 0px));
+    padding-bottom: calc(28px + env(safe-area-inset-bottom, 0px));
+    padding-left: max(18px, env(safe-area-inset-left, 0px));
+
     background: transparent;
   }
 
@@ -476,7 +483,10 @@
 
 @media (max-width: 480px) {
   .auth-panel {
-    padding: 18px;
+    padding-top: calc(18px + env(safe-area-inset-top, 0px));
+    padding-right: max(18px, env(safe-area-inset-right, 0px));
+    padding-bottom: calc(18px + env(safe-area-inset-bottom, 0px));
+    padding-left: max(18px, env(safe-area-inset-left, 0px));
   }
 
   .auth-card {

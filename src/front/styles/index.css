@@ -95,16 +95,16 @@ textarea {
 
 html,
 body,
-#root {
+#app {
   min-height: 100%;
 }
 
-#root {
+#app {
   min-height: 100dvh;
 }
 
 body {
-  min-height: 100vh;
+  min-height: 100dvh;
   font-family: var(--font-sans);
 
   background-color: var(--color-bg);

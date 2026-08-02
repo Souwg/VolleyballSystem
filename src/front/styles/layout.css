@@ -291,7 +291,7 @@
 
 /* Para páginas internas / detalle sin degradado */
 .content-neutral {
-  min-height: calc(100vh - 68px);
+  min-height: calc(100dvh - 68px);
   background: var(--color-bg);
 }
 
@@ -313,7 +313,13 @@
     z-index: 1050;
 
     width: 260px;
-    height: 100vh;
+    height: 100dvh;
+    min-height: 100dvh;
+
+    padding-top: calc(22px + env(safe-area-inset-top, 0px));
+    padding-right: max(18px, env(safe-area-inset-right, 0px));
+    padding-bottom: calc(22px + env(safe-area-inset-bottom, 0px));
+    padding-left: max(18px, env(safe-area-inset-left, 0px));
 
     transition: left 0.3s ease;
     box-shadow: 18px 0 40px rgba(15, 23, 42, 0.16);
@@ -324,8 +330,12 @@
   }
 
   .topbar {
-    height: 48px;
-    padding: 0px 16px;
+    height: calc(48px + env(safe-area-inset-top, 0px));
+
+    padding-top: env(safe-area-inset-top, 0px);
+    padding-right: max(16px, env(safe-area-inset-right, 0px));
+    padding-bottom: 0;
+    padding-left: max(16px, env(safe-area-inset-left, 0px));
   }
 
   .topbar-menu-button {
@@ -334,12 +344,16 @@
   }
 
   .content {
-    padding: 5px 16px 16px 16px;
-    min-height: calc(100dvh - 68px);
+    min-height: calc(100dvh - 48px - env(safe-area-inset-top, 0px));
+
+    padding-top: 16px;
+    padding-right: max(16px, env(safe-area-inset-right, 0px));
+    padding-bottom: max(16px, env(safe-area-inset-bottom, 0px));
+    padding-left: max(16px, env(safe-area-inset-left, 0px));
   }
 
   .content-neutral {
-    min-height: calc(100dvh - 68px);
+    min-height: calc(100dvh - 48px - env(safe-area-inset-top, 0px));
   }
 }
 @media (max-width: 420px) {
