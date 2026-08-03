@@ -336,6 +336,12 @@
     padding-right: max(16px, env(safe-area-inset-right, 0px));
     padding-bottom: 0;
     padding-left: max(16px, env(safe-area-inset-left, 0px));
+    backdrop-filter: none;
+    -webkit-backdrop-filter: none;
+  }
+
+  .topbar-neutral {
+    background: var(--color-bg);
   }
 
   .topbar-menu-button {
