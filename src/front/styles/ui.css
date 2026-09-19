@@ -37,6 +37,10 @@
 
   padding: 10px 0;
   gap: 8px;
+
+  margin: 0;
+  color: var(--color-muted);
+  font-size: var(--font-size-sm);
 }
 
 .empty-state h4 {
@@ -232,7 +236,7 @@
 }
 
 .page-header h1 {
-  font-size: 30px;
+  font-size: var(--font-size-2xl);
   line-height: 1;
   font-weight: var(--font-weight-extrabold);
   color: var(--color-text);
@@ -440,6 +444,18 @@
   font-size: var(--font-size-xs);
   color: var(--color-muted);
   line-height: 1.4;
+}
+
+.field-group {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.field-group span {
+  font-size: var(--font-size-sm);
+  font-weight: var(--font-weight-semibold);
+  color: var(--color-text);
 }
 
 .input,

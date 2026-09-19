@@ -330,7 +330,7 @@
   }
 
   .topbar {
-    height: calc(48px + env(safe-area-inset-top, 0px));
+    height: calc(58px + env(safe-area-inset-top, 0px));
 
     padding-top: env(safe-area-inset-top, 0px);
     padding-right: max(16px, env(safe-area-inset-right, 0px));

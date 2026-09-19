@@ -197,6 +197,25 @@ export const errorMessages = {
   PAYMENT_NOT_FOUND: "Pago no encontrado",
   INVALID_DUE_DATE_FORMAT: "Formato de fecha límite inválido",
   INVALID_ENROLLMENT_DATE_FORMAT: "Formato de fecha de inscripción inválido",
+  INITIAL_PAYMENT_MODE_REQUIRED:
+    "Selecciona cómo quieres iniciar el historial de mensualidades",
+  INITIAL_ENROLLMENT_STATUS_REQUIRED:
+    "Selecciona el estado inicial de la inscripción",
+  INVALID_HISTORY_ENROLLMENT_DATE:
+    "No puedes traer historial de mensualidades para una inscripción futura",
+  INVALID_LAST_PAID_MONTH_FORMAT:
+    "El último mes pagado no tiene un formato válido",
+  LAST_PAID_MONTH_BEFORE_ENROLLMENT:
+    "El último mes pagado no puede ser anterior a la inscripción",
+  LAST_PAID_MONTH_NOT_REACHED: "Ese ciclo mensual todavía no ha comenzado",
+  ENROLLMENT_DATE_LOCKED:
+    "La fecha de inscripción ya no puede modificarse porque el control de pagos ya fue iniciado",
+  LEGACY_PAYMENT_HISTORY_REQUIRES_REVIEW:
+    "Este deportista tiene pagos creados con la configuración anterior y requiere revisión antes de iniciar el nuevo control",
+  MIGRATED_PAYMENT_LOCKED:
+    "Los pagos anteriores a SportFlow forman parte del historial y no pueden modificarse",
+  MIGRATED_PAYMENT_RECEIPT_NOT_ALLOWED:
+    "Los pagos realizados antes de SportFlow no generan recibo",
   // RECEIPTS
   PAYMENT_NOT_PAID: "Solo puedes generar recibos de pagos registrados",
   RECEIPT_NOT_FOUND: "Recibo no encontrado",

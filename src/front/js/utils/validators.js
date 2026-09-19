@@ -272,6 +272,26 @@ export const validateMatch = ({ opponent_name, date, match_type }) => {
   return errors;
 };
 
+const addMonthsAnchored = (dateString, months) => {
+  const [year, month, day] = dateString.split("-").map(Number);
+
+  const absoluteMonth = month - 1 + months;
+
+  const targetYear = year + Math.floor(absoluteMonth / 12);
+
+  const targetMonthIndex = ((absoluteMonth % 12) + 12) % 12;
+
+  const lastDayOfTargetMonth = new Date(
+    targetYear,
+    targetMonthIndex + 1,
+    0,
+  ).getDate();
+
+  const targetDay = Math.min(day, lastDayOfTargetMonth);
+
+  return new Date(targetYear, targetMonthIndex, targetDay);
+};
+
 export const validatePlayerPaymentSettings = ({
   enrollment_date,
   customEnrollmentFee,
@@ -279,25 +299,78 @@ export const validatePlayerPaymentSettings = ({
   enrollment_fee,
   monthly_fee,
   club,
+
+  isInitialSetup = false,
+  initial_payment_mode = "",
+  initial_enrollment_status = "",
+  last_paid_month = "",
 }) => {
   const errors = {};
 
-  if (!enrollment_date?.trim()) {
+  const cleanEnrollmentDate = enrollment_date?.trim() || "";
+
+  const clubEnrollmentFee = Number(club?.default_enrollment_fee || 0);
+
+  const clubMonthlyFee = Number(club?.default_monthly_fee || 0);
+
+  // ==========================================
+  // FECHA DE INSCRIPCIÓN
+  // ==========================================
+
+  if (!cleanEnrollmentDate) {
     errors.ENROLLMENT_DATE_REQUIRED = true;
   }
 
-  const clubEnrollmentFee = Number(club?.default_enrollment_fee || 0);
-  const clubMonthlyFee = Number(club?.default_monthly_fee || 0);
+  // ==========================================
+  // ESTADO INICIAL
+  // ==========================================
 
-  if (!customEnrollmentFee && clubEnrollmentFee <= 0) {
+  if (isInitialSetup) {
+    const validPaymentModes = ["import_history", "start_now"];
+
+    const validEnrollmentStatuses = [
+      "pending",
+      "paid_before_sportflow",
+      "not_applicable",
+    ];
+
+    if (!validPaymentModes.includes(initial_payment_mode)) {
+      errors.INITIAL_PAYMENT_MODE_REQUIRED = true;
+    }
+
+    if (!validEnrollmentStatuses.includes(initial_enrollment_status)) {
+      errors.INITIAL_ENROLLMENT_STATUS_REQUIRED = true;
+    }
+
+    if (cleanEnrollmentDate && initial_payment_mode === "import_history") {
+      const enrollmentDate = new Date(`${cleanEnrollmentDate}T00:00:00`);
+
+      const today = new Date();
+      today.setHours(0, 0, 0, 0);
+
+      if (enrollmentDate > today) {
+        errors.INVALID_HISTORY_ENROLLMENT_DATE = true;
+      }
+    }
+  }
+
+  // ==========================================
+  // INSCRIPCIÓN
+  // ==========================================
+
+  const enrollmentApplies =
+    !isInitialSetup || initial_enrollment_status !== "not_applicable";
+
+  if (
+    isInitialSetup &&
+    enrollmentApplies &&
+    !customEnrollmentFee &&
+    clubEnrollmentFee <= 0
+  ) {
     errors.CLUB_PAYMENT_DEFAULTS_REQUIRED = true;
   }
 
-  if (!customMonthlyFee && clubMonthlyFee <= 0) {
-    errors.CLUB_PAYMENT_DEFAULTS_REQUIRED = true;
-  }
-
-  if (customEnrollmentFee) {
+  if (customEnrollmentFee && enrollmentApplies) {
     const parsedEnrollmentFee = Number(enrollment_fee);
 
     if (enrollment_fee === "" || enrollment_fee === null) {
@@ -307,6 +380,14 @@ export const validatePlayerPaymentSettings = ({
     }
   }
 
+  // ==========================================
+  // MENSUALIDAD
+  // ==========================================
+
+  if (!customMonthlyFee && clubMonthlyFee <= 0) {
+    errors.CLUB_PAYMENT_DEFAULTS_REQUIRED = true;
+  }
+
   if (customMonthlyFee) {
     const parsedMonthlyFee = Number(monthly_fee);
 
@@ -314,6 +395,51 @@ export const validatePlayerPaymentSettings = ({
       errors.MONTHLY_FEE_REQUIRED = true;
     } else if (Number.isNaN(parsedMonthlyFee) || parsedMonthlyFee <= 0) {
       errors.INVALID_MONTHLY_FEE = true;
+    }
+  }
+
+  // ==========================================
+  // ÚLTIMO MES PAGADO
+  // ==========================================
+
+  if (
+    isInitialSetup &&
+    initial_payment_mode === "import_history" &&
+    last_paid_month
+  ) {
+    const validMonthFormat = /^\d{4}-\d{2}$/.test(last_paid_month);
+
+    if (!validMonthFormat) {
+      errors.INVALID_LAST_PAID_MONTH_FORMAT = true;
+    } else if (cleanEnrollmentDate) {
+      const [enrollmentYear, enrollmentMonth] = cleanEnrollmentDate
+        .split("-")
+        .map(Number);
+
+      const [paidYear, paidMonth] = last_paid_month.split("-").map(Number);
+
+      if (paidMonth < 1 || paidMonth > 12) {
+        errors.INVALID_LAST_PAID_MONTH_FORMAT = true;
+      } else {
+        const monthsDifference =
+          (paidYear - enrollmentYear) * 12 + paidMonth - enrollmentMonth;
+
+        if (monthsDifference < 0) {
+          errors.LAST_PAID_MONTH_BEFORE_ENROLLMENT = true;
+        } else {
+          const selectedCycle = addMonthsAnchored(
+            cleanEnrollmentDate,
+            monthsDifference,
+          );
+
+          const today = new Date();
+          today.setHours(0, 0, 0, 0);
+
+          if (selectedCycle > today) {
+            errors.LAST_PAID_MONTH_NOT_REACHED = true;
+          }
+        }
+      }
     }
   }
 

@@ -17,7 +17,7 @@ La plataforma permite administrar, entre otros elementos:
 
 La aplicación está desplegada en un VPS y se encuentra disponible en:
 
-```text
+````text
 https://sportflow.club
 
 
@@ -111,8 +111,8 @@ Distribución:
 ├── app/
 ├── docker/
 ├── backups/
-├── deploy.sh
-└── local-files/
+├── uploads/
+└── deploy.sh
 app
 
 Contiene el repositorio de SportFlow:
@@ -246,49 +246,163 @@ Se ejecuta un respaldo automático de PostgreSQL todos los días.
 
 Configuración de cron:
 
+```text
 0 2 * * * /opt/sportflow/backups/backup_postgres.sh >> /opt/sportflow/backups/backup_postgres.log 2>&1
+```
 
 El VPS utiliza UTC.
 
 Por lo tanto:
 
+```text
 02:00 UTC = 22:00 del día anterior en Venezuela
+```
 
 Los respaldos se generan en formato:
 
+```text
 sportflow_YYYY-MM-DD_HH-MM-SS.sql.gz
+```
 
 El script elimina respaldos con más de 30 días.
 
 También se genera un respaldo antes de cada despliegue.
 
+El respaldo actual protege PostgreSQL, pero no incluye los archivos almacenados en:
 
-## 11. Despliegue
+```text
+/opt/sportflow/uploads
+```
+
+Estos archivos requieren un mecanismo de respaldo independiente.
+
+
+## 11. Persistencia de archivos subidos
+
+SportFlow permite subir archivos que deben permanecer disponibles aunque el contenedor de la aplicación sea reconstruido o recreado durante un despliegue.
+
+Entre estos archivos se encuentran:
+
+- Logos de clubes.
+- Fotografías de jugadores.
+- Recibos.
+- Otros archivos almacenados dentro de `public/uploads`.
+
+Inicialmente estos archivos se guardaban únicamente dentro del contenedor:
+
+```text
+/app/public/uploads
+```
+
+Esto provocaba que pudieran perderse cuando `sportflow-app` era reconstruido o recreado durante un despliegue.
+
+Para evitarlo, los archivos se almacenan de forma persistente en el VPS.
+
+Ruta en el servidor:
+
+```text
+/opt/sportflow/uploads
+```
+
+Ruta dentro del contenedor:
+
+```text
+/app/public/uploads
+```
+
+El servicio `app` del archivo:
+
+```text
+/opt/sportflow/docker/compose.yml
+```
+
+incluye el siguiente volumen:
+
+```yaml
+services:
+  app:
+    volumes:
+      - /opt/sportflow/uploads:/app/public/uploads
+```
+
+El flujo de almacenamiento es:
+
+```text
+VPS
+/opt/sportflow/uploads
+        |
+        v
+Contenedor sportflow-app
+/app/public/uploads
+```
+
+De esta forma, los archivos permanecen almacenados en el VPS aunque el contenedor de la aplicación sea reconstruido o recreado.
+
+Para comprobar que el volumen está montado correctamente:
+
+```bash
+docker inspect sportflow-app \
+  --format '{{range .Mounts}}{{println .Source "->" .Destination}}{{end}}'
+```
+
+La salida esperada incluye:
+
+```text
+/opt/sportflow/uploads -> /app/public/uploads
+```
+
+No debe eliminarse manualmente:
+
+```text
+/opt/sportflow/uploads
+```
+
+durante despliegues, tareas de limpieza o mantenimiento del servidor.
+
+El comando utilizado durante el despliegue:
+
+```bash
+docker image prune -f
+```
+
+no elimina esta carpeta.
+
+El respaldo automático de PostgreSQL no incluye `/opt/sportflow/uploads`.
+
+Por lo tanto, aunque los archivos ya sobreviven a los despliegues, debe configurarse un respaldo independiente para protegerlos ante una pérdida completa del VPS.
+
+
+## 12. Despliegue
 
 El script principal se encuentra en:
 
+```text
 /opt/sportflow/deploy.sh
+```
 
 El script realiza:
 
-1- Verificación de la rama develop.
-2- Verificación de cambios locales.
-3- Consulta de cambios en GitHub.
-4- Descarga de la última versión.
-5- Respaldo de PostgreSQL.
-6- Construcción de la imagen Docker.
-7- Inicio y verificación de PostgreSQL.
-8- Ejecución de migraciones.
-9- Recreación de la aplicación.
-10- Limpieza de imágenes sin uso.
-11- Verificación final de contenedores.
+1. Verificación de la rama `develop`.
+2. Verificación de cambios locales.
+3. Consulta de cambios en GitHub.
+4. Descarga de la última versión.
+5. Respaldo de PostgreSQL.
+6. Construcción de la imagen Docker.
+7. Inicio y verificación de PostgreSQL.
+8. Ejecución de migraciones.
+9. Recreación de la aplicación.
+10. Limpieza de imágenes sin uso.
+11. Verificación final de contenedores.
 
 Para desplegar manualmente:
 
+```bash
 /opt/sportflow/deploy.sh
+```
 
 Flujo actual:
 
+```text
 Cambios en desarrollo
         |
         v
@@ -302,84 +416,99 @@ Conexión al VPS
         |
         v
 SportFlow actualizado
+```
 
 
-## 12. PWA
+## 13. PWA
 
 SportFlow está configurado como Progressive Web App.
 
 Archivos principales:
 
+```text
 public/manifest.webmanifest
 public/service-worker.js
 public/icons/icon-192.png
 public/icons/icon-512.png
-public/icons/apple-touch-icon.png
+public/icons/apple-touch-icon-v2.png
+```
 
 El service worker no almacena actualmente:
 
-* Información privada.
-* Respuestas de la API.
-* Tokens.
-* Pagos.
-* Datos administrativos.
+- Información privada.
+- Respuestas de la API.
+- Tokens.
+- Pagos.
+- Datos administrativos.
 
 La PWA fue probada correctamente en Safari para iPhone.
 
 En iPhone se instala mediante:
 
+```text
 Safari
 → Compartir
 → Agregar a pantalla de inicio
+```
 
 En Android:
 
+```text
 Chrome
 → Menú
 → Instalar aplicación
+```
 
 
-
-## 13. GitHub Actions
+## 14. GitHub Actions
 
 Existe un workflow en:
 
+```text
 .github/workflows/deploy.yml
+```
 
 Su objetivo es ejecutar automáticamente:
 
+```bash
 /opt/sportflow/deploy.sh
+```
 
 cuando se realiza un push a:
 
+```text
 develop
+```
 
 Actualmente el workflow está pendiente debido a un bloqueo de facturación mostrado por GitHub Actions.
 
 Mientras se resuelve, el despliegue continúa siendo manual mediante:
 
+```bash
 /opt/sportflow/deploy.sh
+```
 
 
-## 14. Estado actual
+## 15. Estado actual
 
-Componente
-VPS	Listo
-Docker	Listo
-Docker Compose	Listo
-PostgreSQL	Listo
-Gunicorn	Listo
-Nginx	Listo
-Cloudflare	Listo
-Dominio	Listo
-HTTPS	Listo
-Backups automáticos	Listo
-Deploy manual	Listo
-PWA	Lista
-GitHub Actions	Pendiente por GitHub
-Monitorización	Pendiente
-Resend en producción	Pendiente
-Push notifications	Pendiente
-
-
-
+| Componente | Estado |
+|---|---|
+| VPS | Listo |
+| Docker | Listo |
+| Docker Compose | Listo |
+| PostgreSQL | Listo |
+| Gunicorn | Listo |
+| Nginx | Listo |
+| Cloudflare | Listo |
+| Dominio | Listo |
+| HTTPS | Listo |
+| Backups PostgreSQL | Listo |
+| Persistencia de archivos subidos | Lista |
+| Backup de archivos subidos | Pendiente |
+| Deploy manual | Listo |
+| PWA | Lista |
+| GitHub Actions | Pendiente por GitHub |
+| Monitorización | Pendiente |
+| Resend en producción | Pendiente |
+| Push notifications | Pendiente |
+````

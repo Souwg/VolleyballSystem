@@ -1,8 +1,8 @@
 """empty message
 
-Revision ID: 224d7fca2d60
+Revision ID: 007be904e222
 Revises: 
-Create Date: 2026-07-04 15:18:03.907033
+Create Date: 2026-08-09 22:56:03.893299
 
 """
 from alembic import op
@@ -10,7 +10,7 @@ import sqlalchemy as sa
 
 
 # revision identifiers, used by Alembic.
-revision = '224d7fca2d60'
+revision = '007be904e222'
 down_revision = None
 branch_labels = None
 depends_on = None
@@ -63,6 +63,7 @@ def upgrade():
     sa.Column('enrollment_fee', sa.Float(), nullable=True),
     sa.Column('monthly_fee', sa.Float(), nullable=True),
     sa.Column('payment_cycle_day', sa.Integer(), nullable=True),
+    sa.Column('payment_control_start_date', sa.Date(), nullable=True),
     sa.Column('is_active', sa.Boolean(), nullable=False),
     sa.Column('club_id', sa.String(length=36), nullable=False),
     sa.Column('created_at', sa.DateTime(), nullable=True),
@@ -271,6 +272,7 @@ def upgrade():
     sa.Column('notes', sa.Text(), nullable=True),
     sa.Column('created_by', sa.String(length=36), nullable=True),
     sa.Column('paid_by', sa.String(length=36), nullable=True),
+    sa.Column('settlement_source', sa.String(length=20), nullable=True),
     sa.Column('created_at', sa.DateTime(), nullable=True),
     sa.ForeignKeyConstraint(['club_id'], ['clubs.id'], ),
     sa.ForeignKeyConstraint(['created_by'], ['users.id'], ),

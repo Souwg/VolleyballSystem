@@ -196,6 +196,7 @@ class Player(db.Model):
     enrollment_fee = db.Column(db.Float, nullable=True)
     monthly_fee = db.Column(db.Float, nullable=True)
     payment_cycle_day = db.Column(db.Integer, nullable=True)
+    payment_control_start_date = db.Column(db.Date, nullable=True)
 
     is_active = db.Column(db.Boolean(), default=True, nullable=False)
 
@@ -227,6 +228,11 @@ class Player(db.Model):
             "enrollment_fee": self.enrollment_fee,
             "monthly_fee": self.monthly_fee,
             "payment_cycle_day": self.payment_cycle_day,
+            "payment_control_start_date": (
+                self.payment_control_start_date.isoformat()
+                if self.payment_control_start_date
+                else None
+            ),
             "is_active": self.is_active,
             "club_id": self.club_id,
             "created_at": self.created_at.isoformat()
@@ -1135,6 +1141,7 @@ class PlayerPayment(db.Model):
 
     created_by = db.Column(db.String(36), db.ForeignKey("users.id"), nullable=True)
     paid_by = db.Column(db.String(36), db.ForeignKey("users.id"), nullable=True)
+    settlement_source = db.Column(db.String(20), nullable=True)
 
     created_at = db.Column(db.DateTime(), default=datetime.utcnow)
 
@@ -1177,6 +1184,7 @@ class PlayerPayment(db.Model):
             "payment_date": self.payment_date.isoformat() if self.payment_date else None,
             "payment_method": self.payment_method,
             "reference": self.reference,
+            "settlement_source": self.settlement_source,
             "receipt": self.receipt.serialize() if self.receipt else None,
             "notes": self.notes,
             "created_by": self.created_by,

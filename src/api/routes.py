@@ -4,7 +4,6 @@ This module takes care of starting the API Server, Loading the DB and Adding the
 import os
 import re
 import uuid
-import calendar
 import secrets
 import hashlib
 from src.api.email_service import (
@@ -14,6 +13,13 @@ from src.api.email_service import (
 from src.api.receipt_service import (
     generate_receipt_number,
     generate_payment_receipt_pdf
+)
+from src.api.payment_service import (
+    add_months,
+    get_first_payment_cycle_on_or_after,
+    sync_player_monthly_payments,
+    sync_club_monthly_payments,
+    initialize_player_payment_history
 )
 from datetime import datetime, timedelta
 from decimal import Decimal, InvalidOperation, ROUND_HALF_UP
@@ -83,6 +89,16 @@ VALID_MATCH_TYPES = ["official", "friendly", "scrimmage"]
 ALLOWED_POSITIONS = ["setter", "outside", "middle", "opposite", "libero"]
 VALID_PAYMENT_STATUSES = ["pending", "paid", "overdue", "cancelled"]
 VALID_PAYMENT_METHODS = ["cash", "transfer", "zelle", "mobile_payment", "other"]
+VALID_INITIAL_PAYMENT_MODES = [
+    "import_history",
+    "start_now"
+]
+
+VALID_INITIAL_ENROLLMENT_STATUSES = [
+    "pending",
+    "paid_before_sportflow",
+    "not_applicable"
+]
 VALID_PAYMENT_TYPES = [
     "enrollment",
     "monthly",
@@ -461,18 +477,6 @@ def recalculate_player_match_stats(match_player_id):
                 stat.blocks_neutral += 1
             elif result == "error":
                 stat.blocks_errors += 1
-
-def add_months(source_date, months=1):
-    month = source_date.month - 1 + months
-    year = source_date.year + month // 12
-    month = month % 12 + 1
-
-    day = min(
-        source_date.day,
-        calendar.monthrange(year, month)[1]
-    )
-
-    return source_date.replace(year=year, month=month, day=day)
 
 def hash_reset_token(token):
     return hashlib.sha256(token.encode("utf-8")).hexdigest()
@@ -3094,6 +3098,13 @@ def update_player_payment_settings(player_id):
             400
         )
 
+    if user.role not in ["club_owner", "coach", "staff"]:
+        return error_response(
+            "No tienes permisos para configurar pagos",
+            "FORBIDDEN",
+            403
+        )
+
     club = Club.query.get(user.club_id)
 
     if not club:
@@ -3101,13 +3112,6 @@ def update_player_payment_settings(player_id):
             "Club no encontrado",
             "CLUB_NOT_FOUND",
             404
-        )
-
-    if user.role not in ["club_owner", "coach", "staff"]:
-        return error_response(
-            "No tienes permisos para configurar pagos",
-            "FORBIDDEN",
-            403
         )
 
     player = Player.query.get(player_id)
@@ -3125,7 +3129,20 @@ def update_player_payment_settings(player_id):
     custom_enrollment_fee = body.get("enrollment_fee")
     custom_monthly_fee = body.get("monthly_fee")
 
-    # Validar fecha de inscripción
+    initial_payment_mode = body.get("initial_payment_mode")
+    initial_enrollment_status = body.get(
+        "initial_enrollment_status"
+    )
+
+    last_paid_month = body.get("last_paid_month")
+
+    if last_paid_month == "":
+        last_paid_month = None
+
+    # =====================================================
+    # 1. FECHA DE INSCRIPCIÓN
+    # =====================================================
+
     if not enrollment_date:
         return error_response(
             "La fecha de inscripción es obligatoria",
@@ -3138,6 +3155,7 @@ def update_player_payment_settings(player_id):
             enrollment_date,
             "%Y-%m-%d"
         ).date()
+
     except (TypeError, ValueError):
         return error_response(
             "Formato de fecha inválido. Usa YYYY-MM-DD",
@@ -3146,19 +3164,173 @@ def update_player_payment_settings(player_id):
         )
 
     payment_cycle_day = parsed_enrollment_date.day
+    today = datetime.utcnow().date()
 
-    # Detectar si la jugadora tiene montos personalizados
+    # =====================================================
+    # 2. SABER SI ES CONFIGURACIÓN INICIAL
+    # =====================================================
+
+    # Puede existir información creada por la versión anterior
+    # del módulo de pagos sin payment_control_start_date.
+    #
+    # Solo revisamos inscripción y mensualidades:
+    # un cargo de torneo, arbitraje o extra NO significa que
+    # el cobro mensual ya haya sido configurado.
+    existing_base_payment = PlayerPayment.query.filter(
+        PlayerPayment.club_id == user.club_id,
+        PlayerPayment.player_id == player.id,
+        PlayerPayment.payment_type.in_(
+            ["enrollment", "monthly"]
+        )
+    ).first()
+
+    has_legacy_payment_history = (
+        player.payment_control_start_date is None
+        and existing_base_payment is not None
+    )
+
+    if has_legacy_payment_history:
+        return error_response(
+            (
+                "Este deportista tiene un historial de pagos anterior "
+                "que debe revisarse antes de iniciar la nueva configuración"
+            ),
+            "LEGACY_PAYMENT_HISTORY_REQUIRES_REVIEW",
+            409
+        )
+
+    is_initial_setup = (
+        player.payment_control_start_date is None
+    )
+    # Una vez inicializado el historial, la fecha de inscripción
+    # no se cambia silenciosamente porque afectaría los ciclos
+    # ya creados.
+    if (
+        not is_initial_setup
+        and player.enrollment_date
+        and parsed_enrollment_date != player.enrollment_date
+    ):
+        return error_response(
+            (
+                "La fecha de inscripción no puede modificarse "
+                "después de iniciar el control de pagos"
+            ),
+            "ENROLLMENT_DATE_LOCKED",
+            409
+        )
+
+    # =====================================================
+    # 3. VALIDAR ESTADO INICIAL
+    # =====================================================
+
+    if is_initial_setup:
+
+        if initial_payment_mode not in VALID_INITIAL_PAYMENT_MODES:
+            return error_response(
+                "Debes indicar cómo iniciar el historial de mensualidades",
+                "INITIAL_PAYMENT_MODE_REQUIRED",
+                400
+            )
+
+        if (
+            initial_enrollment_status
+            not in VALID_INITIAL_ENROLLMENT_STATUSES
+        ):
+            return error_response(
+                "Debes indicar el estado inicial de la inscripción",
+                "INITIAL_ENROLLMENT_STATUS_REQUIRED",
+                400
+            )
+
+        # Traer historial solo tiene sentido para una inscripción
+        # que ya ocurrió.
+        if (
+            initial_payment_mode == "import_history"
+            and parsed_enrollment_date > today
+        ):
+            return error_response(
+                (
+                    "No puedes traer historial de mensualidades "
+                    "para una inscripción futura"
+                ),
+                "INVALID_HISTORY_ENROLLMENT_DATE",
+                400
+            )
+
+    # =====================================================
+    # 4. VALIDAR ÚLTIMO MES PAGADO
+    # =====================================================
+
+    if (
+        is_initial_setup
+        and initial_payment_mode == "import_history"
+        and last_paid_month
+    ):
+        try:
+            parsed_last_paid_month = datetime.strptime(
+                last_paid_month,
+                "%Y-%m"
+            )
+
+        except (TypeError, ValueError):
+            return error_response(
+                "El último mes pagado debe usar el formato YYYY-MM",
+                "INVALID_LAST_PAID_MONTH_FORMAT",
+                400
+            )
+
+        months_difference = (
+            (
+                parsed_last_paid_month.year
+                - parsed_enrollment_date.year
+            ) * 12
+            + parsed_last_paid_month.month
+            - parsed_enrollment_date.month
+        )
+
+        if months_difference < 0:
+            return error_response(
+                (
+                    "El último mes pagado no puede ser anterior "
+                    "a la inscripción"
+                ),
+                "LAST_PAID_MONTH_BEFORE_ENROLLMENT",
+                400
+            )
+
+        selected_cycle = add_months(
+            parsed_enrollment_date,
+            months_difference
+        )
+
+        if selected_cycle > today:
+            return error_response(
+                (
+                    "El último mes pagado corresponde a un ciclo "
+                    "que todavía no ha comenzado"
+                ),
+                "LAST_PAID_MONTH_NOT_REACHED",
+                400
+            )
+
+    # En start_now no necesitamos historial anterior.
+    if initial_payment_mode == "start_now":
+        last_paid_month = None
+
+    # =====================================================
+    # 5. MONTOS PERSONALIZADOS / MONTOS DEL CLUB
+    # =====================================================
+
     has_custom_enrollment_fee = (
-        custom_enrollment_fee is not None and custom_enrollment_fee != ""
+        custom_enrollment_fee is not None
+        and custom_enrollment_fee != ""
     )
 
     has_custom_monthly_fee = (
-        custom_monthly_fee is not None and custom_monthly_fee != ""
+        custom_monthly_fee is not None
+        and custom_monthly_fee != ""
     )
 
-    # Montos efectivos:
-    # Si viene personalizado, usa personalizado.
-    # Si no viene personalizado, usa el monto del club.
     enrollment_fee = (
         custom_enrollment_fee
         if has_custom_enrollment_fee
@@ -3174,6 +3346,7 @@ def update_player_payment_settings(player_id):
     try:
         enrollment_fee = float(enrollment_fee or 0)
         monthly_fee = float(monthly_fee or 0)
+
     except (TypeError, ValueError):
         return error_response(
             "Los montos deben ser numéricos",
@@ -3181,9 +3354,9 @@ def update_player_payment_settings(player_id):
             400
         )
 
-    if enrollment_fee <= 0:
+    if enrollment_fee < 0:
         return error_response(
-            "Debes configurar un monto de inscripción válido",
+            "El monto de inscripción no puede ser negativo",
             "INVALID_ENROLLMENT_FEE",
             400
         )
@@ -3195,90 +3368,106 @@ def update_player_payment_settings(player_id):
             400
         )
 
-    # Guardar configuración del jugador
+    # Si la inscripción sí aplica, necesitamos un monto válido.
+    if (
+        is_initial_setup
+        and initial_enrollment_status != "not_applicable"
+        and enrollment_fee <= 0
+    ):
+        return error_response(
+            "Debes configurar un monto de inscripción válido",
+            "INVALID_ENROLLMENT_FEE",
+            400
+        )
+
+    # =====================================================
+    # 6. GUARDAR CONFIGURACIÓN DEL JUGADOR
+    # =====================================================
+
     player.enrollment_date = parsed_enrollment_date
 
-    # Importante:
-    # Si NO son montos personalizados, dejamos null en el jugador.
-    # Así el frontend sabe que debe mostrar el checkbox desmarcado.
-    player.enrollment_fee = enrollment_fee if has_custom_enrollment_fee else None
-    player.monthly_fee = monthly_fee if has_custom_monthly_fee else None
+    player.enrollment_fee = (
+        enrollment_fee
+        if has_custom_enrollment_fee
+        else None
+    )
+
+    player.monthly_fee = (
+        monthly_fee
+        if has_custom_monthly_fee
+        else None
+    )
 
     player.payment_cycle_day = payment_cycle_day
 
-    # Limpiar mensualidades NO pagadas para regenerarlas desde la nueva fecha.
-    # No tocamos pagos pagados para no borrar historial real.
-    old_unpaid_monthly_payments = PlayerPayment.query.filter(
-        PlayerPayment.club_id == user.club_id,
-        PlayerPayment.player_id == player.id,
-        PlayerPayment.payment_type == "monthly",
-        PlayerPayment.status.in_(["pending", "overdue"])
-    ).all()
+    # =====================================================
+    # 7. CONFIGURACIÓN INICIAL
+    # =====================================================
 
-    for payment in old_unpaid_monthly_payments:
-        db.session.delete(payment)
+    if is_initial_setup:
 
-    # Crear o actualizar cargo de inscripción
-    if enrollment_fee > 0:
-        existing_enrollment_payment = PlayerPayment.query.filter_by(
-            club_id=user.club_id,
-            player_id=player.id,
-            payment_type="enrollment"
-        ).first()
+        initialization = initialize_player_payment_history(
+            player=player,
+            enrollment_fee=enrollment_fee,
+            monthly_fee=monthly_fee,
+            enrollment_status=initial_enrollment_status,
+            initial_payment_mode=initial_payment_mode,
+            last_paid_month=last_paid_month,
+            user_id=user.id
+        )
 
-        if existing_enrollment_payment:
-            # Si todavía no fue pagada, sí podemos corregir fecha y monto.
-            if existing_enrollment_payment.status in ["pending", "overdue"]:
-                existing_enrollment_payment.amount = enrollment_fee
-                existing_enrollment_payment.due_date = parsed_enrollment_date
-                existing_enrollment_payment.status = "pending"
-        else:
-            enrollment_payment = PlayerPayment(
-                club_id=user.club_id,
-                player_id=player.id,
-                payment_type="enrollment",
-                amount=enrollment_fee,
-                status="pending",
-                due_date=parsed_enrollment_date,
-                created_by=user.id
-            )
+        db.session.commit()
 
-            db.session.add(enrollment_payment)
+        return jsonify({
+            "message": "Configuración de pagos creada correctamente",
+            "player": player.serialize(),
+            "initialization": {
+                "mode": initialization["mode"],
+                "payment_control_start_date": (
+                    initialization[
+                        "payment_control_start_date"
+                    ].isoformat()
+                    if initialization[
+                        "payment_control_start_date"
+                    ]
+                    else None
+                ),
+                "migrated_months": initialization[
+                    "migrated_months"
+                ],
+                "unpaid_months": initialization[
+                    "unpaid_months"
+                ]
+            }
+        }), 200
 
-    # Crear mensualidades desde la fecha de inscripción hasta el ciclo actual
-    if monthly_fee > 0:
-        today = datetime.utcnow().date()
+    # =====================================================
+    # 8. EDICIÓN POSTERIOR
+    # =====================================================
 
-        period_start = parsed_enrollment_date
-        safety_counter = 0
+    # La configuración inicial ya no se vuelve a ejecutar.
+    # Si la inscripción todavía está pendiente, permitimos
+    # actualizar su monto.
+    enrollment_payment = PlayerPayment.query.filter_by(
+        club_id=user.club_id,
+        player_id=player.id,
+        payment_type="enrollment"
+    ).first()
 
-        while period_start <= today and safety_counter < 36:
-            period_end = add_months(period_start, 1)
+    if (
+        enrollment_payment
+        and enrollment_payment.status in ["pending", "overdue"]
+        and enrollment_fee > 0
+    ):
+        enrollment_payment.amount = enrollment_fee
 
-            existing_monthly_payment = PlayerPayment.query.filter_by(
-                club_id=user.club_id,
-                player_id=player.id,
-                payment_type="monthly",
-                period_start=period_start
-            ).first()
-
-            if not existing_monthly_payment:
-                monthly_payment = PlayerPayment(
-                    club_id=user.club_id,
-                    player_id=player.id,
-                    payment_type="monthly",
-                    amount=monthly_fee,
-                    status="pending",
-                    period_start=period_start,
-                    period_end=period_end,
-                    due_date=period_start + timedelta(days=5),
-                    created_by=user.id
-                )
-
-                db.session.add(monthly_payment)
-
-            period_start = period_end
-            safety_counter += 1
+    # Crea cualquier mensualidad que deba existir y aún falte.
+    # Las mensualidades históricas existentes NO se destruyen.
+    sync_player_monthly_payments(
+        player=player,
+        monthly_fee=monthly_fee,
+        user_id=user.id
+    )
 
     db.session.commit()
 
@@ -3306,6 +3495,23 @@ def get_payments():
             "FORBIDDEN",
             403
         )
+
+    club = Club.query.get(user.club_id)
+
+    if not club:
+        return error_response(
+            "Club no encontrado",
+            "CLUB_NOT_FOUND",
+            404
+        )
+
+    created_monthly_payments = sync_club_monthly_payments(
+        club=club,
+        user_id=user.id
+    )
+
+    if created_monthly_payments > 0:
+        db.session.commit()
 
     status_filter = request.args.get("status")
     payment_type_filter = request.args.get("payment_type")
@@ -3337,17 +3543,9 @@ def get_payments():
             PlayerPayment.payment_type == payment_type_filter
         )
 
-    all_payments = summary_query.order_by(
-        PlayerPayment.due_date.asc().nullslast(),
-        Player.first_name.asc(),
-        Player.last_name.asc()
-    ).all()
+    all_payments = summary_query.all()
 
-    payments = list_query.order_by(
-        PlayerPayment.due_date.asc().nullslast(),
-        Player.first_name.asc(),
-        Player.last_name.asc()
-    ).all()
+    payments = list_query.all()
 
     today = datetime.utcnow().date()
     status_changed = False
@@ -3364,6 +3562,73 @@ def get_payments():
     if status_changed:
         db.session.commit()
 
+    # ==================================================
+    # ORDEN OPERATIVO DE COBROS
+    # ==================================================
+    # 1. Atrasados: los más antiguos primero
+    # 2. Pendientes: los próximos a vencer primero
+    # 3. Pagados: los más recientes primero
+    # 4. Cancelados: al final
+
+    def payment_order_key(payment):
+
+        status_priority = {
+            "overdue": 0,
+            "pending": 1,
+            "paid": 2,
+            "cancelled": 3
+        }
+
+        priority = status_priority.get(
+            payment.status,
+            4
+        )
+
+        # Deudas:
+        # queremos primero la fecha de vencimiento
+        # más antigua / más próxima.
+        if payment.status in ["overdue", "pending"]:
+
+            date_order = (
+                payment.due_date.toordinal()
+                if payment.due_date
+                else datetime.max.date().toordinal()
+            )
+
+        # Historial:
+        # queremos primero los pagos más recientes.
+        else:
+
+            reference_date = (
+                payment.payment_date
+                or payment.due_date
+            )
+
+            date_order = (
+                -reference_date.toordinal()
+                if reference_date
+                else 0
+            )
+
+        player_name = ""
+
+        if payment.player:
+            player_name = (
+                f"{payment.player.first_name or ''} "
+                f"{payment.player.last_name or ''}"
+            ).strip().lower()
+
+        return (
+            priority,
+            date_order,
+            player_name
+        )
+
+
+    payments.sort(
+        key=payment_order_key
+    )
+
     summary = {
         "total": len(all_payments),
 
@@ -3377,6 +3642,14 @@ def get_payments():
         "overdue_amount": 0,
         "cancelled_amount": 0,
 
+        # Pagos realmente registrados dentro de SportFlow.
+        "registered_paid": 0,
+        "registered_paid_amount": 0,
+
+        # Pagos que ya estaban saldados antes de usar SportFlow.
+        "migrated_paid": 0,
+        "migrated_paid_amount": 0,
+
         "expected_amount": 0,
         "total_amount": 0
     }
@@ -3384,13 +3657,45 @@ def get_payments():
     for payment in all_payments:
         amount = payment.amount or 0
 
-        if payment.status in ["pending", "paid", "overdue", "cancelled"]:
+        # ==================================================
+        # ESTADO GENERAL DE LA OBLIGACIÓN
+        # ==================================================
+
+        if payment.status in [
+            "pending",
+            "paid",
+            "overdue",
+            "cancelled"
+        ]:
             summary[payment.status] += 1
             summary[f"{payment.status}_amount"] += amount
+
+        # ==================================================
+        # PAGOS SALDADOS
+        # ==================================================
+
+        if payment.status == "paid":
+
+            if payment.settlement_source == "migration":
+                summary["migrated_paid"] += 1
+                summary["migrated_paid_amount"] += amount
+
+            else:
+                # manual es el valor normal.
+                # También dejamos pasar None defensivamente
+                # por si existiera algún pago antiguo.
+                summary["registered_paid"] += 1
+                summary["registered_paid_amount"] += amount
+
+        # ==================================================
+        # DEUDA ACTUAL
+        # ==================================================
 
         if payment.status in ["pending", "overdue"]:
             summary["expected_amount"] += amount
 
+        # Total histórico de obligaciones, incluyendo
+        # pagadas antes de SportFlow.
         if payment.status in ["pending", "paid", "overdue"]:
             summary["total_amount"] += amount
 
@@ -3434,6 +3739,15 @@ def update_payment(payment_id):
             404
         )
 
+    # Los registros migrados representan historia anterior
+    # a SportFlow y no se modifican como pagos normales.
+    if payment.settlement_source == "migration":
+        return error_response(
+            "Los pagos anteriores a SportFlow no pueden modificarse como pagos normales",
+            "MIGRATED_PAYMENT_LOCKED",
+            409
+        )
+
     body = request.get_json() or {}
 
     status = body.get("status")
@@ -3456,6 +3770,7 @@ def update_payment(payment_id):
 
         if status == "paid":
             payment.paid_by = user.id
+            payment.settlement_source = "manual"
 
             if not payment.payment_date:
                 payment.payment_date = datetime.utcnow().date()
@@ -3468,6 +3783,7 @@ def update_payment(payment_id):
             payment.payment_date = None
             payment.payment_method = None
             payment.reference = None
+            payment.settlement_source = None
 
     if amount is not None:
         try:
@@ -3491,7 +3807,10 @@ def update_payment(payment_id):
     if payment_method is not None:
         payment_method = str(payment_method).strip() or None
 
-        if payment_method and payment_method not in VALID_PAYMENT_METHODS:
+        if (
+            payment_method
+            and payment_method not in VALID_PAYMENT_METHODS
+        ):
             return error_response(
                 "Método de pago inválido",
                 "INVALID_PAYMENT_METHOD",
@@ -3510,7 +3829,8 @@ def update_payment(payment_id):
         if payment_date:
             try:
                 payment.payment_date = datetime.strptime(
-                    payment_date, "%Y-%m-%d"
+                    payment_date,
+                    "%Y-%m-%d"
                 ).date()
             except ValueError:
                 return error_response(
@@ -3525,7 +3845,8 @@ def update_payment(payment_id):
         if due_date:
             try:
                 payment.due_date = datetime.strptime(
-                    due_date, "%Y-%m-%d"
+                    due_date,
+                    "%Y-%m-%d"
                 ).date()
             except ValueError:
                 return error_response(
@@ -3571,6 +3892,30 @@ def get_player_payments(player_id):
             "PLAYER_NOT_FOUND",
             404
         )
+
+    club = Club.query.get(user.club_id)
+
+    if not club:
+        return error_response(
+            "Club no encontrado",
+            "CLUB_NOT_FOUND",
+            404
+        )
+
+    monthly_fee = (
+        player.monthly_fee
+        if player.monthly_fee is not None
+        else club.default_monthly_fee
+    )
+
+    created_monthly_payments = sync_player_monthly_payments(
+        player=player,
+        monthly_fee=float(monthly_fee or 0),
+        user_id=user.id
+    )
+
+    if created_monthly_payments > 0:
+        db.session.commit()
 
     payments = PlayerPayment.query.filter_by(
         player_id=player.id,
@@ -3632,6 +3977,13 @@ def create_payment_receipt(payment_id):
         return error_response(
             "Solo puedes generar recibos de pagos registrados",
             "PAYMENT_NOT_PAID",
+            400
+        )
+
+    if payment.settlement_source == "migration":
+        return error_response(
+            "Los pagos anteriores a SportFlow no generan recibo",
+            "MIGRATED_PAYMENT_RECEIPT_NOT_ALLOWED",
             400
         )
 

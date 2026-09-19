@@ -19,6 +19,8 @@ La aplicación de producción se encuentra disponible en:
 https://sportflow.club
 ```
 
+---
+
 ## 2. Repositorio y rama de producción
 
 Repositorio:
@@ -54,6 +56,8 @@ La salida esperada es:
 develop
 ```
 
+---
+
 ## 3. Flujo de trabajo
 
 El flujo actual de publicación es:
@@ -88,6 +92,8 @@ Para actualizar la aplicación que está funcionando en el VPS, también debe ej
 /opt/sportflow/deploy.sh
 ```
 
+---
+
 ## 4. Preparación de los cambios
 
 Antes de desplegar, los cambios deben guardarse en Git.
@@ -108,6 +114,18 @@ git commit -m "Improve player payments interface"
 git push origin develop
 ```
 
+Antes de enviar los cambios se recomienda comprobar:
+
+```bash
+git status
+```
+
+y:
+
+```bash
+git diff --check
+```
+
 No deben subirse al repositorio:
 
 - Contraseñas.
@@ -116,6 +134,8 @@ No deben subirse al repositorio:
 - Archivos `.env`.
 - Claves SSH.
 - Credenciales de base de datos.
+
+---
 
 ## 5. Conexión al servidor
 
@@ -136,6 +156,8 @@ ssh sportflowadmin@IP_DEL_SERVIDOR
 La IP real puede consultarse en el panel del proveedor del VPS.
 
 No se recomienda escribir contraseñas, tokens ni claves privadas dentro de esta documentación.
+
+---
 
 ## 6. Script de despliegue
 
@@ -165,6 +187,8 @@ Para asignarlos nuevamente:
 chmod +x /opt/sportflow/deploy.sh
 ```
 
+---
+
 ## 7. Etapas del despliegue
 
 El script ejecuta las siguientes etapas.
@@ -179,6 +203,8 @@ develop
 
 Si se encuentra en otra rama, el despliegue se cancela.
 
+---
+
 ### 7.2 Verificación de cambios locales
 
 El script ejecuta una comprobación equivalente a:
@@ -190,6 +216,8 @@ git status --porcelain
 Si existen cambios locales sin guardar, el despliegue se cancela.
 
 Esto evita que un `git pull` sobrescriba o mezcle cambios hechos directamente en el servidor.
+
+---
 
 ### 7.3 Consulta de GitHub
 
@@ -213,6 +241,8 @@ git pull --ff-only origin develop
 
 La opción `--ff-only` evita crear mezclas automáticas inesperadas en el servidor.
 
+---
+
 ### 7.4 Respaldo previo
 
 Antes de reconstruir la aplicación, se ejecuta:
@@ -224,6 +254,12 @@ Antes de reconstruir la aplicación, se ejecuta:
 Esto crea un respaldo comprimido de PostgreSQL.
 
 Si el respaldo falla, el despliegue se cancela.
+
+Este respaldo protege la información almacenada en PostgreSQL.
+
+Los archivos subidos por los usuarios se almacenan por separado y se explican en la sección de persistencia de archivos.
+
+---
 
 ### 7.5 Construcción de la imagen
 
@@ -251,6 +287,10 @@ Durante esta etapa se compilan:
 - Archivos de la PWA.
 - Recursos estáticos.
 
+La nueva imagen Docker sustituirá a la utilizada por la versión anterior de `sportflow-app`.
+
+---
+
 ### 7.6 Verificación de PostgreSQL
 
 Antes de ejecutar migraciones, se asegura que la base de datos esté activa:
@@ -266,6 +306,8 @@ El servicio incluye un `healthcheck`.
 
 Las migraciones solamente comienzan cuando PostgreSQL aparece como saludable.
 
+---
+
 ### 7.7 Migraciones
 
 Las migraciones se ejecutan con:
@@ -279,7 +321,9 @@ docker compose \
 
 Esto aplica las migraciones pendientes de Alembic sobre la base de datos de producción.
 
-No debe eliminarse esta etapa, especialmente cuando una nueva versión incluye cambios en los modelos.
+No debe eliminarse esta etapa, especialmente cuando una nueva versión incluye cambios en los modelos o en la estructura de la base de datos.
+
+---
 
 ### 7.8 Inicio de la aplicación
 
@@ -294,7 +338,115 @@ docker compose \
 
 Docker recrea el contenedor cuando detecta una imagen nueva.
 
-### 7.9 Limpieza
+El contenedor principal es:
+
+```text
+sportflow-app
+```
+
+---
+
+### 7.9 Persistencia de archivos subidos
+
+Los archivos subidos por los usuarios no se almacenan únicamente dentro del contenedor `sportflow-app`.
+
+Entre ellos pueden encontrarse:
+
+- Logos de clubes.
+- Fotografías de jugadores.
+- Recibos.
+- Otros archivos almacenados por SportFlow.
+
+En producción se almacenan físicamente en el VPS en:
+
+```text
+/opt/sportflow/uploads
+```
+
+Dentro del contenedor están disponibles en:
+
+```text
+/app/public/uploads
+```
+
+Esto se realiza mediante el volumen configurado en:
+
+```text
+/opt/sportflow/docker/compose.yml
+```
+
+Configuración:
+
+```yaml
+services:
+  app:
+    volumes:
+      - /opt/sportflow/uploads:/app/public/uploads
+```
+
+El flujo es:
+
+```text
+VPS
+/opt/sportflow/uploads
+        |
+        v
+Contenedor sportflow-app
+/app/public/uploads
+```
+
+Esto permite que los archivos permanezcan disponibles aunque:
+
+- Se reconstruya la imagen Docker.
+- Se recree `sportflow-app`.
+- Se ejecute un nuevo despliegue.
+- Se elimine una versión anterior de la imagen Docker.
+
+Para comprobar que el volumen está montado:
+
+```bash
+docker inspect sportflow-app \
+  --format '{{range .Mounts}}{{println .Source "->" .Destination}}{{end}}'
+```
+
+La salida esperada incluye:
+
+```text
+/opt/sportflow/uploads -> /app/public/uploads
+```
+
+#### Importante
+
+No debe eliminarse manualmente:
+
+```text
+/opt/sportflow/uploads
+```
+
+durante:
+
+- Despliegues.
+- Limpiezas de Docker.
+- Mantenimiento del VPS.
+- Recreación de contenedores.
+
+El respaldo automático de PostgreSQL no incluye esta carpeta.
+
+Por lo tanto, aunque estos archivos ya sobreviven a los despliegues, debe existir posteriormente un mecanismo de respaldo independiente para:
+
+```text
+/opt/sportflow/uploads
+```
+
+Para más detalles consultar:
+
+```text
+docs/01-infraestructura-produccion.md
+```
+
+---
+
+### 7.10 Limpieza
 
 El script elimina imágenes Docker que ya no están siendo utilizadas:
 
@@ -304,7 +456,25 @@ docker image prune -f
 
 Esto ayuda a evitar la acumulación innecesaria de espacio en el VPS.
 
-### 7.10 Verificación final
+Este comando elimina imágenes Docker sin uso, pero no elimina:
+
+```text
+/opt/sportflow/uploads
+```
+
+ni el volumen persistente de PostgreSQL utilizado por SportFlow.
+
+No deben utilizarse comandos como:
+
+```bash
+docker compose down -v
+```
+
+sin revisar previamente sus consecuencias, ya que la opción `-v` puede eliminar volúmenes administrados por Docker.
+
+---
+
+### 7.11 Verificación final
 
 Al finalizar, se ejecuta:
 
@@ -327,6 +497,14 @@ La base de datos debe aparecer como:
 ```text
 healthy
 ```
+
+La aplicación debe aparecer en estado:
+
+```text
+Up
+```
+
+---
 
 ## 8. Comprobaciones posteriores
 
@@ -355,6 +533,11 @@ Y comprobar:
 - Que el inicio de sesión funcione.
 - Que no aparezcan errores visibles.
 - Que las funciones modificadas respondan correctamente.
+- Que logos y fotografías subidos anteriormente sigan disponibles.
+
+Cuando el cambio afecte a la PWA, también debe probarse desde la aplicación instalada en el teléfono.
+
+---
 
 ## 9. Revisión de contenedores
 
@@ -402,7 +585,47 @@ docker compose \
   logs database --tail=100
 ```
 
-## 10. Cambios locales en el VPS
+---
+
+## 10. Verificación de los archivos persistentes
+
+Para comprobar desde el VPS que existen los archivos subidos:
+
+```bash
+ls -lah /opt/sportflow/uploads
+```
+
+Para consultar el tamaño total:
+
+```bash
+du -sh /opt/sportflow/uploads
+```
+
+Para comprobar que son visibles dentro del contenedor:
+
+```bash
+docker exec sportflow-app \
+  ls -lah /app/public/uploads
+```
+
+Para comprobar específicamente el montaje:
+
+```bash
+docker inspect sportflow-app \
+  --format '{{range .Mounts}}{{println .Source "->" .Destination}}{{end}}'
+```
+
+Debe aparecer:
+
+```text
+/opt/sportflow/uploads -> /app/public/uploads
+```
+
+Si este montaje no aparece, no deben realizarse nuevos despliegues hasta revisar la configuración de `compose.yml`.
+
+---
+
+## 11. Cambios locales en el VPS
 
 No se recomienda modificar código directamente en producción.
 
@@ -432,7 +655,15 @@ git clean -fd
 
 sin comprobar previamente qué información eliminarán.
 
-## 11. Variables de entorno
+Especialmente debe evitarse cualquier comando que pueda afectar:
+
+```text
+/opt/sportflow/uploads
+```
+
+---
+
+## 12. Variables de entorno
 
 Las variables de producción están en:
 
@@ -440,7 +671,7 @@ Las variables de producción están en:
 /opt/sportflow/docker/.env
 ```
 
-Ese archivo se encuentra fuera del repositorio principal.
+Este archivo se encuentra fuera del repositorio principal.
 
 El despliegue utiliza ese archivo mediante:
 
@@ -466,11 +697,21 @@ docker compose \
   up -d app
 ```
 
-## 12. Despliegue sin cambios nuevos
+Nunca deben documentarse los valores reales de:
+
+- Contraseñas.
+- API keys.
+- Tokens.
+- Credenciales de servicios.
+- Claves privadas.
+
+---
+
+## 13. Despliegue sin cambios nuevos
 
 El script puede ejecutarse aunque el servidor ya tenga la última versión.
 
-En ese caso mostrará:
+En ese caso puede mostrar:
 
 ```text
 El servidor ya tiene la última versión.
@@ -486,7 +727,17 @@ Aun así, actualmente realiza:
 
 Esto permite comprobar que el proceso completo sigue funcionando.
 
-## 13. Fallos durante el despliegue
+Los archivos almacenados en:
+
+```text
+/opt/sportflow/uploads
+```
+
+no deben verse afectados por este proceso.
+
+---
+
+## 14. Fallos durante el despliegue
 
 El script utiliza:
 
@@ -522,7 +773,22 @@ docker compose \
   logs app --tail=200
 ```
 
-## 14. GitHub Actions
+Si el problema está relacionado con archivos o imágenes, debe comprobarse también:
+
+```bash
+docker inspect sportflow-app \
+  --format '{{range .Mounts}}{{println .Source "->" .Destination}}{{end}}'
+```
+
+y:
+
+```bash
+ls -lah /opt/sportflow/uploads
+```
+
+---
+
+## 15. GitHub Actions
 
 Existe un workflow en:
 
@@ -558,35 +824,117 @@ Conectarse al VPS
 /opt/sportflow/deploy.sh
 ```
 
-## 15. Lista de verificación
+---
 
-Antes del despliegue:
+## 16. Lista de verificación
+
+### Antes del despliegue
 
 - [ ] Los cambios fueron probados.
 - [ ] La rama activa es `develop`.
 - [ ] No existen contraseñas dentro del código.
 - [ ] Los cambios fueron guardados con `git commit`.
 - [ ] El push a GitHub terminó correctamente.
+- [ ] No existen cambios locales inesperados en el VPS.
 
-Durante el despliegue:
+### Durante el despliegue
 
-- [ ] El respaldo fue creado.
+- [ ] El respaldo de PostgreSQL fue creado.
 - [ ] Docker terminó el build.
 - [ ] PostgreSQL está saludable.
-- [ ] Las migraciones terminaron.
+- [ ] Las migraciones terminaron correctamente.
 - [ ] `sportflow-app` está activo.
+- [ ] El montaje `/opt/sportflow/uploads -> /app/public/uploads` continúa configurado.
 
-Después del despliegue:
+### Después del despliegue
 
 - [ ] `https://sportflow.club` responde.
 - [ ] El login funciona.
 - [ ] La función modificada fue probada.
 - [ ] Los logs no muestran errores nuevos.
+- [ ] Los logos de clubes continúan disponibles.
+- [ ] Las fotografías de jugadores continúan disponibles.
+- [ ] Los archivos subidos anteriormente continúan disponibles.
 
-## 16. Comando principal
+---
+
+## 17. Comandos rápidos de diagnóstico
+
+Estado de los contenedores:
+
+```bash
+cd /opt/sportflow/docker
+
+docker compose \
+  --env-file .env \
+  -f compose.yml \
+  ps
+```
+
+Logs de la aplicación:
+
+```bash
+docker compose \
+  --env-file .env \
+  -f compose.yml \
+  logs app --tail=100
+```
+
+Verificar volumen de archivos:
+
+```bash
+docker inspect sportflow-app \
+  --format '{{range .Mounts}}{{println .Source "->" .Destination}}{{end}}'
+```
+
+Verificar archivos persistentes:
+
+```bash
+ls -lah /opt/sportflow/uploads
+```
+
+Tamaño de los archivos persistentes:
+
+```bash
+du -sh /opt/sportflow/uploads
+```
+
+Comprobar estado HTTP:
+
+```bash
+curl -I https://sportflow.club
+```
+
+---
+
+## 18. Comando principal
 
 El comando oficial para publicar la versión que ya fue enviada a GitHub es:
 
 ```bash
 /opt/sportflow/deploy.sh
+```
+
+El flujo normal de producción es:
+
+```text
+Desarrollo
+   |
+   v
+git commit
+   |
+   v
+git push origin develop
+   |
+   v
+SSH al VPS
+   |
+   v
+/opt/sportflow/deploy.sh
+   |
+   v
+Verificación
+   |
+   v
+SportFlow actualizado
 ```

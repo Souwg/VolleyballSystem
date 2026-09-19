@@ -688,10 +688,10 @@ export const PlayerDetail = () => {
             <Card className="player-payment-warning-card">
               <div>
                 <span className="player-card-label">Pagos</span>
-                <h3>Pagos no configurados</h3>
+                <h3>Cobro mensual no configurado</h3>
                 <p>
-                  Define la fecha de inscripción para generar la inscripción y
-                  las mensualidades de esta deportista.
+                  Define desde cuándo se cobra a esta deportista y cómo quieres
+                  iniciar su estado de pagos.
                 </p>
               </div>
 
@@ -699,7 +699,7 @@ export const PlayerDetail = () => {
                 type="button"
                 onClick={() => navigate(`/players/${player_id}/payments`)}
               >
-                Configurar pagos
+                Configurar cobro
               </Button>
             </Card>
           ) : (
@@ -715,7 +715,7 @@ export const PlayerDetail = () => {
                   variant="secondary"
                   onClick={() => navigate(`/players/${player_id}/payments`)}
                 >
-                  Gestionar pagos
+                  Gestionar
                 </Button>
               </div>
 
