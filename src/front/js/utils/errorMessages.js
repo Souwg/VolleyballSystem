@@ -210,6 +210,8 @@ export const errorMessages = {
     "Las estadísticas de este partido se generan desde LiveMatch.",
   MATCH_EVENTS_NOT_AVAILABLE:
     "Los eventos no están disponibles en el modo resumen.",
+  MATCH_EVENT_RULES_NOT_SUPPORTED:
+    "El deporte del club no tiene eventos válidos configurados.",
   MATCH_LINEUP_NOT_SUPPORTED:
     "El deporte del club no tiene una alineación válida configurada.",
   MATCH_PERIODS_NOT_SUPPORTED:

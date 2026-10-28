@@ -22,6 +22,12 @@ class PositionDefinition:
 
 
 @dataclass(frozen=True)
+class SportEventDefinition:
+    code: str
+    allowed_results: tuple[str, ...]
+
+
+@dataclass(frozen=True)
 class ValidatedMatchResult:
     home_value: int
     opponent_value: int
@@ -34,6 +40,7 @@ class SportAdapter:
     name: str
     capabilities: SportCapabilities
     positions: tuple[PositionDefinition, ...]
+    events: tuple[SportEventDefinition, ...] = ()
 
     def has_position(self, code):
         return self.get_position(code) is not None
@@ -50,3 +57,24 @@ class SportAdapter:
 
     def validate_match_result(self, home_value, opponent_value):
         raise NotImplementedError
+
+    def get_event_definition(self, code):
+        return next(
+            (
+                event
+                for event in self.events
+                if event.code == code
+            ),
+            None
+        )
+
+    def validate_event(self, code, result):
+        if not self.events:
+            raise NotImplementedError
+
+        event = self.get_event_definition(code)
+
+        if event is None:
+            return False, False
+
+        return True, result in event.allowed_results

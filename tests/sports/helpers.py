@@ -48,6 +48,7 @@ def register_test_period_adapter(
             period_max=period_max,
         ),
         positions=volleyball.positions,
+        events=volleyball.events,
     )
 
     monkeypatch.setitem(

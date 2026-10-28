@@ -1,6 +1,12 @@
 import pytest
 
 from src.api.models import MatchEvent, PlayerMatchStat, db
+from src.api.sports import (
+    SportAdapter,
+    SportEventDefinition,
+    VolleyballAdapter,
+    sport_adapter_registry,
+)
 from tests.sports.helpers import (
     STAT_FIELDS,
     event_payload,
@@ -28,6 +34,32 @@ EVENT_CASES = [
     ("block", "neutral", "blocks_total", "blocks_neutral"),
     ("block", "error", "blocks_total", "blocks_errors"),
 ]
+
+
+def register_event_adapter(monkeypatch, world, adapter):
+    monkeypatch.setitem(
+        sport_adapter_registry._adapters,
+        adapter.code,
+        adapter,
+    )
+    world.sport.code = adapter.code
+    db.session.commit()
+
+
+def test_volleyball_event_catalog_is_frozen():
+    adapter = VolleyballAdapter()
+
+    assert tuple(
+        (event.code, event.allowed_results)
+        for event in adapter.events
+    ) == (
+        ("attack", ("positive", "neutral", "error")),
+        ("reception", ("positive", "neutral", "negative")),
+        ("defense", ("positive", "neutral", "negative")),
+        ("set", ("positive", "neutral", "error")),
+        ("serve", ("ace", "in", "error")),
+        ("block", ("point", "neutral", "error")),
+    )
 
 
 @pytest.mark.parametrize("action,result,total_field,result_field", EVENT_CASES)
@@ -154,7 +186,7 @@ def test_event_defaults_to_adapter_period_min(
     assert response.get_json()["event"]["set_number"] == 2
 
 
-def test_event_missing_adapter_does_not_fallback_to_volleyball_range(
+def test_event_missing_adapter_does_not_fallback_to_volleyball_events(
     client,
     world,
     auth_headers,
@@ -171,7 +203,101 @@ def test_event_missing_adapter_does_not_fallback_to_volleyball_range(
     )
 
     assert response.status_code == 409
-    assert response.get_json()["code"] == "MATCH_PERIODS_NOT_SUPPORTED"
+    assert response.get_json()["code"] == "MATCH_EVENT_RULES_NOT_SUPPORTED"
+
+
+def test_adapter_without_event_support_fails_explicitly(
+    client,
+    world,
+    auth_headers,
+    match_factory,
+    monkeypatch,
+):
+    volleyball = VolleyballAdapter()
+    adapter = SportAdapter(
+        code="TEST_NO_EVENTS",
+        name="Deporte sin eventos",
+        capabilities=volleyball.capabilities,
+        positions=volleyball.positions,
+    )
+    register_event_adapter(monkeypatch, world, adapter)
+    created = match_factory(world, on_court_count=1)
+
+    response = client.post(
+        "/api/match-events",
+        headers=auth_headers(world.owner_a),
+        json=event_payload(created.match, created.rows[0]),
+    )
+
+    assert response.status_code == 409
+    assert response.get_json()["code"] == "MATCH_EVENT_RULES_NOT_SUPPORTED"
+    assert MatchEvent.query.count() == 0
+
+
+def test_event_endpoint_uses_club_sport_adapter_catalog(
+    client,
+    world,
+    auth_headers,
+    match_factory,
+    monkeypatch,
+):
+    volleyball = VolleyballAdapter()
+    adapter = SportAdapter(
+        code="TEST_EVENTS",
+        name="Deporte de prueba",
+        capabilities=volleyball.capabilities,
+        positions=volleyball.positions,
+        events=(
+            SportEventDefinition(
+                code="goal",
+                allowed_results=("scored", "missed"),
+            ),
+        ),
+    )
+    register_event_adapter(monkeypatch, world, adapter)
+    created = match_factory(world, on_court_count=1)
+    headers = auth_headers(world.owner_a)
+
+    for result in ["scored", "missed"]:
+        response = client.post(
+            "/api/match-events",
+            headers=headers,
+            json=event_payload(
+                created.match,
+                created.rows[0],
+                "goal",
+                result,
+            ),
+        )
+        assert response.status_code == 201
+        assert response.get_json()["event"]["result"] == result
+
+    invalid_action = client.post(
+        "/api/match-events",
+        headers=headers,
+        json=event_payload(
+            created.match,
+            created.rows[0],
+            "attack",
+            "positive",
+        ),
+    )
+    assert invalid_action.status_code == 400
+    assert invalid_action.get_json()["code"] == "INVALID_EVENT_ACTION"
+
+    invalid_result = client.post(
+        "/api/match-events",
+        headers=headers,
+        json=event_payload(
+            created.match,
+            created.rows[0],
+            "goal",
+            "blocked",
+        ),
+    )
+    assert invalid_result.status_code == 400
+    assert invalid_result.get_json()["code"] == "INVALID_EVENT_RESULT"
+    assert MatchEvent.query.count() == 2
 
 
 @pytest.mark.parametrize(

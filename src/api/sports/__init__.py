@@ -2,6 +2,7 @@ from src.api.sports.base import (
     PositionDefinition,
     SportAdapter,
     SportCapabilities,
+    SportEventDefinition,
     ValidatedMatchResult,
 )
 from src.api.sports.registry import (
@@ -26,6 +27,7 @@ __all__ = [
     "SportAdapterNotFoundError",
     "SportAdapterRegistry",
     "SportCapabilities",
+    "SportEventDefinition",
     "ValidatedMatchResult",
     "VolleyballAdapter",
     "get_club_sport_adapter",

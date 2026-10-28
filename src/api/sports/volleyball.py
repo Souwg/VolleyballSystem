@@ -2,6 +2,7 @@ from src.api.sports.base import (
     PositionDefinition,
     SportAdapter,
     SportCapabilities,
+    SportEventDefinition,
     ValidatedMatchResult,
 )
 
@@ -29,6 +30,34 @@ VOLLEYBALL_POSITIONS = (
 )
 
 
+VOLLEYBALL_EVENTS = (
+    SportEventDefinition(
+        code="attack",
+        allowed_results=("positive", "neutral", "error"),
+    ),
+    SportEventDefinition(
+        code="reception",
+        allowed_results=("positive", "neutral", "negative"),
+    ),
+    SportEventDefinition(
+        code="defense",
+        allowed_results=("positive", "neutral", "negative"),
+    ),
+    SportEventDefinition(
+        code="set",
+        allowed_results=("positive", "neutral", "error"),
+    ),
+    SportEventDefinition(
+        code="serve",
+        allowed_results=("ace", "in", "error"),
+    ),
+    SportEventDefinition(
+        code="block",
+        allowed_results=("point", "neutral", "error"),
+    ),
+)
+
+
 class VolleyballAdapter(SportAdapter):
     def __init__(self):
         super().__init__(
@@ -36,6 +65,7 @@ class VolleyballAdapter(SportAdapter):
             name="Voleibol",
             capabilities=VOLLEYBALL_CAPABILITIES,
             positions=VOLLEYBALL_POSITIONS,
+            events=VOLLEYBALL_EVENTS,
         )
 
     def validate_match_result(self, home_value, opponent_value):

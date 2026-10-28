@@ -82,6 +82,18 @@ def _get_match_period_range(match):
     return period_min, period_max
 
 
+def _validate_match_event(match, action, result):
+    try:
+        sport_adapter = get_club_sport_adapter(match.team.club)
+        return sport_adapter.validate_event(action, result)
+    except (
+        InvalidClubSportError,
+        SportAdapterNotFoundError,
+        NotImplementedError,
+    ):
+        return None
+
+
 def _validate_match_result(match, home_value, opponent_value):
     try:
         sport_adapter = get_club_sport_adapter(match.team.club)
@@ -2411,21 +2423,6 @@ def finalize_match(match_id):
 ############################################ MATCH EVENTS #############################################
 
 
-VALID_EVENT_ACTIONS = [
-    "attack", "reception", "serve",
-    "block", "set", "defense"
-]
-
-VALID_EVENT_RESULTS_BY_ACTION = {
-    "attack": ["positive", "neutral", "error"],
-    "reception": ["positive", "neutral", "negative"],
-    "defense": ["positive", "neutral", "negative"],
-    "set": ["positive", "neutral", "error"],
-    "serve": ["in", "ace", "error"],
-    "block": ["point", "neutral", "error"],
-}
-
-
 @api.route("/match-events", methods=["POST"])
 @jwt_required()
 def create_match_event():
@@ -2464,22 +2461,6 @@ def create_match_event():
             400
         )
 
-    if action not in VALID_EVENT_ACTIONS:
-        return error_response(
-            "Acción inválida",
-            "INVALID_EVENT_ACTION",
-            400
-        )
-
-    allowed_results = VALID_EVENT_RESULTS_BY_ACTION.get(action, [])
-
-    if result not in allowed_results:
-        return error_response(
-            "Resultado inválido para esta acción",
-            "INVALID_EVENT_RESULT",
-            400
-        )
-
     match = MatchSession.query.get(match_id)
 
     if not match:
@@ -2501,6 +2482,31 @@ def create_match_event():
             "El partido ya está finalizado y no admite nuevos eventos.",
             "MATCH_COMPLETED",
             409
+        )
+
+    event_validation = _validate_match_event(match, action, result)
+
+    if event_validation is None:
+        return error_response(
+            "El deporte del club no tiene eventos válidos configurados.",
+            "MATCH_EVENT_RULES_NOT_SUPPORTED",
+            409
+        )
+
+    event_exists, result_allowed = event_validation
+
+    if not event_exists:
+        return error_response(
+            "Acción inválida",
+            "INVALID_EVENT_ACTION",
+            400
+        )
+
+    if not result_allowed:
+        return error_response(
+            "Resultado inválido para esta acción",
+            "INVALID_EVENT_RESULT",
+            400
         )
 
     period_range = _get_match_period_range(match)

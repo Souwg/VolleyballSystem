@@ -101,7 +101,7 @@ def test_two_volleyball_clubs_resolve_stateless_adapter(world):
     assert first is second
     assert isinstance(first, VolleyballAdapter)
     assert set(first.__dict__) == {
-        "code", "name", "capabilities", "positions"
+        "code", "name", "capabilities", "positions", "events"
     }
 
 
