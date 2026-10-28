@@ -16,13 +16,6 @@
   width: 100%;
 }
 
-.training-detail-page,
-.training-form-page {
-  display: flex;
-  flex-direction: column;
-  gap: 16px;
-}
-
 .attendance-summary {
   display: flex;
   gap: 12px;
@@ -37,12 +30,38 @@
   margin-bottom: 6px;
   color: var(--color-text);
 }
-.attendance-toggle {
-  font-size: 24px;
-  min-width: 44px;
-  min-height: 44px;
-  border: none;
-  background: transparent;
+
+.attendance-list {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.attendance-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 10px 0;
+  border-bottom: 1px solid var(--color-border);
+}
+
+.attendance-player {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+}
+
+.player-number {
+  font-weight: var(--font-weight-semibold);
+  color: var(--color-muted);
+}
+
+.attendance-player-name {
+  font-size: var(--font-size-md);
+  font-weight: var(--font-weight-medium);
+  color: var(--color-text);
+  margin-bottom: 4px;
+  overflow-wrap: break-word;
 }
 
 /* ===== DETALLES DEL ENTRENAMIENTO ===== */
@@ -66,7 +85,7 @@
 }
 
 .training-info-header h3 {
-  margin: 3px 0 0;
+  margin: 3px 0 8px;
   font-size: var(--font-size-base);
   font-weight: var(--font-weight-bold);
   color: var(--color-text);
@@ -169,26 +188,130 @@
   color: var(--color-muted);
 }
 
-/* Horas: compartido por crear y editar */
-
-.training-time-grid {
-  display: grid;
-  grid-template-columns: 1fr;
-  gap: 12px;
+.training-status-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  padding-top: 4px;
 }
 
-@media (min-width: 640px) {
-  .training-time-grid {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-  }
+.training-history-actions {
+  border-top: 1px solid var(--color-border);
+  padding-top: 12px;
+}
+
+.training-correction-heading {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 12px;
+  border: 1px solid var(--color-border);
+  border-radius: 12px;
+  background: var(--color-surface-soft);
+}
+
+.training-correction-heading strong {
+  color: var(--color-text);
+}
+
+.training-correction-heading span {
+  color: var(--color-muted);
+  font-size: var(--font-size-sm);
+}
+
+.training-correction-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  margin-top: 14px;
+}
+
+.training-reason-input {
+  min-height: 92px;
+  resize: vertical;
+  font-family: inherit;
+}
+
+.training-attendance-heading,
+.training-audit-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 16px;
+}
+
+.training-attendance-heading h3,
+.training-audit-header h3 {
+  margin: 0 0 4px;
+  color: var(--color-text);
+}
+
+.training-attendance-heading p,
+.training-audit-header p,
+.training-audit-empty {
+  margin: 0;
+  color: var(--color-muted);
+  font-size: var(--font-size-sm);
+}
+
+.training-audit-list {
+  display: flex;
+  flex-direction: column;
+}
+
+.training-audit-entry {
+  padding: 16px 0;
+  border-top: 1px solid var(--color-border);
+}
+
+.training-audit-meta {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.training-audit-meta span,
+.training-audit-entry li,
+.training-audit-reason {
+  color: var(--color-muted);
+  font-size: var(--font-size-sm);
+}
+
+.training-audit-entry ul {
+  margin: 10px 0;
+  padding-left: 20px;
+}
+
+.training-audit-reason {
+  margin: 8px 0 0;
+  overflow-wrap: anywhere;
 }
 
 @media (max-width: 639px) {
+  .training-status-actions {
+    flex-direction: column;
+  }
+
+  .training-status-actions .button {
+    width: 100%;
+  }
+
   .training-info-form-actions {
     flex-direction: column-reverse;
   }
 
   .training-info-form-actions .button {
+    width: 100%;
+  }
+
+  .training-attendance-heading,
+  .training-audit-header {
+    flex-direction: column;
+  }
+
+  .training-attendance-heading .button,
+  .training-audit-header .button {
     width: 100%;
   }
 }

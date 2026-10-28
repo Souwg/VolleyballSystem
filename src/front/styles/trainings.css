@@ -25,7 +25,6 @@
 
 .training-card {
   padding: 16px;
-  cursor: pointer;
 }
 
 .training-card-content {
@@ -39,9 +38,16 @@
   min-width: 0;
 }
 
+.training-card-heading {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 6px;
+}
+
 .training-card-label {
   display: inline-flex;
-  margin-bottom: 6px;
   font-size: var(--font-size-xs);
   font-weight: var(--font-weight-bold);
   color: var(--color-primary);
@@ -67,15 +73,4 @@
   color: var(--color-muted);
   font-size: var(--font-size-lg);
   font-weight: var(--font-weight-bold);
-}
-.training-time-grid {
-  display: grid;
-  grid-template-columns: 1fr;
-  gap: 12px;
-}
-
-@media (min-width: 640px) {
-  .training-time-grid {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-  }
 }

@@ -41,7 +41,10 @@ import { LiveMatch } from "./pages/matches/LiveMatch";
 import { PlayerMatchStats } from "./pages/matches/playerMatchStats";
 import { MatchStatsAdjust } from "./pages/matches/matchStatsAdjust";
 import { ClubProfile } from "./pages/club/clubProfile";
+import { ClubUsers } from "./pages/club/clubUsers";
+import { ClubSetupPending } from "./pages/club/clubSetupPending";
 import { Payments } from "./pages/payments/payments";
+import { TournamentCharges } from "./pages/payments/tournamentCharges";
 import injectContext from "./store/appContext";
 
 const Layout = () => {
@@ -64,7 +67,10 @@ const Layout = () => {
         if (restored?.ok) {
           const user = JSON.parse(localStorage.getItem("user"));
 
-          if (user?.role !== "system_admin") {
+          if (
+            user?.role !== "system_admin" &&
+            user?.first_login !== true
+          ) {
             await actions.getOnboardingStatus();
           }
         }
@@ -141,10 +147,22 @@ const Layout = () => {
             </Route>
 
             <Route element={<ProtectedRoute />}>
+              <Route
+                path="/club/setup-pending"
+                element={<ClubSetupPending />}
+              />
+            </Route>
+
+            <Route element={<ProtectedRoute />}>
               <Route element={<AppShell />}>
                 <Route path="/dashboard" element={<Dashboard />} />
                 <Route path="/club/profile" element={<ClubProfile />} />
+                <Route path="/club/users" element={<ClubUsers />} />
                 <Route path="/payments" element={<Payments />} />
+                <Route
+                  path="/payments/tournament-charges"
+                  element={<TournamentCharges />}
+                />
                 <Route path="/categories" element={<Categories />} />
                 <Route
                   path="/categories/:category_id"

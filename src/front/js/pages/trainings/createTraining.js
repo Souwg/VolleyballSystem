@@ -9,6 +9,7 @@ import { Button } from "../../component/ui/button";
 import { Card } from "../../component/ui/card";
 import { FormField } from "../../component/ui/formField";
 import { Select } from "../../component/ui/select";
+import "../../../styles/trainingShared.css";
 
 export const CreateTraining = () => {
   const { store, actions } = useContext(Context);

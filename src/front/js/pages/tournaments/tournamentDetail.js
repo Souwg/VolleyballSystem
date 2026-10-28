@@ -8,6 +8,7 @@ import { Select } from "../../component/ui/select";
 import { Button } from "../../component/ui/button";
 import { Card } from "../../component/ui/card";
 import { errorMessages } from "../../utils/errorMessages";
+import { formatMoney } from "../../utils/money";
 import { Trophy, Users, CalendarDays, DollarSign } from "lucide-react";
 
 import "../../../styles/tournaments.css";
@@ -30,7 +31,7 @@ const getStatusData = (status) => {
       className: "status-success",
     },
     completed: {
-      label: "Finalizado",
+      label: "Completado",
       className: "status-info",
     },
     cancelled: {
@@ -61,6 +62,7 @@ export const TournamentDetail = () => {
   const [registrationFee, setRegistrationFee] = useState("");
   const [errors, setErrors] = useState({});
   const [loadingSubmit, setLoadingSubmit] = useState(false);
+  const [transitioningStatus, setTransitioningStatus] = useState(null);
 
   const loadTournamentDetail = async () => {
     setLoadingTournament(true);
@@ -164,6 +166,40 @@ export const TournamentDetail = () => {
     setLoadingSubmit(false);
   };
 
+  const handleStatusTransition = async (targetStatus) => {
+    if (transitioningStatus || tournament?.status !== "active") return;
+
+    const isCompleting = targetStatus === "completed";
+    const confirmationMessage = isCompleting
+      ? "¿Marcar este torneo como completado?\n\nEl torneo quedará registrado como finalizado y ya no podrán modificarse sus equipos o participantes."
+      : "¿Cancelar este torneo?\n\nSe conservarán los participantes, cargos y demás historial registrado, pero ya no podrán realizarse nuevas operaciones sobre el torneo.";
+
+    if (!window.confirm(confirmationMessage)) return;
+
+    setErrors({});
+    setTransitioningStatus(targetStatus);
+
+    const result = isCompleting
+      ? await actions.completeTournament(tournament_id)
+      : await actions.cancelTournament(tournament_id);
+
+    if (!result.ok) {
+      setErrors({
+        [result.code || "NETWORK_ERROR"]: true,
+      });
+      setTransitioningStatus(null);
+      return;
+    }
+
+    setTournament((currentTournament) => ({
+      ...currentTournament,
+      ...result.data.tournament,
+      teams: currentTournament?.teams || [],
+    }));
+    setShowAddTeamForm(false);
+    setTransitioningStatus(null);
+  };
+
   const availableTeams = (store.teams || []).filter((team) => {
     const alreadyAdded = tournamentTeams.some(
       (entry) => entry.team_id === team.id,
@@ -182,6 +218,9 @@ export const TournamentDetail = () => {
 
   const statusData = getStatusData(tournament.status);
   const canAddTeam = tournament.status === "active";
+  const canManageLifecycle =
+    tournament.status === "active" &&
+    ["club_owner", "coach"].includes(store.user?.role);
 
   return (
     <div className="tournament-detail-page">
@@ -196,19 +235,56 @@ export const TournamentDetail = () => {
         }`}
         onBack={() => navigate("/tournaments")}
         actions={
-          !showAddTeamForm &&
-          canAddTeam && (
-            <Button
-              onClick={() => {
-                setShowAddTeamForm(true);
-                setErrors({});
-              }}
-            >
-              + Inscribir equipo
-            </Button>
-          )
+          !showAddTeamForm && canAddTeam ? (
+            <div className="form-actions">
+              <Button
+                onClick={() => {
+                  setShowAddTeamForm(true);
+                  setErrors({});
+                }}
+                disabled={Boolean(transitioningStatus)}
+              >
+                + Inscribir equipo
+              </Button>
+
+              {canManageLifecycle && (
+                <>
+                  <Button
+                    variant="secondary"
+                    onClick={() => handleStatusTransition("completed")}
+                    disabled={Boolean(transitioningStatus)}
+                  >
+                    {transitioningStatus === "completed"
+                      ? "Completando..."
+                      : "Completar torneo"}
+                  </Button>
+
+                  <Button
+                    variant="danger"
+                    onClick={() => handleStatusTransition("cancelled")}
+                    disabled={Boolean(transitioningStatus)}
+                  >
+                    {transitioningStatus === "cancelled"
+                      ? "Cancelando..."
+                      : "Cancelar torneo"}
+                  </Button>
+                </>
+              )}
+            </div>
+          ) : null
         }
       />
+
+      {(errors.INVALID_TOURNAMENT_STATUS ||
+        errors.TOURNAMENT_NOT_ACTIVE ||
+        errors.FORBIDDEN ||
+        errors.NETWORK_ERROR) && (
+        <p className="form-error">
+          {errorMessages[
+            Object.keys(errors).find((code) => errors[code])
+          ] || errorMessages.NETWORK_ERROR}
+        </p>
+      )}
 
       <Card className="tournament-mobile-summary-card">
         <div className="tournament-mobile-summary-row">
@@ -232,8 +308,10 @@ export const TournamentDetail = () => {
           <span>Arbitraje base</span>
 
           <strong>
-            ${Number(tournament.default_referee_fee || 0).toFixed(2)} por
-            partido
+            {formatMoney(
+              tournament.default_referee_fee,
+              tournament.currency_code,
+            )} por partido
           </strong>
         </div>
 
@@ -276,8 +354,10 @@ export const TournamentDetail = () => {
           <h4>Arbitraje base</h4>
 
           <p>
-            ${Number(tournament.default_referee_fee || 0).toFixed(2)} por
-            partido
+            {formatMoney(
+              tournament.default_referee_fee,
+              tournament.currency_code,
+            )} por partido
           </p>
         </Card>
       </div>
@@ -337,7 +417,9 @@ export const TournamentDetail = () => {
             </FormField>
 
             <FormField
-              label="Costo total de inscripción"
+              label={`Costo total de inscripción (${
+                tournament.currency_code || "moneda no configurada"
+              })`}
               helper="Luego podrás dividir este monto entre las deportistas inscritas."
               error={
                 errors.INVALID_AMOUNT ? errorMessages.INVALID_AMOUNT : null
@@ -450,7 +532,10 @@ export const TournamentDetail = () => {
                     <span>{entry.total_matches || 0} partidos</span>
 
                     <strong>
-                      ${Number(entry.registration_fee || 0).toFixed(2)}
+                      {formatMoney(
+                        entry.registration_fee,
+                        entry.currency_code || tournament.currency_code,
+                      )}
                     </strong>
                   </div>
                 </Card>

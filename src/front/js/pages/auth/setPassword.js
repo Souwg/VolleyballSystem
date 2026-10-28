@@ -7,9 +7,13 @@ import { Button } from "../../component/ui/button";
 import { Input } from "../../component/ui/input";
 import { validatePassword } from "../../utils/validators";
 import { errorMessages } from "../../utils/errorMessages";
+import {
+  getPostLoginPath,
+  getRoleLandingPath,
+} from "../../component/roleRedirect";
 
 export const SetPassword = () => {
-  const { actions } = useContext(Context);
+  const { store, actions } = useContext(Context);
   const navigate = useNavigate();
 
   const [password, setPassword] = useState("");
@@ -43,8 +47,19 @@ export const SetPassword = () => {
       return;
     }
 
-    await actions.getOnboardingStatus();
-    navigate("/dashboard", { replace: true });
+    const role = result.data.user?.role || store.user?.role;
+
+    if (role === "system_admin") {
+      navigate(getRoleLandingPath(role), { replace: true });
+      return;
+    }
+
+    const statusResult = await actions.getOnboardingStatus();
+    const onboardingStatus = statusResult?.ok
+      ? statusResult.data.status
+      : "pending";
+
+    navigate(getPostLoginPath(role, onboardingStatus), { replace: true });
   };
 
   return (
@@ -148,9 +163,13 @@ export const SetPassword = () => {
               <p className="form-success">Las contraseñas coinciden</p>
             )}
         </div>
-        {(errors.SESSION_EXPIRED || errors.NETWORK_ERROR) && (
+        {(errors.FIRST_LOGIN_ALREADY_COMPLETED ||
+          errors.SESSION_EXPIRED ||
+          errors.NETWORK_ERROR) && (
           <p className="form-error">
-            {errors.SESSION_EXPIRED
+            {errors.FIRST_LOGIN_ALREADY_COMPLETED
+              ? errorMessages.FIRST_LOGIN_ALREADY_COMPLETED
+              : errors.SESSION_EXPIRED
               ? errorMessages.SESSION_EXPIRED
               : errorMessages.NETWORK_ERROR}
           </p>

@@ -19,14 +19,14 @@ import { Button } from "../../component/ui/button";
 import { FormField } from "../../component/ui/formField";
 import { Select } from "../../component/ui/select";
 import { FaRegHandPaper } from "react-icons/fa";
+import "../../../styles/clubShared.css";
 import "../../../styles/onboarding.css";
 
 export const Onboarding = () => {
   const { store, actions } = useContext(Context);
   const navigate = useNavigate();
 
-  const [location, setLocation] = useState("");
-  const [clubState, setClubState] = useState("");
+  const [city, setCity] = useState("");
   const [imageUrl, setImageUrl] = useState("");
   const [clubImageFile, setClubImageFile] = useState(null);
   const [clubImagePreview, setClubImagePreview] = useState("");
@@ -78,7 +78,7 @@ export const Onboarding = () => {
 
     setErrors({});
 
-    const newErrors = validateClubLocation(location);
+    const newErrors = validateClubLocation(city);
 
     if (Object.keys(newErrors).length > 0) {
       setErrors(newErrors);
@@ -106,7 +106,7 @@ export const Onboarding = () => {
     }
 
     const result = await actions.updateClub({
-      location: location.trim(),
+      city: city.trim(),
       image_url: finalImageUrl,
     });
 
@@ -264,8 +264,7 @@ export const Onboarding = () => {
 
   useEffect(() => {
     if (store.club) {
-      setLocation(store.club.location?.trim() || "");
-      setClubState(store.club.state?.trim() || "");
+      setCity((store.club.city || store.club.location || "").trim());
       setImageUrl(store.club.image_url?.trim() || "");
     }
   }, [store.club]);
@@ -315,10 +314,22 @@ export const Onboarding = () => {
                   className="input-readonly"
                 />
               </FormField>
-              <FormField label="Estado">
+              <FormField label="País">
                 <Input
                   type="text"
-                  value={clubState || "Sin definir"}
+                  value={store.club?.country?.name || "Sin clasificar"}
+                  disabled
+                  className="input-readonly"
+                />
+              </FormField>
+              <FormField label="Estado / Provincia / Región">
+                <Input
+                  type="text"
+                  value={
+                    store.club?.administrative_area?.name ||
+                    store.club?.state ||
+                    "Sin clasificar"
+                  }
                   disabled
                   className="input-readonly"
                 />
@@ -334,10 +345,10 @@ export const Onboarding = () => {
                 <Input
                   type="text"
                   placeholder="Ej: Cagua, Caracas, Valencia..."
-                  value={location}
+                  value={city}
                   className={errors.LOCATION_REQUIRED ? "input-error" : ""}
                   onChange={(e) => {
-                    setLocation(e.target.value);
+                    setCity(e.target.value);
                     setErrors((prev) => ({
                       ...prev,
                       LOCATION_REQUIRED: false,

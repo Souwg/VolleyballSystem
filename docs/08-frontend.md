@@ -82,6 +82,33 @@ La aplicación está organizada mediante componentes reutilizables y páginas es
 
 ---
 
+### Organización de estilos
+
+`src/front/js/index.js` importa los estilos globales en este orden: `index.css`, `ui.css` y `layout.css`. Las páginas y componentes importan sus CSS de funcionalidad. Webpack inyecta esos CSS con `style-loader`, por lo que se debe comprobar la cascada antes de mover una regla entre archivos.
+
+| Archivo | Responsabilidad |
+|---------|-----------------|
+| `src/front/styles/index.css` | Tokens, reset, tipografía y estilos base universales. |
+| `src/front/styles/layout.css` | Shell, navegación, área principal, responsive estructural y safe areas. |
+| `src/front/styles/ui.css` | Primitivas y componentes visuales compartidos: tarjetas, encabezados, formularios, botones, estados vacíos y avisos. |
+| CSS de funcionalidad | Composición, variantes y estados propios de cada módulo. `paymentShared.css`, `trainingShared.css`, `clubShared.css` y `playerShared.css` comparten patrones dentro de sus módulos, no en toda la aplicación. |
+
+Un estilo solo debe compartirse si representa el mismo concepto, comportamiento, estados y respuesta móvil. La semejanza visual o un valor repetido no bastan para convertirlo en global. Antes de borrar o mover un selector, busca todos sus usos, incluidas las clases construidas en JavaScript. Revisa las pantallas afectadas en móvil y escritorio cuando el entorno lo permita y ejecuta el build al cerrar un grupo de cambios.
+
+En listas vacías, usa `Card` como contenedor y `.empty-state` para agrupar el título, la descripción y, si corresponde, la acción. Añade `.card-interactive` solo a tarjetas navegables.
+
+Los estilos exclusivos de un componente, como `attendanceToggle.css`, se importan desde ese componente. Su composición dentro de una pantalla permanece en el CSS de la funcionalidad.
+
+En pagos, el bloque de cobros abiertos, sus estados, contadores y acciones táctiles pertenecen a `paymentShared.css`. Los detalles de club y deportista permanecen en sus archivos de módulo.
+
+La base visual compartida debe ser neutral respecto al deporte. Las variantes y componentes de un deporte pueden permanecer en su módulo cuando su flujo o estados sean propios.
+
+Los tokens de `index.css` definen colores, tipografía, radios y la sombra compartida. Los tonos de `PageHeader` se configuran mediante variables del propio componente en `ui.css`; el tono por defecto ya está definido en `.page-header`. No conviertas medidas aisladas o puntos de corte propios de una pantalla en tokens globales.
+
+Los colores de estado, incluidos `--color-success-soft` y `--color-success-dark`, pertenecen a `index.css`. `--auth-hero-image` se asigna en `AuthLayout` para cada página de acceso y no es un token global. Los CSS de funcionalidad pueden usar medidas y colores propios cuando representan una variante local.
+
+---
+
 ## 6. Componentes
 
 El frontend está compuesto por componentes reutilizables que permiten mantener una interfaz consistente en toda la aplicación.

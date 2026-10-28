@@ -2,6 +2,8 @@ import uuid
 from flask_sqlalchemy import SQLAlchemy
 from datetime import datetime
 
+from src.api.currency_registry import get_currency_definition
+
 db = SQLAlchemy()
 
 class User(db.Model):
@@ -12,6 +14,11 @@ class User(db.Model):
     email = db.Column(db.String(120), unique=True, nullable=False)
     password = db.Column(db.String(255), nullable=False)
     is_active = db.Column(db.Boolean(), default=True)
+    session_version = db.Column(
+        db.Integer,
+        nullable=False,
+        default=0
+    )
 
     # 👇 B2B fields
     first_login = db.Column(db.Boolean(), default=True)
@@ -47,8 +54,161 @@ class User(db.Model):
             "created_at": self.created_at.isoformat()
             }
 
+
+class Sport(db.Model):
+    __tablename__ = "sports"
+
+    __table_args__ = (
+        db.UniqueConstraint(
+            "code",
+            name="uq_sports_code"
+        ),
+        db.CheckConstraint(
+            "code = UPPER(code)",
+            name="ck_sports_code_uppercase"
+        ),
+    )
+
+    id = db.Column(
+        db.String(36),
+        primary_key=True,
+        default=lambda: str(uuid.uuid4())
+    )
+    code = db.Column(db.String(30), nullable=False)
+    name = db.Column(db.String(80), nullable=False)
+    is_active = db.Column(
+        db.Boolean(),
+        nullable=False,
+        default=False,
+        server_default=db.false()
+    )
+    clubs = db.relationship(
+        "Club",
+        back_populates="sport",
+        lazy=True
+    )
+
+    def serialize(self):
+        return {
+            "id": self.id,
+            "code": self.code,
+            "name": self.name,
+            "is_active": self.is_active
+        }
+
+
+class Country(db.Model):
+    __tablename__ = "countries"
+
+    __table_args__ = (
+        db.UniqueConstraint("code", name="uq_countries_code"),
+        db.CheckConstraint(
+            "code = UPPER(code)",
+            name="ck_countries_code_uppercase"
+        ),
+    )
+
+    id = db.Column(
+        db.String(36),
+        primary_key=True,
+        default=lambda: str(uuid.uuid4())
+    )
+    code = db.Column(db.String(2), nullable=False)
+    name = db.Column(db.String(80), nullable=False)
+    is_active = db.Column(
+        db.Boolean(),
+        nullable=False,
+        default=False,
+        server_default=db.false()
+    )
+
+    areas = db.relationship(
+        "AdministrativeArea",
+        back_populates="country",
+        lazy=True
+    )
+    clubs = db.relationship(
+        "Club",
+        back_populates="country",
+        lazy=True
+    )
+
+    def serialize(self):
+        return {
+            "id": self.id,
+            "code": self.code,
+            "name": self.name,
+            "is_active": self.is_active
+        }
+
+
+class AdministrativeArea(db.Model):
+    __tablename__ = "administrative_areas"
+
+    __table_args__ = (
+        db.UniqueConstraint(
+            "country_id",
+            "code",
+            name="uq_administrative_areas_country_code"
+        ),
+        db.CheckConstraint(
+            "code = UPPER(code)",
+            name="ck_administrative_areas_code_uppercase"
+        ),
+    )
+
+    id = db.Column(
+        db.String(36),
+        primary_key=True,
+        default=lambda: str(uuid.uuid4())
+    )
+    country_id = db.Column(
+        db.String(36),
+        db.ForeignKey("countries.id"),
+        nullable=False
+    )
+    code = db.Column(db.String(10), nullable=False)
+    name = db.Column(db.String(120), nullable=False)
+    is_active = db.Column(
+        db.Boolean(),
+        nullable=False,
+        default=False,
+        server_default=db.false()
+    )
+
+    country = db.relationship(
+        "Country",
+        back_populates="areas"
+    )
+    clubs = db.relationship(
+        "Club",
+        back_populates="administrative_area",
+        lazy=True
+    )
+
+    def serialize(self):
+        return {
+            "id": self.id,
+            "country_id": self.country_id,
+            "code": self.code,
+            "name": self.name,
+            "is_active": self.is_active
+        }
+
+
 class Club(db.Model):
     __tablename__ = "clubs"
+
+    __table_args__ = (
+        db.CheckConstraint(
+            "access_status IN ('active', 'suspended')",
+            name="ck_clubs_access_status"
+        ),
+        db.CheckConstraint(
+            "LENGTH(currency_code) = 3 AND currency_code = UPPER(currency_code)",
+            name="ck_clubs_currency_code_format"
+        ),
+    )
 
     id = db.Column(db.String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
     name = db.Column(db.String(120), nullable=False)
@@ -60,13 +220,52 @@ class Club(db.Model):
     owner_id = db.Column(db.String(36), nullable=False)
     default_enrollment_fee = db.Column(db.Float, nullable=True)
     default_monthly_fee = db.Column(db.Float, nullable=True)
+    currency_code = db.Column(db.String(3), nullable=False)
+    sport_id = db.Column(
+        db.String(36),
+        db.ForeignKey("sports.id"),
+        nullable=False
+    )
+    country_id = db.Column(
+        db.String(36),
+        db.ForeignKey("countries.id"),
+        nullable=True
+    )
+    administrative_area_id = db.Column(
+        db.String(36),
+        db.ForeignKey("administrative_areas.id"),
+        nullable=True
+    )
+    city = db.Column(db.String(120), nullable=True)
+    timezone = db.Column(db.String(120), nullable=False)
+    access_status = db.Column(
+        db.String(20),
+        nullable=False,
+        default="active",
+        server_default="active"
+    )
     created_at = db.Column(db.DateTime(), default=datetime.utcnow)
+
+    sport = db.relationship(
+        "Sport",
+        back_populates="clubs"
+    )
+    country = db.relationship(
+        "Country",
+        back_populates="clubs"
+    )
+    administrative_area = db.relationship(
+        "AdministrativeArea",
+        back_populates="clubs"
+    )
     
 
     def __repr__(self):
         return f"<Club {self.name}>"
 
     def serialize(self):
+        currency = get_currency_definition(self.currency_code)
+
         return {
             "id": self.id,
             "name": self.name,
@@ -78,6 +277,41 @@ class Club(db.Model):
             "owner_id": self.owner_id,
             "default_enrollment_fee": self.default_enrollment_fee,
             "default_monthly_fee": self.default_monthly_fee,
+            "currency_code": self.currency_code,
+            "currency": currency.serialize() if currency else None,
+            "sport_id": self.sport_id,
+            "sport": (
+                {
+                    "id": self.sport.id,
+                    "code": self.sport.code,
+                    "name": self.sport.name
+                }
+                if self.sport
+                else None
+            ),
+            "country_id": self.country_id,
+            "country": (
+                {
+                    "id": self.country.id,
+                    "code": self.country.code,
+                    "name": self.country.name
+                }
+                if self.country
+                else None
+            ),
+            "administrative_area_id": self.administrative_area_id,
+            "administrative_area": (
+                {
+                    "id": self.administrative_area.id,
+                    "code": self.administrative_area.code,
+                    "name": self.administrative_area.name
+                }
+                if self.administrative_area
+                else None
+            ),
+            "city": self.city,
+            "timezone": self.timezone,
+            "access_status": self.access_status,
             "created_at": self.created_at.isoformat()
         }
 
@@ -404,6 +638,11 @@ class Tournament(db.Model):
                 if self.default_referee_fee is not None
                 else 0
             ),
+            "currency_code": (
+                self.club.currency_code
+                if self.club
+                else None
+            ),
             "status": self.status,
             "created_by": self.created_by,
             "created_at": (
@@ -501,6 +740,11 @@ class TournamentTeam(db.Model):
                         if self.tournament.default_referee_fee is not None
                         else 0
                     ),
+                    "currency_code": (
+                        self.tournament.club.currency_code
+                        if self.tournament.club
+                        else None
+                    ),
                     "status": self.tournament.status,
                 }
                 if self.tournament
@@ -511,6 +755,11 @@ class TournamentTeam(db.Model):
                 float(self.registration_fee)
                 if self.registration_fee is not None
                 else 0
+            ),
+            "currency_code": (
+                self.tournament.club.currency_code
+                if self.tournament and self.tournament.club
+                else None
             ),
             "status": self.status,
             "created_at": (
@@ -604,6 +853,13 @@ class TournamentPlayer(db.Model):
 class TrainingSession(db.Model):
     __tablename__ = "training_sessions"
 
+    __table_args__ = (
+        db.CheckConstraint(
+            "status IN ('scheduled', 'completed', 'cancelled')",
+            name="ck_training_sessions_status"
+        ),
+    )
+
     id = db.Column(db.String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
 
     team_id = db.Column(
@@ -620,6 +876,13 @@ class TrainingSession(db.Model):
 
     location = db.Column(db.String(255))
 
+    status = db.Column(
+        db.String(20),
+        nullable=False,
+        default="scheduled",
+        server_default="scheduled"
+    )
+
     created_by = db.Column(
         db.String(36),
         db.ForeignKey("users.id")
@@ -628,6 +891,14 @@ class TrainingSession(db.Model):
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
 
     team = db.relationship("Team", backref=db.backref("training_sessions", lazy=True))
+    audit_events = db.relationship(
+        "TrainingAuditEvent",
+        back_populates="training",
+        order_by=lambda: (
+            TrainingAuditEvent.created_at.desc(),
+            TrainingAuditEvent.id.desc()
+        )
+    )
 
     def serialize(self):
         return {
@@ -637,8 +908,90 @@ class TrainingSession(db.Model):
             "start_time": self.start_time.isoformat() if self.start_time else None,
             "end_time": self.end_time.isoformat() if self.end_time else None,
             "location": self.location,
+            "status": self.status,
             "created_by": self.created_by,
             "created_at": self.created_at.isoformat()
+        }
+
+
+class TrainingAuditEvent(db.Model):
+    """Registro inmutable de correcciones históricas de entrenamientos."""
+
+    __tablename__ = "training_audit_events"
+
+    __table_args__ = (
+        db.CheckConstraint(
+            "action IN ("
+            "'training_metadata_corrected', "
+            "'training_attendance_corrected', "
+            "'training_reactivated'"
+            ")",
+            name="ck_training_audit_events_action"
+        ),
+        db.Index(
+            "ix_training_audit_events_training_created_at",
+            "training_id",
+            "created_at"
+        ),
+    )
+
+    id = db.Column(
+        db.String(36),
+        primary_key=True,
+        default=lambda: str(uuid.uuid4())
+    )
+    training_id = db.Column(
+        db.String(36),
+        db.ForeignKey("training_sessions.id"),
+        nullable=False
+    )
+    club_id = db.Column(
+        db.String(36),
+        db.ForeignKey("clubs.id"),
+        nullable=False
+    )
+    action = db.Column(db.String(50), nullable=False)
+    changes_json = db.Column(db.JSON, nullable=False)
+    reason = db.Column(db.String(500), nullable=False)
+    created_by = db.Column(
+        db.String(36),
+        db.ForeignKey("users.id"),
+        nullable=False
+    )
+    created_at = db.Column(
+        db.DateTime,
+        nullable=False,
+        default=datetime.utcnow
+    )
+
+    training = db.relationship(
+        "TrainingSession",
+        back_populates="audit_events"
+    )
+    creator = db.relationship(
+        "User",
+        foreign_keys=[created_by],
+        backref=db.backref("training_audit_events_created", lazy=True)
+    )
+
+    def serialize(self):
+        return {
+            "id": self.id,
+            "training_id": self.training_id,
+            "action": self.action,
+            "changes": self.changes_json,
+            "reason": self.reason,
+            "created_by": self.created_by,
+            "created_by_name": (
+                self.creator.full_name
+                if self.creator
+                else None
+            ),
+            "created_at": (
+                self.created_at.isoformat()
+                if self.created_at
+                else None
+            )
         }
     
 class TrainingPlayer(db.Model):
@@ -743,6 +1096,13 @@ class Attendance(db.Model):
 class MatchSession(db.Model):
     __tablename__ = "match_sessions"
 
+    __table_args__ = (
+        db.CheckConstraint(
+            "capture_mode IS NULL OR capture_mode IN ('live', 'summary')",
+            name="ck_match_sessions_capture_mode"
+        ),
+    )
+
     id = db.Column(
         db.String(36),
         primary_key=True,
@@ -781,6 +1141,7 @@ class MatchSession(db.Model):
     result = db.Column(db.String(20))
     is_completed = db.Column(db.Boolean, default=False, nullable=False)
     match_step = db.Column(db.Integer, default=0, nullable=False)
+    capture_mode = db.Column(db.String(20), nullable=True)
 
     notes = db.Column(db.Text)
 
@@ -819,6 +1180,11 @@ class MatchSession(db.Model):
                 if self.referee_fee is not None
                 else None
             ),
+            "currency_code": (
+                self.team.club.currency_code
+                if self.team and self.team.club
+                else None
+            ),
             "tournament_team": (
                 self.tournament_team.serialize()
                 if self.tournament_team
@@ -834,6 +1200,7 @@ class MatchSession(db.Model):
             "result": self.result,
             "match_step": self.match_step,
             "is_completed": self.is_completed,
+            "capture_mode": self.capture_mode,
             "created_by": self.created_by,
             "created_at": self.created_at.isoformat(),
            
@@ -1102,6 +1469,40 @@ class PlayerMatchStat(db.Model):
     
 class PlayerPayment(db.Model):
     __tablename__ = "player_payments"
+    __table_args__ = (
+        db.Index(
+            "uq_player_payments_monthly_cycle",
+            "club_id",
+            "player_id",
+            "period_start",
+            unique=True,
+            postgresql_where=db.text("payment_type = 'monthly'"),
+            sqlite_where=db.text("payment_type = 'monthly'")
+        ),
+        db.Index(
+            "uq_player_payments_tournament_charge",
+            "club_id",
+            "player_id",
+            "tournament_team_id",
+            unique=True,
+            postgresql_where=db.text("payment_type = 'tournament'"),
+            sqlite_where=db.text("payment_type = 'tournament'")
+        ),
+        db.Index(
+            "uq_player_payments_referee_charge",
+            "club_id",
+            "player_id",
+            "match_id",
+            unique=True,
+            postgresql_where=db.text("payment_type = 'referee'"),
+            sqlite_where=db.text("payment_type = 'referee'")
+        ),
+        db.CheckConstraint(
+            "LENGTH(currency_code) = 3 "
+            "AND currency_code = UPPER(currency_code)",
+            name="ck_player_payments_currency_code_format"
+        ),
+    )
 
     id = db.Column(db.String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
 
@@ -1128,6 +1529,7 @@ class PlayerPayment(db.Model):
         nullable=False,
         default=0
     )
+    currency_code = db.Column(db.String(3), nullable=False)
     status = db.Column(db.String(20), default="pending", nullable=False)
 
     period_start = db.Column(db.Date, nullable=True)
@@ -1164,6 +1566,33 @@ class PlayerPayment(db.Model):
         )
     )
 
+    receipts = db.relationship(
+        "PaymentReceipt",
+        back_populates="payment",
+        cascade="all, delete-orphan",
+        order_by="PaymentReceipt.generated_at"
+    )
+
+    @property
+    def active_receipt(self):
+        return next(
+            (
+                receipt
+                for receipt in self.receipts
+                if receipt.status == "issued"
+            ),
+            None
+        )
+
+    @property
+    def has_receipt_history(self):
+        return bool(self.receipts)
+
+    @property
+    def receipt(self):
+        """Compatibilidad del API: expone únicamente el recibo vigente."""
+        return self.active_receipt
+
     def serialize(self):
         return {
             "id": self.id,
@@ -1177,6 +1606,7 @@ class PlayerPayment(db.Model):
                 if self.amount is not None
                 else 0
             ),
+            "currency_code": self.currency_code,
             "status": self.status,
             "period_start": self.period_start.isoformat() if self.period_start else None,
             "period_end": self.period_end.isoformat() if self.period_end else None,
@@ -1185,7 +1615,11 @@ class PlayerPayment(db.Model):
             "payment_method": self.payment_method,
             "reference": self.reference,
             "settlement_source": self.settlement_source,
-            "receipt": self.receipt.serialize() if self.receipt else None,
+            "receipt": (
+                self.active_receipt.serialize()
+                if self.active_receipt
+                else None
+            ),
             "notes": self.notes,
             "created_by": self.created_by,
             "paid_by": self.paid_by,
@@ -1215,13 +1649,35 @@ class PlayerPayment(db.Model):
 class PaymentReceipt(db.Model):
     __tablename__ = "payment_receipts"
 
+    __table_args__ = (
+        db.CheckConstraint(
+            "status IN ('issued', 'invalidated')",
+            name="ck_payment_receipts_status"
+        ),
+        db.CheckConstraint(
+            "snapshot_source IN ('issued', 'legacy_backfill')",
+            name="ck_payment_receipts_snapshot_source"
+        ),
+        db.CheckConstraint(
+            "LENGTH(currency_code_snapshot) = 3 "
+            "AND currency_code_snapshot = UPPER(currency_code_snapshot)",
+            name="ck_payment_receipts_currency_code_snapshot_format"
+        ),
+        db.Index(
+            "uq_payment_receipts_issued_payment",
+            "payment_id",
+            unique=True,
+            postgresql_where=db.text("status = 'issued'"),
+            sqlite_where=db.text("status = 'issued'")
+        ),
+    )
+
     id = db.Column(db.String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
 
     payment_id = db.Column(
         db.String(36),
         db.ForeignKey("player_payments.id"),
-        nullable=False,
-        unique=True
+        nullable=False
     )
 
     club_id = db.Column(
@@ -1240,6 +1696,43 @@ class PaymentReceipt(db.Model):
 
     pdf_url = db.Column(db.String(500), nullable=True)
 
+    status = db.Column(
+        db.String(20),
+        nullable=False,
+        default="issued",
+        server_default="issued"
+    )
+    invalidated_at = db.Column(db.DateTime, nullable=True)
+    invalidated_by = db.Column(
+        db.String(36),
+        db.ForeignKey("users.id"),
+        nullable=True
+    )
+    invalidation_reason = db.Column(db.String(80), nullable=True)
+
+    snapshot_source = db.Column(
+        db.String(30),
+        nullable=False,
+        default="issued",
+        server_default="issued"
+    )
+    amount_snapshot = db.Column(db.Numeric(10, 2), nullable=True)
+    currency_code_snapshot = db.Column(db.String(3), nullable=False)
+    payment_type_snapshot = db.Column(db.String(30), nullable=True)
+    concept_snapshot = db.Column(db.String(120), nullable=True)
+    period_start_snapshot = db.Column(db.Date, nullable=True)
+    period_end_snapshot = db.Column(db.Date, nullable=True)
+    payment_date_snapshot = db.Column(db.Date, nullable=True)
+    payment_method_snapshot = db.Column(db.String(50), nullable=True)
+    reference_snapshot = db.Column(db.String(120), nullable=True)
+    player_name_snapshot = db.Column(db.String(200), nullable=True)
+    club_name_snapshot = db.Column(db.String(120), nullable=True)
+    club_location_snapshot = db.Column(db.String(120), nullable=True)
+    club_state_snapshot = db.Column(db.String(120), nullable=True)
+    primary_color_snapshot = db.Column(db.String(20), nullable=True)
+    secondary_color_snapshot = db.Column(db.String(20), nullable=True)
+    logo_url_snapshot = db.Column(db.String(500), nullable=True)
+
     generated_at = db.Column(db.DateTime, default=datetime.utcnow)
 
     sent_at = db.Column(db.DateTime, nullable=True)
@@ -1248,11 +1741,14 @@ class PaymentReceipt(db.Model):
 
     payment = db.relationship(
         "PlayerPayment",
-        backref=db.backref(
-            "receipt",
-            uselist=False,
-            cascade="all, delete-orphan",
-            single_parent=True
+        back_populates="receipts"
+    )
+    share_events = db.relationship(
+        "PaymentReceiptShareEvent",
+        back_populates="receipt",
+        order_by=lambda: (
+            PaymentReceiptShareEvent.created_at.desc(),
+            PaymentReceiptShareEvent.id.desc()
         )
     )
 
@@ -1264,12 +1760,149 @@ class PaymentReceipt(db.Model):
             "player_id": self.player_id,
             "receipt_number": self.receipt_number,
             "pdf_url": self.pdf_url,
+            "status": self.status,
+            "invalidated_at": (
+                self.invalidated_at.isoformat()
+                if self.invalidated_at
+                else None
+            ),
+            "invalidated_by": self.invalidated_by,
+            "invalidation_reason": self.invalidation_reason,
+            "snapshot_source": self.snapshot_source,
+            "amount_snapshot": (
+                float(self.amount_snapshot)
+                if self.amount_snapshot is not None
+                else None
+            ),
+            "currency_code_snapshot": self.currency_code_snapshot,
+            "payment_type_snapshot": self.payment_type_snapshot,
+            "concept_snapshot": self.concept_snapshot,
+            "period_start_snapshot": (
+                self.period_start_snapshot.isoformat()
+                if self.period_start_snapshot
+                else None
+            ),
+            "period_end_snapshot": (
+                self.period_end_snapshot.isoformat()
+                if self.period_end_snapshot
+                else None
+            ),
+            "payment_date_snapshot": (
+                self.payment_date_snapshot.isoformat()
+                if self.payment_date_snapshot
+                else None
+            ),
+            "payment_method_snapshot": self.payment_method_snapshot,
+            "reference_snapshot": self.reference_snapshot,
+            "player_name_snapshot": self.player_name_snapshot,
+            "club_name_snapshot": self.club_name_snapshot,
+            "club_location_snapshot": self.club_location_snapshot,
+            "club_state_snapshot": self.club_state_snapshot,
+            "primary_color_snapshot": self.primary_color_snapshot,
+            "secondary_color_snapshot": self.secondary_color_snapshot,
+            "logo_url_snapshot": self.logo_url_snapshot,
             "generated_at": self.generated_at.isoformat() if self.generated_at else None,
             "sent_at": self.sent_at.isoformat() if self.sent_at else None,
             "sent_channel": self.sent_channel,
             "sent_to": self.sent_to,
         }
-    
+
+
+class PaymentReceiptShareEvent(db.Model):
+    """Audita el inicio de una acción de compartir, no su entrega."""
+
+    __tablename__ = "payment_receipt_share_events"
+
+    __table_args__ = (
+        db.CheckConstraint(
+            "event_type IN ('share_initiated', 'legacy_share_metadata')",
+            name="ck_receipt_share_events_event_type"
+        ),
+        db.CheckConstraint(
+            "source IN ('application', 'legacy_sent_metadata')",
+            name="ck_receipt_share_events_source"
+        ),
+        db.Index(
+            "ix_receipt_share_events_receipt_created_at",
+            "receipt_id",
+            "created_at"
+        ),
+        db.Index(
+            "uq_receipt_share_events_legacy_receipt",
+            "receipt_id",
+            unique=True,
+            postgresql_where=db.text(
+                "source = 'legacy_sent_metadata'"
+            ),
+            sqlite_where=db.text(
+                "source = 'legacy_sent_metadata'"
+            )
+        ),
+    )
+
+    id = db.Column(
+        db.String(36),
+        primary_key=True,
+        default=lambda: str(uuid.uuid4())
+    )
+    receipt_id = db.Column(
+        db.String(36),
+        db.ForeignKey("payment_receipts.id"),
+        nullable=False
+    )
+    club_id = db.Column(
+        db.String(36),
+        db.ForeignKey("clubs.id"),
+        nullable=False
+    )
+    channel = db.Column(db.String(30), nullable=True)
+    destination = db.Column(db.String(120), nullable=True)
+    event_type = db.Column(
+        db.String(40),
+        nullable=False,
+        default="share_initiated",
+        server_default="share_initiated"
+    )
+    source = db.Column(
+        db.String(40),
+        nullable=False,
+        default="application",
+        server_default="application"
+    )
+    created_at = db.Column(
+        db.DateTime,
+        nullable=False,
+        default=datetime.utcnow
+    )
+    created_by = db.Column(
+        db.String(36),
+        db.ForeignKey("users.id"),
+        nullable=True
+    )
+
+    receipt = db.relationship(
+        "PaymentReceipt",
+        back_populates="share_events"
+    )
+
+    def serialize(self):
+        return {
+            "id": self.id,
+            "receipt_id": self.receipt_id,
+            "club_id": self.club_id,
+            "channel": self.channel,
+            "destination": self.destination,
+            "event_type": self.event_type,
+            "source": self.source,
+            "created_at": (
+                self.created_at.isoformat()
+                if self.created_at
+                else None
+            ),
+            "created_by": self.created_by,
+        }
+
+
 class ReceiptCounter(db.Model):
     __tablename__ = "receipt_counters"
 

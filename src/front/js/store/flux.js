@@ -27,10 +27,12 @@ const getState = ({ getStore, getActions, setStore }) => {
       onboardingStatus: null,
       onboardingStep: null,
       club: null,
+      dashboardData: null,
       dashboardStats: null,
       nextMatch: null,
 
       adminClients: [],
+      clubUsers: [],
       categories: [],
       teams: [],
       players: [],
@@ -51,6 +53,24 @@ const getState = ({ getStore, getActions, setStore }) => {
     },
 
     actions: {
+      logoutLocal: () => {
+        localStorage.removeItem("token");
+        localStorage.removeItem("refresh");
+        localStorage.removeItem("user");
+
+        setStore({
+          token: null,
+          user: null,
+          onboardingStatus: null,
+          onboardingStep: null,
+          club: null,
+          dashboardData: null,
+          dashboardStats: null,
+          nextMatch: null,
+          clubUsers: [],
+        });
+      },
+
       loginUser: async (email, password) => {
         try {
           const resp = await fetch(`${BACKEND_URL}/api/login`, {
@@ -71,6 +91,10 @@ const getState = ({ getStore, getActions, setStore }) => {
             user: data.user,
             token: data.token,
             firstLogin: data.first_login,
+            dashboardData: null,
+            dashboardStats: null,
+            nextMatch: null,
+            clubUsers: [],
           });
 
           localStorage.setItem("token", data.token);
@@ -152,6 +176,10 @@ const getState = ({ getStore, getActions, setStore }) => {
           token: null,
           user: null,
           onboardingStatus: null,
+          dashboardData: null,
+          dashboardStats: null,
+          nextMatch: null,
+          clubUsers: [],
         });
       },
       setPassword: async (newPassword) => {
@@ -170,11 +198,21 @@ const getState = ({ getStore, getActions, setStore }) => {
 
           if (!result.ok) return result;
 
+          const data = result.data;
           const store = getStore();
-          const updatedUser = { ...store.user, first_login: false };
+          const updatedUser = data.user || {
+            ...store.user,
+            first_login: false,
+          };
 
-          setStore({ user: updatedUser });
+          localStorage.setItem("token", data.token);
+          localStorage.setItem("refresh", data.refresh);
           localStorage.setItem("user", JSON.stringify(updatedUser));
+
+          setStore({
+            user: updatedUser,
+            token: data.token,
+          });
 
           return successResponse(result.data);
         } catch (error) {
@@ -382,7 +420,7 @@ const getState = ({ getStore, getActions, setStore }) => {
                 "Content-Type": "application/json",
               },
               body: JSON.stringify(playerData),
-            },
+            }
           );
 
           const result = await parseResponse(resp);
@@ -410,6 +448,62 @@ const getState = ({ getStore, getActions, setStore }) => {
           return successResponse(result.data);
         } catch (error) {
           return networkError("Error loading clients:", error);
+        }
+      },
+
+      getAdminSports: async () => {
+        try {
+          const resp = await authFetch("/api/admin/sports");
+
+          const result = await parseResponse(resp);
+
+          if (!result.ok) return result;
+
+          return successResponse(result.data);
+        } catch (error) {
+          return networkError("Error loading sports:", error);
+        }
+      },
+
+      getAdminCurrencies: async () => {
+        try {
+          const resp = await authFetch("/api/admin/currencies");
+
+          const result = await parseResponse(resp);
+
+          if (!result.ok) return result;
+
+          return successResponse(result.data);
+        } catch (error) {
+          return networkError("Error loading currencies:", error);
+        }
+      },
+
+      getAdminCountries: async () => {
+        try {
+          const resp = await authFetch("/api/admin/countries");
+          const result = await parseResponse(resp);
+
+          if (!result.ok) return result;
+
+          return successResponse(result.data);
+        } catch (error) {
+          return networkError("Error loading countries:", error);
+        }
+      },
+
+      getAdminAreas: async (countryId) => {
+        try {
+          const resp = await authFetch(
+            `/api/admin/countries/${countryId}/areas`,
+          );
+          const result = await parseResponse(resp);
+
+          if (!result.ok) return result;
+
+          return successResponse(result.data);
+        } catch (error) {
+          return networkError("Error loading administrative areas:", error);
         }
       },
 
@@ -457,6 +551,129 @@ const getState = ({ getStore, getActions, setStore }) => {
           return successResponse(result.data);
         } catch (error) {
           return networkError("Error updating client status:", error);
+        }
+      },
+
+      suspendClub: async (clubId) => {
+        try {
+          const resp = await authFetch(`/api/admin/clubs/${clubId}/suspend`, {
+            method: "PUT",
+          });
+
+          const result = await parseResponse(resp);
+
+          if (!result.ok) return result;
+
+          await getActions().getAdminClients();
+
+          return successResponse(result.data);
+        } catch (error) {
+          return networkError("Error suspending club:", error);
+        }
+      },
+
+      activateClub: async (clubId) => {
+        try {
+          const resp = await authFetch(`/api/admin/clubs/${clubId}/activate`, {
+            method: "PUT",
+          });
+
+          const result = await parseResponse(resp);
+
+          if (!result.ok) return result;
+
+          await getActions().getAdminClients();
+
+          return successResponse(result.data);
+        } catch (error) {
+          return networkError("Error activating club:", error);
+        }
+      },
+
+      getClubUsers: async () => {
+        try {
+          const resp = await authFetch("/api/club/users");
+          const result = await parseResponse(resp);
+
+          if (!result.ok) return result;
+
+          setStore({
+            clubUsers: result.data.users,
+          });
+
+          return successResponse(result.data);
+        } catch (error) {
+          return networkError("Error loading club users:", error);
+        }
+      },
+
+      createClubUser: async (userData) => {
+        try {
+          const resp = await authFetch("/api/club/users", {
+            method: "POST",
+            body: JSON.stringify(userData),
+          });
+          const result = await parseResponse(resp);
+
+          if (!result.ok) return result;
+
+          await getActions().getClubUsers();
+
+          return successResponse(result.data);
+        } catch (error) {
+          return networkError("Error creating club user:", error);
+        }
+      },
+
+      updateClubUser: async (userId, userData) => {
+        try {
+          const resp = await authFetch(`/api/club/users/${userId}`, {
+            method: "PUT",
+            body: JSON.stringify(userData),
+          });
+          const result = await parseResponse(resp);
+
+          if (!result.ok) return result;
+
+          await getActions().getClubUsers();
+
+          return successResponse(result.data);
+        } catch (error) {
+          return networkError("Error updating club user:", error);
+        }
+      },
+
+      deactivateClubUser: async (userId) => {
+        try {
+          const resp = await authFetch(`/api/club/users/${userId}/deactivate`, {
+            method: "PUT",
+          });
+          const result = await parseResponse(resp);
+
+          if (!result.ok) return result;
+
+          await getActions().getClubUsers();
+
+          return successResponse(result.data);
+        } catch (error) {
+          return networkError("Error deactivating club user:", error);
+        }
+      },
+
+      activateClubUser: async (userId) => {
+        try {
+          const resp = await authFetch(`/api/club/users/${userId}/activate`, {
+            method: "PUT",
+          });
+          const result = await parseResponse(resp);
+
+          if (!result.ok) return result;
+
+          await getActions().getClubUsers();
+
+          return successResponse(result.data);
+        } catch (error) {
+          return networkError("Error activating club user:", error);
         }
       },
 
@@ -570,8 +787,28 @@ const getState = ({ getStore, getActions, setStore }) => {
         }
       },
 
+      deletePlayer: async (playerId) => {
+        try {
+          const resp = await authFetch(`/api/players/${playerId}`, {
+            method: "DELETE",
+          });
+
+          const result = await parseResponse(resp);
+
+          if (!result.ok) return result;
+
+          await getActions().getPlayers();
+
+          return successResponse(result.data);
+        } catch (error) {
+          return networkError("Error deleting player:", error);
+        }
+      },
+
       getDashboard: async () => {
         try {
+          setStore({ dashboardData: null });
+
           const resp = await authFetch("/api/club/dashboard");
 
           const result = await parseResponse(resp);
@@ -582,6 +819,7 @@ const getState = ({ getStore, getActions, setStore }) => {
 
           setStore({
             club: data.club,
+            dashboardData: data,
             dashboardStats: data.stats,
             nextMatch: data.next_match,
           });
@@ -668,7 +906,7 @@ const getState = ({ getStore, getActions, setStore }) => {
             `/api/teams/${teamId}/players/${playerId}`,
             {
               method: "DELETE",
-            },
+            }
           );
 
           const result = await parseResponse(resp);
@@ -753,6 +991,144 @@ const getState = ({ getStore, getActions, setStore }) => {
         }
       },
 
+      correctTrainingMetadata: async (trainingId, reason, changes) => {
+        try {
+          const resp = await authFetch(
+            `/api/trainings/${trainingId}/corrections/metadata`,
+            {
+              method: "POST",
+              headers: {
+                "Content-Type": "application/json",
+              },
+              body: JSON.stringify({ reason, changes }),
+            }
+          );
+
+          const result = await parseResponse(resp);
+
+          if (!result.ok) return result;
+
+          return successResponse(result.data);
+        } catch (error) {
+          return networkError("Error correcting training metadata:", error);
+        }
+      },
+
+      reactivateTraining: async (trainingId, reason) => {
+        try {
+          const resp = await authFetch(
+            `/api/trainings/${trainingId}/reactivate`,
+            {
+              method: "POST",
+              headers: {
+                "Content-Type": "application/json",
+              },
+              body: JSON.stringify({ reason }),
+            }
+          );
+
+          const result = await parseResponse(resp);
+
+          if (!result.ok) return result;
+
+          return successResponse(result.data);
+        } catch (error) {
+          return networkError("Error reactivating training:", error);
+        }
+      },
+
+      getTrainingAudit: async (trainingId) => {
+        try {
+          const resp = await authFetch(
+            `/api/trainings/${trainingId}/audit`
+          );
+
+          const result = await parseResponse(resp);
+
+          if (!result.ok) return result;
+
+          return successResponse(result.data.audit_events);
+        } catch (error) {
+          return networkError("Error loading training audit:", error);
+        }
+      },
+
+      completeTraining: async (trainingId) => {
+        try {
+          const resp = await authFetch(
+            `/api/trainings/${trainingId}/complete`,
+            { method: "PUT" }
+          );
+
+          const result = await parseResponse(resp);
+
+          if (!result.ok) return result;
+
+          const store = getStore();
+
+          setStore({
+            trainings: store.trainings.map((training) =>
+              training.id === trainingId
+                ? { ...training, ...result.data.training }
+                : training
+            ),
+          });
+
+          return successResponse(result.data);
+        } catch (error) {
+          return networkError("Error completing training:", error);
+        }
+      },
+
+      cancelTraining: async (trainingId) => {
+        try {
+          const resp = await authFetch(`/api/trainings/${trainingId}/cancel`, {
+            method: "PUT",
+          });
+
+          const result = await parseResponse(resp);
+
+          if (!result.ok) return result;
+
+          const store = getStore();
+
+          setStore({
+            trainings: store.trainings.map((training) =>
+              training.id === trainingId
+                ? { ...training, ...result.data.training }
+                : training
+            ),
+          });
+
+          return successResponse(result.data);
+        } catch (error) {
+          return networkError("Error cancelling training:", error);
+        }
+      },
+
+      syncTrainingRoster: async (trainingId) => {
+        try {
+          const resp = await authFetch(
+            `/api/trainings/${trainingId}/sync-roster`,
+            { method: "PUT" }
+          );
+
+          const result = await parseResponse(resp);
+
+          if (!result.ok) return result;
+
+          const playersResult = await getActions().getTrainingPlayers(
+            trainingId
+          );
+
+          if (!playersResult.ok) return playersResult;
+
+          return successResponse(result.data);
+        } catch (error) {
+          return networkError("Error syncing training roster:", error);
+        }
+      },
+
       saveAttendance: async (trainingId, attendanceList) => {
         try {
           const resp = await authFetch(
@@ -765,7 +1141,7 @@ const getState = ({ getStore, getActions, setStore }) => {
               body: JSON.stringify({
                 attendance: attendanceList,
               }),
-            },
+            }
           );
 
           const result = await parseResponse(resp);
@@ -778,10 +1154,40 @@ const getState = ({ getStore, getActions, setStore }) => {
         }
       },
 
+      correctTrainingAttendance: async (
+        trainingId,
+        reason,
+        attendanceList
+      ) => {
+        try {
+          const resp = await authFetch(
+            `/api/trainings/${trainingId}/corrections/attendance`,
+            {
+              method: "POST",
+              headers: {
+                "Content-Type": "application/json",
+              },
+              body: JSON.stringify({
+                reason,
+                attendance: attendanceList,
+              }),
+            }
+          );
+
+          const result = await parseResponse(resp);
+
+          if (!result.ok) return result;
+
+          return successResponse(result.data);
+        } catch (error) {
+          return networkError("Error correcting training attendance:", error);
+        }
+      },
+
       getTrainingAttendance: async (trainingId) => {
         try {
           const resp = await authFetch(
-            `/api/trainings/${trainingId}/attendance`,
+            `/api/trainings/${trainingId}/attendance`
           );
 
           const result = await parseResponse(resp);
@@ -934,6 +1340,50 @@ const getState = ({ getStore, getActions, setStore }) => {
         }
       },
 
+      completeTournament: async (tournamentId) => {
+        try {
+          const resp = await authFetch(
+            `/api/tournaments/${tournamentId}/complete`,
+            {
+              method: "PUT",
+            }
+          );
+
+          const result = await parseResponse(resp);
+
+          if (!result.ok) return result;
+
+          const actions = getActions();
+          await actions.getTournaments();
+
+          return successResponse(result.data);
+        } catch (error) {
+          return networkError("Error completing tournament:", error);
+        }
+      },
+
+      cancelTournament: async (tournamentId) => {
+        try {
+          const resp = await authFetch(
+            `/api/tournaments/${tournamentId}/cancel`,
+            {
+              method: "PUT",
+            }
+          );
+
+          const result = await parseResponse(resp);
+
+          if (!result.ok) return result;
+
+          const actions = getActions();
+          await actions.getTournaments();
+
+          return successResponse(result.data);
+        } catch (error) {
+          return networkError("Error cancelling tournament:", error);
+        }
+      },
+
       addTeamToTournament: async (tournamentId, teamData) => {
         try {
           const resp = await authFetch(
@@ -944,7 +1394,7 @@ const getState = ({ getStore, getActions, setStore }) => {
                 "Content-Type": "application/json",
               },
               body: JSON.stringify(teamData),
-            },
+            }
           );
 
           const result = await parseResponse(resp);
@@ -963,7 +1413,7 @@ const getState = ({ getStore, getActions, setStore }) => {
       getTournamentTeams: async (tournamentId) => {
         try {
           const resp = await authFetch(
-            `/api/tournaments/${tournamentId}/teams`,
+            `/api/tournaments/${tournamentId}/teams`
           );
 
           const result = await parseResponse(resp);
@@ -983,7 +1433,7 @@ const getState = ({ getStore, getActions, setStore }) => {
       getTournamentTeamPlayers: async (tournamentTeamId) => {
         try {
           const resp = await authFetch(
-            `/api/tournament-teams/${tournamentTeamId}/players`,
+            `/api/tournament-teams/${tournamentTeamId}/players`
           );
 
           const result = await parseResponse(resp);
@@ -1012,7 +1462,7 @@ const getState = ({ getStore, getActions, setStore }) => {
               body: JSON.stringify({
                 player_ids: playerIds,
               }),
-            },
+            }
           );
 
           const result = await parseResponse(resp);
@@ -1031,7 +1481,7 @@ const getState = ({ getStore, getActions, setStore }) => {
       previewRegistrationCharges: async (tournamentTeamId) => {
         try {
           const resp = await authFetch(
-            `/api/tournament-teams/${tournamentTeamId}/registration-charges/preview`,
+            `/api/tournament-teams/${tournamentTeamId}/registration-charges/preview`
           );
 
           const result = await parseResponse(resp);
@@ -1046,7 +1496,23 @@ const getState = ({ getStore, getActions, setStore }) => {
         } catch (error) {
           return networkError(
             "Error loading registration charges preview:",
-            error,
+            error
+          );
+        }
+      },
+
+      getTournamentRegistrationChargeContexts: async () => {
+        try {
+          const resp = await authFetch("/api/tournament-registration-charges");
+          const result = await parseResponse(resp);
+
+          if (!result.ok) return result;
+
+          return successResponse(result.data);
+        } catch (error) {
+          return networkError(
+            "Error loading tournament registration charge contexts:",
+            error
           );
         }
       },
@@ -1057,7 +1523,7 @@ const getState = ({ getStore, getActions, setStore }) => {
             `/api/tournament-teams/${tournamentTeamId}/registration-charges`,
             {
               method: "POST",
-            },
+            }
           );
 
           const result = await parseResponse(resp);
@@ -1077,7 +1543,7 @@ const getState = ({ getStore, getActions, setStore }) => {
       getTeamTournamentEntries: async (teamId) => {
         try {
           const resp = await authFetch(
-            `/api/teams/${teamId}/tournament-entries`,
+            `/api/teams/${teamId}/tournament-entries`
           );
 
           const result = await parseResponse(resp);
@@ -1091,52 +1557,6 @@ const getState = ({ getStore, getActions, setStore }) => {
           return successResponse(result.data);
         } catch (error) {
           return networkError("Error loading team tournament entries:", error);
-        }
-      },
-
-      previewRegistrationCharges: async (tournamentTeamId) => {
-        try {
-          const resp = await authFetch(
-            `/api/tournament-teams/${tournamentTeamId}/registration-charges/preview`,
-          );
-
-          const result = await parseResponse(resp);
-
-          if (!result.ok) return result;
-
-          setStore({
-            registrationChargesPreview: result.data,
-          });
-
-          return successResponse(result.data);
-        } catch (error) {
-          return networkError(
-            "Error loading registration charges preview:",
-            error,
-          );
-        }
-      },
-
-      generateRegistrationCharges: async (tournamentTeamId) => {
-        try {
-          const resp = await authFetch(
-            `/api/tournament-teams/${tournamentTeamId}/registration-charges`,
-            {
-              method: "POST",
-            },
-          );
-
-          const result = await parseResponse(resp);
-
-          if (!result.ok) return result;
-
-          const actions = getActions();
-
-          await actions.previewRegistrationCharges(tournamentTeamId);
-
-          return successResponse(result.data);
-        } catch (error) {
-          return networkError("Error generating registration charges:", error);
         }
       },
 
@@ -1215,10 +1635,30 @@ const getState = ({ getStore, getActions, setStore }) => {
         }
       },
 
+      updateMatchCaptureMode: async (matchId, captureMode) => {
+        try {
+          const resp = await authFetch(`/api/matches/${matchId}/capture-mode`, {
+            method: "PUT",
+            headers: {
+              "Content-Type": "application/json",
+            },
+            body: JSON.stringify({ capture_mode: captureMode }),
+          });
+
+          const result = await parseResponse(resp);
+
+          if (!result.ok) return result;
+
+          return successResponse(result.data);
+        } catch (error) {
+          return networkError("Error updating match capture mode:", error);
+        }
+      },
+
       previewRefereeCharges: async (matchId) => {
         try {
           const resp = await authFetch(
-            `/api/matches/${matchId}/referee-charges/preview`,
+            `/api/matches/${matchId}/referee-charges/preview`
           );
 
           const result = await parseResponse(resp);
@@ -1241,7 +1681,7 @@ const getState = ({ getStore, getActions, setStore }) => {
             `/api/matches/${matchId}/referee-charges`,
             {
               method: "POST",
-            },
+            }
           );
 
           const result = await parseResponse(resp);
@@ -1288,7 +1728,7 @@ const getState = ({ getStore, getActions, setStore }) => {
                 "Content-Type": "application/json",
               },
               body: JSON.stringify({ players }),
-            },
+            }
           );
 
           const result = await parseResponse(resp);
@@ -1313,7 +1753,7 @@ const getState = ({ getStore, getActions, setStore }) => {
               body: JSON.stringify({
                 players,
               }),
-            },
+            }
           );
 
           const result = await parseResponse(resp);
@@ -1336,7 +1776,7 @@ const getState = ({ getStore, getActions, setStore }) => {
                 "Content-Type": "application/json",
               },
               body: JSON.stringify(substitutionData),
-            },
+            }
           );
 
           const result = await parseResponse(resp);
@@ -1359,7 +1799,7 @@ const getState = ({ getStore, getActions, setStore }) => {
                 "Content-Type": "application/json",
               },
               body: JSON.stringify({ players }),
-            },
+            }
           );
 
           const result = await parseResponse(resp);
@@ -1382,7 +1822,7 @@ const getState = ({ getStore, getActions, setStore }) => {
                 "Content-Type": "application/json",
               },
               body: JSON.stringify(statsData),
-            },
+            }
           );
 
           const result = await parseResponse(resp);
@@ -1398,7 +1838,7 @@ const getState = ({ getStore, getActions, setStore }) => {
       getPlayerMatchStats: async (matchPlayerId) => {
         try {
           const resp = await authFetch(
-            `/api/match-players/${matchPlayerId}/stats`,
+            `/api/match-players/${matchPlayerId}/stats`
           );
 
           const result = await parseResponse(resp);
@@ -1456,6 +1896,21 @@ const getState = ({ getStore, getActions, setStore }) => {
           return successResponse(result.data);
         } catch (error) {
           return networkError("Error saving match result:", error);
+        }
+      },
+      finalizeMatch: async (matchId) => {
+        try {
+          const resp = await authFetch(`/api/matches/${matchId}/finalize`, {
+            method: "PUT",
+          });
+
+          const result = await parseResponse(resp);
+
+          if (!result.ok) return result;
+
+          return successResponse(result.data);
+        } catch (error) {
+          return networkError("Error finalizing match:", error);
         }
       },
       createMatchEvent: async (eventData) => {
@@ -1522,7 +1977,7 @@ const getState = ({ getStore, getActions, setStore }) => {
             {
               method: "POST",
               body: formData,
-            },
+            }
           );
 
           const result = await parseResponse(resp);
@@ -1572,6 +2027,34 @@ const getState = ({ getStore, getActions, setStore }) => {
         }
       },
 
+      getPaymentsSyncPreview: async () => {
+        try {
+          const resp = await authFetch("/api/payments/sync-preview");
+          const result = await parseResponse(resp);
+
+          if (!result.ok) return result;
+
+          return successResponse(result.data);
+        } catch (error) {
+          return networkError("Error loading payments sync preview:", error);
+        }
+      },
+
+      syncPayments: async () => {
+        try {
+          const resp = await authFetch("/api/payments/sync", {
+            method: "POST",
+          });
+          const result = await parseResponse(resp);
+
+          if (!result.ok) return result;
+
+          return successResponse(result.data);
+        } catch (error) {
+          return networkError("Error syncing payments:", error);
+        }
+      },
+
       updatePayment: async (paymentId, paymentData, refreshFilters = null) => {
         try {
           const resp = await authFetch(`/api/payments/${paymentId}`, {
@@ -1589,7 +2072,7 @@ const getState = ({ getStore, getActions, setStore }) => {
           const store = getStore();
 
           const updatedPayments = store.payments.map((payment) =>
-            payment.id === paymentId ? result.data.payment : payment,
+            payment.id === paymentId ? result.data.payment : payment
           );
 
           setStore({
@@ -1623,17 +2106,17 @@ const getState = ({ getStore, getActions, setStore }) => {
         }
       },
 
-      markPaymentReceiptShared: async (receiptId, shareData) => {
+      createPaymentReceiptShareEvent: async (receiptId, shareData) => {
         try {
           const resp = await authFetch(
-            `/api/payment-receipts/${receiptId}/share`,
+            `/api/payment-receipts/${receiptId}/share-events`,
             {
-              method: "PUT",
+              method: "POST",
               headers: {
                 "Content-Type": "application/json",
               },
               body: JSON.stringify(shareData),
-            },
+            }
           );
 
           const result = await parseResponse(resp);
@@ -1642,7 +2125,23 @@ const getState = ({ getStore, getActions, setStore }) => {
 
           return successResponse(result.data);
         } catch (error) {
-          return networkError("Error sharing payment receipt:", error);
+          return networkError("Error recording receipt share event:", error);
+        }
+      },
+
+      getPaymentReceiptShareEvents: async (receiptId) => {
+        try {
+          const resp = await authFetch(
+            `/api/payment-receipts/${receiptId}/share-events`
+          );
+
+          const result = await parseResponse(resp);
+
+          if (!result.ok) return result;
+
+          return successResponse(result.data);
+        } catch (error) {
+          return networkError("Error loading receipt share history:", error);
         }
       },
 
@@ -1674,7 +2173,7 @@ const getState = ({ getStore, getActions, setStore }) => {
                 "Content-Type": "application/json",
               },
               body: JSON.stringify(paymentSettings),
-            },
+            }
           );
 
           const result = await parseResponse(resp);
@@ -1695,7 +2194,7 @@ const getState = ({ getStore, getActions, setStore }) => {
         const refresh = localStorage.getItem("refresh");
 
         if (!refresh) {
-          setStore({ user: null, token: null });
+          setStore({ user: null, token: null, clubUsers: [] });
 
           return {
             ok: false,
@@ -1737,7 +2236,7 @@ const getState = ({ getStore, getActions, setStore }) => {
           localStorage.removeItem("refresh");
           localStorage.removeItem("user");
 
-          setStore({ user: null, token: null });
+          setStore({ user: null, token: null, clubUsers: [] });
 
           return networkError("Error restoring session:", err);
         }

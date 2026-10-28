@@ -6,6 +6,7 @@ import { Context } from "../../store/appContext";
 import { PageHeader } from "../../component/ui/pageHeader";
 import { Card } from "../../component/ui/card";
 import { Button } from "../../component/ui/button";
+import { getTrainingStatus } from "../../utils/trainingStatus";
 import "../../../styles/trainings.css";
 
 const formatDate = (date) => {
@@ -75,25 +76,36 @@ export const TeamTrainings = () => {
           </div>
 
           <div className="trainings-list">
-            {store.trainings.map((training) => (
-              <Card
-                key={training.id}
-                className="training-card card-interactive"
-                onClick={() => handleOpenTraining(training.id)}
-              >
-                <div className="training-card-content">
-                  <div className="training-card-main">
-                    <span className="training-card-label">Sesión</span>
+            {store.trainings.map((training) => {
+              const trainingStatus = getTrainingStatus(training.status);
 
-                    <h3>{formatDate(training.date)}</h3>
+              return (
+                <Card
+                  key={training.id}
+                  className="training-card card-interactive"
+                  onClick={() => handleOpenTraining(training.id)}
+                >
+                  <div className="training-card-content">
+                    <div className="training-card-main">
+                      <div className="training-card-heading">
+                        <span className="training-card-label">Sesión</span>
+                        <span
+                          className={`status-badge ${trainingStatus.className}`}
+                        >
+                          {trainingStatus.label}
+                        </span>
+                      </div>
 
-                    <p>{training.location || "Sin ubicación"}</p>
+                      <h3>{formatDate(training.date)}</h3>
+
+                      <p>{training.location || "Sin ubicación"}</p>
+                    </div>
+
+                    <span className="training-card-arrow">→</span>
                   </div>
-
-                  <span className="training-card-arrow">→</span>
-                </div>
-              </Card>
-            ))}
+                </Card>
+              );
+            })}
           </div>
         </Card>
       )}

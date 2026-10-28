@@ -1,0 +1,21 @@
+.attendance-toggle {
+  min-width: 44px;
+  min-height: 44px;
+  border: none;
+  background: transparent;
+  font-size: 24px;
+  cursor: pointer;
+}
+
+.attendance-toggle:hover {
+  transform: scale(1.2);
+}
+
+.attendance-toggle:disabled {
+  cursor: default;
+  opacity: 0.9;
+}
+
+.attendance-toggle:disabled:hover {
+  transform: none;
+}

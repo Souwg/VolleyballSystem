@@ -6,6 +6,7 @@ import { PageHeader } from "../../component/ui/pageHeader";
 import { Card } from "../../component/ui/card";
 import { Button } from "../../component/ui/button";
 import { CalendarCheck } from "lucide-react";
+import { getTrainingStatus } from "../../utils/trainingStatus";
 
 import "../../../styles/trainings.css";
 
@@ -90,34 +91,45 @@ export const Trainings = () => {
           </div>
 
           <div className="trainings-list">
-            {store.trainings.map((training) => (
-              <Card
-                key={training.id}
-                className="training-card card-interactive"
-                onClick={() => handleOpenTraining(training.id)}
-              >
-                <div className="training-card-content">
-                  <div className="training-card-main">
-                    <span className="training-card-label">
-                      {training.team_name}
-                    </span>
+            {store.trainings.map((training) => {
+              const trainingStatus = getTrainingStatus(training.status);
 
-                    <h3>{formatDate(training.date)}</h3>
+              return (
+                <Card
+                  key={training.id}
+                  className="training-card card-interactive"
+                  onClick={() => handleOpenTraining(training.id)}
+                >
+                  <div className="training-card-content">
+                    <div className="training-card-main">
+                      <div className="training-card-heading">
+                        <span className="training-card-label">
+                          {training.team_name}
+                        </span>
+                        <span
+                          className={`status-badge ${trainingStatus.className}`}
+                        >
+                          {trainingStatus.label}
+                        </span>
+                      </div>
 
-                    {training.start_time && training.end_time && (
-                      <p className="training-card-time">
-                        {formatTime(training.start_time)} –{" "}
-                        {formatTime(training.end_time)}
-                      </p>
-                    )}
+                      <h3>{formatDate(training.date)}</h3>
 
-                    <p>{training.location || "Sin ubicación"}</p>
+                      {training.start_time && training.end_time && (
+                        <p className="training-card-time">
+                          {formatTime(training.start_time)} –{" "}
+                          {formatTime(training.end_time)}
+                        </p>
+                      )}
+
+                      <p>{training.location || "Sin ubicación"}</p>
+                    </div>
+
+                    <span className="training-card-arrow">→</span>
                   </div>
-
-                  <span className="training-card-arrow">→</span>
-                </div>
-              </Card>
-            ))}
+                </Card>
+              );
+            })}
           </div>
         </Card>
       )}

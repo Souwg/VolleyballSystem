@@ -11,7 +11,7 @@
   overflow: hidden;
   padding: 16px;
   border-radius: var(--radius-lg);
-  background: linear-gradient(180deg, #ffffff 0%, #f8fafc 100%);
+  background: linear-gradient(180deg, var(--color-surface) 0%, var(--color-bg) 100%);
   border: 1px solid var(--color-border);
   box-shadow: var(--shadow-card);
 }
@@ -262,6 +262,81 @@
 .player-team-row-info span {
   font-size: var(--font-size-sm);
   color: var(--color-muted);
+}
+
+.player-global-actions {
+  display: flex;
+  margin-top: 16px;
+}
+
+.player-global-actions .button {
+  width: 100%;
+}
+
+.player-team-row-actions {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 8px;
+}
+
+.player-team-row-actions .button {
+  width: 100%;
+  white-space: nowrap;
+}
+
+.player-delete-card {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  border-color: var(--color-danger-soft);
+}
+
+.player-delete-card h3,
+.player-delete-card p {
+  margin: 0;
+}
+
+.player-delete-card h3 {
+  margin-top: 4px;
+  color: var(--color-danger);
+}
+
+.player-delete-card p {
+  margin-top: 8px;
+  color: var(--color-muted);
+  font-size: var(--font-size-sm);
+  line-height: 1.5;
+}
+
+.player-delete-card .button {
+  width: 100%;
+}
+
+@media (min-width: 640px) {
+  .player-global-actions .button {
+    width: auto;
+  }
+
+  .player-team-row-actions {
+    flex-direction: row;
+    align-items: center;
+  }
+
+  .player-team-row-actions .button {
+    width: auto;
+  }
+
+  .player-delete-card {
+    flex-direction: row;
+    align-items: center;
+    justify-content: space-between;
+  }
+
+  .player-delete-card .button {
+    width: auto;
+    flex-shrink: 0;
+  }
 }
 
 .player-empty-text {

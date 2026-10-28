@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useContext, useMemo } from "react";
+import React, { useEffect, useState, useContext, useMemo, useRef } from "react";
 import { useParams, useNavigate, useLocation } from "react-router-dom";
 import {
   DollarSign,
@@ -16,6 +16,7 @@ import { Button } from "../../component/ui/button";
 import { Select } from "../../component/ui/select";
 import { FormField } from "../../component/ui/formField";
 import { errorMessages } from "../../utils/errorMessages";
+import { formatMoney } from "../../utils/money";
 import "../../../styles/matchDetail.css";
 
 const STEPS = ["Convocadas", "Estado"];
@@ -43,12 +44,25 @@ const POSITION_OPTIONS = [
   { value: "libero", label: "Líbero" },
 ];
 
-const formatCurrency = (value) => {
-  return Number(value || 0).toLocaleString("es", {
-    style: "currency",
-    currency: "USD",
-    minimumFractionDigits: 2,
-  });
+const hasValidSavedResult = (match) => {
+  if (!match || !["win", "loss"].includes(match.result)) return false;
+
+  const homeSets = Number(match.home_sets);
+  const opponentSets = Number(match.opponent_sets);
+
+  if (!Number.isInteger(homeSets) || !Number.isInteger(opponentSets)) {
+    return false;
+  }
+
+  if (homeSets < 0 || opponentSets < 0) return false;
+  if (homeSets > 3 || opponentSets > 3) return false;
+  if (homeSets === opponentSets) return false;
+  if (Math.max(homeSets, opponentSets) !== 3) return false;
+  if (Math.min(homeSets, opponentSets) > 2) return false;
+
+  const expectedResult = homeSets > opponentSets ? "win" : "loss";
+
+  return match.result === expectedResult;
 };
 
 const getPaymentStatusData = (status) => {
@@ -80,7 +94,7 @@ const getPaymentStatusData = (status) => {
 };
 
 export const MatchDetail = () => {
-  const { actions } = useContext(Context);
+  const { store, actions } = useContext(Context);
   const { match_id } = useParams();
   const navigate = useNavigate();
   const location = useLocation();
@@ -90,6 +104,14 @@ export const MatchDetail = () => {
   const [roster, setRoster] = useState([]);
   const [currentStep, setCurrentStep] = useState(0);
   const [resultError, setResultError] = useState("");
+  const [captureModeError, setCaptureModeError] = useState("");
+  const [savingCaptureMode, setSavingCaptureMode] = useState(false);
+  const [showParticipationEditor, setShowParticipationEditor] =
+    useState(false);
+  const [selectedParticipantIds, setSelectedParticipantIds] = useState([]);
+  const [savingParticipation, setSavingParticipation] = useState(false);
+  const [participationError, setParticipationError] = useState("");
+  const [participationMessage, setParticipationMessage] = useState("");
 
   const [teamPlayers, setTeamPlayers] = useState([]);
   const [selectedPlayers, setSelectedPlayers] = useState([]);
@@ -99,6 +121,9 @@ export const MatchDetail = () => {
   const [opponentSets, setOpponentSets] = useState(0);
   const [savingResult, setSavingResult] = useState(false);
   const [showResultEditor, setShowResultEditor] = useState(false);
+  const [finalizingMatch, setFinalizingMatch] = useState(false);
+  const [finalizeError, setFinalizeError] = useState("");
+  const finalizeRequestInFlight = useRef(false);
   const [statusDirty, setStatusDirty] = useState(false);
   const [rosterError, setRosterError] = useState("");
   const [statusError, setStatusError] = useState("");
@@ -145,13 +170,23 @@ export const MatchDetail = () => {
 
       const normalizedRoster = rosterData.map((player) => ({
         ...player,
-        position: player.position || player.main_position || "",
+        position: player.position || "",
       }));
 
       setRoster(normalizedRoster);
       setTeamPlayers(normalizedRoster);
       setSelectedPlayers(
         rosterData.filter((p) => p.is_called).map((p) => p.player_id),
+      );
+      setSelectedParticipantIds(
+        rosterData
+          .filter(
+            (player) =>
+              player.is_called &&
+              PLAYABLE_STATUSES.includes(player.attendance_status) &&
+              player.did_play,
+          )
+          .map((player) => player.match_player_id),
       );
     }
 
@@ -270,7 +305,7 @@ export const MatchDetail = () => {
     const playersPayload = calledPlayers.map((player) => ({
       match_player_id: player.match_player_id,
       attendance_status: player.attendance_status,
-      position: player.position || player.main_position || null,
+      position: player.position || null,
     }));
 
     const result = await actions.saveMatchStatus(match_id, playersPayload);
@@ -294,6 +329,7 @@ export const MatchDetail = () => {
 
   const saveMatchResult = async () => {
     setResultError("");
+    setFinalizeError("");
     setSavingResult(true);
 
     const result = await actions.saveMatchResult(match_id, {
@@ -310,6 +346,124 @@ export const MatchDetail = () => {
 
     setShowResultEditor(false);
     await loadMatch();
+  };
+
+  const updateCaptureMode = async (captureMode) => {
+    if (savingCaptureMode || match?.capture_mode === captureMode) return;
+
+    setCaptureModeError("");
+    setSavingCaptureMode(true);
+
+    const result = await actions.updateMatchCaptureMode(
+      match_id,
+      captureMode,
+    );
+
+    setSavingCaptureMode(false);
+
+    if (!result?.ok) {
+      setCaptureModeError(
+        errorMessages[result.code] ||
+          result.message ||
+          "No se pudo actualizar el modo de captura",
+      );
+      return;
+    }
+
+    setMatch(result.data.match);
+    setShowParticipationEditor(false);
+    setParticipationError("");
+    setParticipationMessage("");
+  };
+
+  const toggleParticipant = (matchPlayerId) => {
+    setParticipationError("");
+    setParticipationMessage("");
+
+    setSelectedParticipantIds((currentIds) =>
+      currentIds.includes(matchPlayerId)
+        ? currentIds.filter((id) => id !== matchPlayerId)
+        : [...currentIds, matchPlayerId],
+    );
+  };
+
+  const saveSummaryParticipation = async () => {
+    if (savingParticipation) return;
+
+    const eligiblePlayers = roster.filter(
+      (player) =>
+        player.is_called &&
+        PLAYABLE_STATUSES.includes(player.attendance_status),
+    );
+
+    if (eligiblePlayers.length === 0) {
+      setParticipationError(
+        "No hay jugadoras presentes o que hayan llegado tarde.",
+      );
+      return;
+    }
+
+    setParticipationError("");
+    setParticipationMessage("");
+    setSavingParticipation(true);
+
+    const result = await actions.saveMatchParticipation(
+      match_id,
+      eligiblePlayers.map((player) => ({
+        match_player_id: player.match_player_id,
+        did_play: selectedParticipantIds.includes(player.match_player_id),
+      })),
+    );
+
+    setSavingParticipation(false);
+
+    if (!result?.ok) {
+      setParticipationError(
+        errorMessages[result.code] ||
+          result.message ||
+          "No se pudo guardar la participación",
+      );
+      return;
+    }
+
+    setParticipationMessage("Participación guardada correctamente.");
+    await loadMatch();
+  };
+
+  const finalizeMatch = async () => {
+    if (finalizeRequestInFlight.current) return;
+
+    finalizeRequestInFlight.current = true;
+
+    const confirmed = window.confirm(
+      "¿Finalizar este partido?\n\nEl resultado quedará confirmado y el partido se marcará como completado.\n\nRevisa el marcador antes de continuar.",
+    );
+
+    if (!confirmed) {
+      finalizeRequestInFlight.current = false;
+      return;
+    }
+
+    setFinalizeError("");
+    setFinalizingMatch(true);
+
+    const result = await actions.finalizeMatch(match_id);
+
+    if (!result?.ok) {
+      setFinalizeError(
+        result.message ||
+          errorMessages[result.code] ||
+          "No se pudo finalizar el partido",
+      );
+      setFinalizingMatch(false);
+      finalizeRequestInFlight.current = false;
+      return;
+    }
+
+    setShowResultEditor(false);
+    await loadMatch();
+    setFinalizingMatch(false);
+    finalizeRequestInFlight.current = false;
   };
 
   const filteredPlayers = useMemo(() => {
@@ -344,6 +498,12 @@ export const MatchDetail = () => {
       player.did_play,
   );
 
+  const participationEligiblePlayers = roster.filter(
+    (player) =>
+      player.is_called &&
+      PLAYABLE_STATUSES.includes(player.attendance_status),
+  );
+
   const initialPlayersOnCourt = roster.filter(
     (player) =>
       player.is_called &&
@@ -356,6 +516,8 @@ export const MatchDetail = () => {
 
   const statusSaved = (match?.match_step ?? 0) >= 2;
   const isMatchCompleted = match?.is_completed;
+  const canFinalizeMatch = hasValidSavedResult(match) && !isMatchCompleted;
+  const canManageMatchFinance = store.user?.role === "club_owner";
 
   const refereeFeeConfigured =
     match?.referee_fee !== null && match?.referee_fee !== undefined;
@@ -370,6 +532,7 @@ export const MatchDetail = () => {
   const hasGeneratedRefereeCharges = existingRefereeChargesCount > 0;
 
   const canPreviewRefereeCharges =
+    canManageMatchFinance &&
     refereeFeeConfigured &&
     refereeFee > 0 &&
     calledPlayersCount > 0 &&
@@ -377,13 +540,13 @@ export const MatchDetail = () => {
 
   const getResultButtonText = () => {
     if (showResultEditor) return "Ocultar resultado";
-    if (isMatchCompleted) return "Editar sets";
+    if (match?.result) return "Actualizar resultado";
 
     return "Registrar sets";
   };
 
   const loadRefereePreview = async () => {
-    if (loadingRefereePreview) return;
+    if (!canManageMatchFinance || loadingRefereePreview) return;
 
     setRefereeError("");
     setRefereeErrorCode("");
@@ -409,7 +572,13 @@ export const MatchDetail = () => {
   };
 
   const handleGenerateRefereeCharges = async () => {
-    if (generatingRefereeCharges || !refereePreview) return;
+    if (
+      !canManageMatchFinance ||
+      generatingRefereeCharges ||
+      !refereePreview
+    ) {
+      return;
+    }
 
     if (refereePreview.existing_charges_count > 0) {
       const confirmed = window.confirm(
@@ -479,7 +648,11 @@ export const MatchDetail = () => {
       <Card className="mb-4">
         <div className="d-flex justify-content-between align-items-center gap-3">
           <div>
-            <small className="text-muted">Resultado final en sets</small>
+            <small className="text-muted">
+              {isMatchCompleted
+                ? "Resultado confirmado en sets"
+                : "Resultado provisional en sets"}
+            </small>
 
             <h2 className="mb-1">
               {homeSets} - {opponentSets}
@@ -494,20 +667,24 @@ export const MatchDetail = () => {
                   : ""
               }`}
             >
-              {match?.result === "win"
-                ? "Victoria"
+              {isMatchCompleted
+                ? `Completado · ${match?.result === "win" ? "Victoria" : "Derrota"}`
+                : match?.result === "win"
+                ? "Provisional · Victoria"
                 : match?.result === "loss"
-                ? "Derrota"
+                ? "Provisional · Derrota"
                 : "Pendiente"}
             </p>
           </div>
 
-          <Button
-            variant={isMatchCompleted ? "secondary" : "primary"}
-            onClick={() => setShowResultEditor((prev) => !prev)}
-          >
-            {getResultButtonText()}
-          </Button>
+          {!isMatchCompleted && (
+            <Button
+              variant="primary"
+              onClick={() => setShowResultEditor((prev) => !prev)}
+            >
+              {getResultButtonText()}
+            </Button>
+          )}
         </div>
 
         {(match?.match_step ?? 0) < 3 && (
@@ -518,9 +695,9 @@ export const MatchDetail = () => {
         )}
       </Card>
 
-      {showResultEditor && (
+      {showResultEditor && !isMatchCompleted && (
         <Card className="mb-4">
-          <h3>{isMatchCompleted ? "Editar resultado" : "Cerrar partido"}</h3>
+          <h3>Registrar o actualizar resultado</h3>
 
           <div className="d-flex justify-content-between align-items-center my-3">
             <div>
@@ -577,47 +754,288 @@ export const MatchDetail = () => {
           </div>
         </Card>
       )}
+
+      {canFinalizeMatch && (
+        <Card className="mb-4">
+          <h3>Finalizar partido</h3>
+
+          <p className="text-muted">
+            Confirma el cierre cuando hayas revisado el marcador. Después de
+            finalizar, el resultado ya no podrá modificarse desde este flujo.
+          </p>
+
+          {finalizeError && <p className="form-error">{finalizeError}</p>}
+
+          <Button
+            variant="primary"
+            onClick={finalizeMatch}
+            disabled={finalizingMatch}
+          >
+            {finalizingMatch ? "Finalizando..." : "Finalizar partido"}
+          </Button>
+        </Card>
+      )}
       <Card className="mb-4">
         <h3>Estadísticas</h3>
 
-        {canOpenLiveMode ? (
+        {!match?.capture_mode ? (
           <>
             <p className="text-muted">
-              {hasInitialSix
-                ? "El partido está listo para capturar acciones y registrar cambios en vivo."
-                : "El partido está listo para iniciar el modo en vivo. Primero seleccionarás las 6 iniciales."}
+              ¿Cómo registrarás el partido?
             </p>
 
-            <div className="d-flex flex-column gap-2">
-              <Button
-                variant="primary"
-                onClick={() => navigate(`/matches/${match_id}/live`)}
-              >
-                Iniciar modo en vivo
-              </Button>
+            {isMatchCompleted ? (
+              <p className="text-muted mb-0">
+                Partido histórico sin modo de captura verificable. Sus datos
+                permanecen disponibles en modo de solo lectura.
+              </p>
+            ) : (
+              <div className="match-capture-mode-options">
+                <button
+                  type="button"
+                  className="match-capture-mode-option"
+                  disabled={savingCaptureMode}
+                  onClick={() => updateCaptureMode("live")}
+                >
+                  <strong>En vivo</strong>
+                  <span>Registrar acciones durante el partido.</span>
+                </button>
 
-              <Button
-                variant="secondary"
-                onClick={() => navigate(`/matches/${match_id}/stats`)}
-                disabled={!hasPlayersWhoPlayed}
-              >
-                Ajustar estadísticas
-              </Button>
-
-              {!hasPlayersWhoPlayed && (
-                <small className="text-muted">
-                  Podrás ajustar estadísticas cuando guardes las 6 iniciales o
-                  registres acciones en vivo.
-                </small>
-              )}
-            </div>
+                <button
+                  type="button"
+                  className="match-capture-mode-option"
+                  disabled={savingCaptureMode}
+                  onClick={() => updateCaptureMode("summary")}
+                >
+                  <strong>Resumen</strong>
+                  <span>Cargar estadísticas manualmente después.</span>
+                </button>
+              </div>
+            )}
           </>
         ) : (
-          <p className="text-muted mb-0">
-            🔒 Completa convocatoria y estado para activar el modo en vivo.
-          </p>
+          <>
+            <div className="match-capture-mode-current">
+              <div>
+                <small>Modo de captura</small>
+                <strong>
+                  {match.capture_mode === "live" ? "En vivo" : "Resumen"}
+                </strong>
+              </div>
+
+              {!isMatchCompleted && (
+                <Button
+                  variant="secondary"
+                  disabled={savingCaptureMode}
+                  onClick={() =>
+                    updateCaptureMode(
+                      match.capture_mode === "live" ? "summary" : "live",
+                    )
+                  }
+                >
+                  {match.capture_mode === "live"
+                    ? "Cambiar a resumen"
+                    : "Cambiar a en vivo"}
+                </Button>
+              )}
+            </div>
+
+            {match.capture_mode === "live" ? (
+              !isMatchCompleted && canOpenLiveMode ? (
+                <>
+                  <p className="text-muted">
+                    {hasInitialSix
+                      ? "Continúa capturando acciones y cambios en vivo."
+                      : "Primero seleccionarás las 6 iniciales."}
+                  </p>
+                  <Button
+                    variant="primary"
+                    onClick={() => navigate(`/matches/${match_id}/live`)}
+                  >
+                    {hasInitialSix
+                      ? "Continuar modo en vivo"
+                      : "Iniciar modo en vivo"}
+                  </Button>
+                </>
+              ) : (
+                <p className="text-muted mb-0">
+                  {isMatchCompleted
+                    ? "El partido está finalizado. Las estadísticas provienen de LiveMatch."
+                    : "Completa convocatoria y estado para iniciar el modo en vivo."}
+                </p>
+              )
+            ) : (
+              <>
+                <p className="text-muted">
+                  {isMatchCompleted
+                    ? "El resumen estadístico está cerrado y disponible en modo de solo lectura."
+                    : "Las estadísticas se cargarán como un resumen manual."}
+                </p>
+
+                {!isMatchCompleted && (
+                  <div className="match-participation-section">
+                    <Button
+                      variant="secondary"
+                      onClick={() => {
+                        setShowParticipationEditor((current) => !current);
+                        setParticipationError("");
+                        setParticipationMessage("");
+                      }}
+                      disabled={
+                        !statusSaved ||
+                        statusDirty ||
+                        hasUnsavedRosterChanges
+                      }
+                    >
+                      {showParticipationEditor
+                        ? "Ocultar participación"
+                        : hasPlayersWhoPlayed
+                        ? "Editar participación"
+                        : "Registrar participación"}
+                    </Button>
+
+                    {!statusSaved && (
+                      <small className="text-muted">
+                        Guarda primero el estado de las convocadas.
+                      </small>
+                    )}
+
+                    {showParticipationEditor && statusSaved && (
+                      <div className="match-participation-editor">
+                        <div>
+                          <strong>Jugadoras que participaron</strong>
+                          <p className="text-muted mb-0">
+                            Selecciona únicamente quienes realmente jugaron.
+                          </p>
+                        </div>
+
+                        {participationEligiblePlayers.length > 0 ? (
+                          <div className="match-participation-options">
+                            {participationEligiblePlayers.map((player) => {
+                              const isSelected = selectedParticipantIds.includes(
+                                player.match_player_id,
+                              );
+
+                              return (
+                                <button
+                                  type="button"
+                                  key={player.match_player_id}
+                                  className={`match-participation-option ${
+                                    isSelected ? "selected" : ""
+                                  }`}
+                                  disabled={savingParticipation}
+                                  onClick={() =>
+                                    toggleParticipant(player.match_player_id)
+                                  }
+                                >
+                                  <span className="match-player-option-check">
+                                    {isSelected && <Check size={16} />}
+                                  </span>
+
+                                  <span>
+                                    <strong>
+                                      #{player.player_number} {player.first_name}{" "}
+                                      {player.last_name}
+                                    </strong>
+                                    <small>
+                                      {MATCH_STATUS_LABELS[
+                                        player.attendance_status
+                                      ]}
+                                    </small>
+                                  </span>
+                                </button>
+                              );
+                            })}
+                          </div>
+                        ) : (
+                          <p className="text-muted mb-0">
+                            No hay jugadoras presentes o que hayan llegado
+                            tarde.
+                          </p>
+                        )}
+
+                        {participationError && (
+                          <p className="form-error mb-0">
+                            {participationError}
+                          </p>
+                        )}
+
+                        {participationMessage && (
+                          <p className="text-success mb-0">
+                            {participationMessage}
+                          </p>
+                        )}
+
+                        <Button
+                          variant="primary"
+                          onClick={saveSummaryParticipation}
+                          disabled={
+                            savingParticipation ||
+                            participationEligiblePlayers.length === 0
+                          }
+                        >
+                          {savingParticipation
+                            ? "Guardando..."
+                            : "Guardar participación"}
+                        </Button>
+                      </div>
+                    )}
+                  </div>
+                )}
+
+                {isMatchCompleted && (
+                  <p className="text-muted">
+                    Participación registrada: {" "}
+                    <strong>
+                      {
+                        roster.filter((player) => player.did_play).length
+                      }
+                    </strong>
+                  </p>
+                )}
+
+                <Button
+                  variant="primary"
+                  onClick={() => navigate(`/matches/${match_id}/stats`)}
+                  disabled={!hasPlayersWhoPlayed}
+                >
+                  {isMatchCompleted
+                    ? "Consultar estadísticas"
+                    : "Cargar resumen estadístico"}
+                </Button>
+
+                {!hasPlayersWhoPlayed && !isMatchCompleted && (
+                  <small className="text-muted d-block mt-2">
+                    Podrás cargar el resumen cuando exista participación
+                    registrada.
+                  </small>
+                )}
+
+                {!hasPlayersWhoPlayed && isMatchCompleted && (
+                  <small className="text-muted d-block mt-2">
+                    El partido no tiene participantes con estadísticas
+                    individuales para consultar.
+                  </small>
+                )}
+              </>
+            )}
+          </>
+        )}
+
+        {captureModeError && (
+          <p className="form-error mt-3">{captureModeError}</p>
         )}
       </Card>
+
+      {isMatchCompleted && (
+        <Card className="mb-4">
+          <h3>Partido cerrado</h3>
+          <p className="text-muted mb-0">
+            La convocatoria, asistencia, participación y estadísticas están
+            disponibles en modo de solo lectura.
+          </p>
+        </Card>
+      )}
 
       {/* Stepper */}
       <div className="stepper-mobile mb-4">
@@ -630,9 +1048,15 @@ export const MatchDetail = () => {
             <Button
               key={step}
               variant={currentStep === index ? "primary" : "secondary"}
-              disabled={isLocked || isBlockedByChanges}
+              disabled={
+                isMatchCompleted || isLocked || isBlockedByChanges
+              }
               onClick={() => {
-                if (isLocked || isBlockedByChanges) return;
+                if (
+                  isMatchCompleted ||
+                  isLocked ||
+                  isBlockedByChanges
+                ) return;
                 setCurrentStep(index);
               }}
               className={`me-2 mb-2 ${isLocked ? "opacity-50" : ""}`}
@@ -673,6 +1097,7 @@ export const MatchDetail = () => {
                 className={`match-player-option ${
                   isSelected ? "selected" : ""
                 }`}
+                disabled={isMatchCompleted}
                 onClick={() => togglePlayerSelection(player)}
               >
                 <div className="match-player-option-check">
@@ -705,7 +1130,7 @@ export const MatchDetail = () => {
               key={player.match_player_id}
               className="mb-3 cursor-pointer"
               onClick={() => {
-                if (currentStep === 1) {
+                if (!isMatchCompleted && currentStep === 1) {
                   toggleMatchStatus(player.match_player_id);
                 }
               }}
@@ -717,7 +1142,8 @@ export const MatchDetail = () => {
               {PLAYABLE_STATUSES.includes(player.attendance_status) ? (
                 <FormField label="Posición hoy">
                   <Select
-                    value={player.position || player.main_position || ""}
+                    value={player.position || ""}
+                    disabled={isMatchCompleted}
                     onClick={(event) => event.stopPropagation()}
                     onChange={(event) => {
                       event.stopPropagation();
@@ -756,7 +1182,8 @@ export const MatchDetail = () => {
         </div>
       )}
       {/* Footer CTA */}
-      <div className="mt-4 mb-4 d-flex gap-2">
+      {!isMatchCompleted && (
+        <div className="mt-4 mb-4 d-flex gap-2">
         {currentStep === 0 ? (
           <Button
             variant="primary"
@@ -789,9 +1216,10 @@ export const MatchDetail = () => {
             </Button>
           )
         ) : null}
-      </div>
+        </div>
+      )}
 
-      {calledPlayersCount === 0 ? (
+      {canManageMatchFinance && (calledPlayersCount === 0 ? (
         <Card className="match-referee-locked-card mb-4">
           <div className="match-referee-locked-icon">
             <DollarSign size={19} />
@@ -836,7 +1264,7 @@ export const MatchDetail = () => {
 
             {refereeFeeConfigured && refereeFee > 0 && (
               <strong className="match-referee-total">
-                {formatCurrency(refereeFee)}
+                {formatMoney(refereeFee, match.currency_code)}
               </strong>
             )}
           </div>
@@ -930,7 +1358,12 @@ export const MatchDetail = () => {
                 <div>
                   <DollarSign size={18} />
                   <span>Costo total</span>
-                  <strong>{formatCurrency(refereePreview.referee_fee)}</strong>
+                  <strong>
+                    {formatMoney(
+                      refereePreview.referee_fee,
+                      refereePreview.currency_code || match.currency_code,
+                    )}
+                  </strong>
                 </div>
 
                 <div>
@@ -985,7 +1418,12 @@ export const MatchDetail = () => {
                           </span>
                         )}
 
-                        <strong>{formatCurrency(row.amount)}</strong>
+                        <strong>
+                          {formatMoney(
+                            row.amount,
+                            refereePreview.currency_code || match.currency_code,
+                          )}
+                        </strong>
                       </div>
                     </div>
                   );
@@ -1029,7 +1467,7 @@ export const MatchDetail = () => {
             </>
           )}
         </Card>
-      )}
+      ))}
     </>
   );
 };

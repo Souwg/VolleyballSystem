@@ -287,10 +287,11 @@ export const Categories = () => {
         !editingCategoryId &&
         (store.categories?.length === 0 ? (
           <Card>
-            <h4>Aún no tienes categorías</h4>
-            <p>Crea una categoría como Iniciación, U12, U14 o Juvenil.</p>
-
-            <Button onClick={openCreateForm}>Crear categoría</Button>
+            <div className="empty-state">
+              <h4>Aún no tienes categorías</h4>
+              <p>Crea una categoría como Iniciación, U12, U14 o Juvenil.</p>
+              <Button onClick={openCreateForm}>Crear categoría</Button>
+            </div>
           </Card>
         ) : (
           <div className="teams-grid">

@@ -658,3 +658,153 @@ No deben almacenarse en repositorios públicos ni compartirse sin protección.
 | Estado del respaldo            | Verificado                       |
 | Estado de restauración         | Pendiente de validar             |
 | Fecha del respaldo documentado | 23/08/2026                       |
+
+---
+
+## 23. Procedimiento de respaldo conjunto preparado
+
+La FASE 0.16 añadió al repositorio:
+
+```text
+scripts/backup_sportflow.sh
+```
+
+Este script prepara en una misma ejecución el dump de PostgreSQL y el archivo
+de `/opt/sportflow/uploads`. No incluye `.env`, claves ni configuración privada.
+La copia manual descrita en las secciones anteriores se conserva como registro
+histórico; no reemplaza la necesidad de ejecutar periódicamente el respaldo
+conjunto.
+
+Antes de usarlo en producción:
+
+1. Revisar el script contra el `compose.yml` instalado.
+2. Confirmar que el servicio de PostgreSQL se llama `database`.
+3. Confirmar el bind mount
+   `/opt/sportflow/uploads:/app/public/uploads`.
+4. Ejecutarlo primero en una ventana de mantenimiento y revisar su salida.
+5. Copiar el conjunto verificado a una ubicación fuera del VPS.
+6. Actualizar cron y el respaldo previo al despliegue solo después de esa prueba.
+
+Ejecución prevista desde el checkout de producción:
+
+```bash
+cd /opt/sportflow/app
+./scripts/backup_sportflow.sh
+```
+
+Las rutas y nombres pueden ajustarse mediante `SPORTFLOW_ROOT`, `COMPOSE_DIR`,
+`COMPOSE_FILE`, `ENV_FILE`, `UPLOADS_DIR`, `BACKUP_ROOT`,
+`BACKUP_RETENTION_DAYS` y `DATABASE_SERVICE`. No es necesario exportar
+contraseñas: Docker Compose carga `/opt/sportflow/docker/.env`.
+
+## 24. Restauración del conjunto
+
+Este procedimiento debe ensayarse en un entorno aislado antes de aplicarlo a
+producción. Requiere el código y la configuración Docker ya instalados, además
+de un conjunto completo creado por `backup_sportflow.sh`.
+
+### 24.1 Verificar el respaldo
+
+```bash
+cd /ruta/al/sportflow_YYYY-MM-DD_HH-MM-SSZ
+sha256sum -c SHA256SUMS
+tar -tzf uploads.tar.gz > /dev/null
+```
+
+Comprobar el dump con la misma versión principal de PostgreSQL usada por el
+servicio:
+
+```bash
+docker compose \
+  --env-file /opt/sportflow/docker/.env \
+  -f /opt/sportflow/docker/compose.yml \
+  exec -T database \
+  sh -c 'exec pg_restore --list' \
+  < postgres.dump > /dev/null
+```
+
+No continuar si falla cualquiera de estas verificaciones.
+
+### 24.2 Detener escrituras y restaurar PostgreSQL
+
+Detener únicamente la aplicación para impedir escrituras durante toda la
+restauración:
+
+```bash
+docker compose \
+  --env-file /opt/sportflow/docker/.env \
+  -f /opt/sportflow/docker/compose.yml \
+  stop app
+```
+
+Restaurar primero la base de datos:
+
+```bash
+docker compose \
+  --env-file /opt/sportflow/docker/.env \
+  -f /opt/sportflow/docker/compose.yml \
+  exec -T database \
+  sh -c 'exec pg_restore --clean --if-exists --no-owner --no-privileges --username="$POSTGRES_USER" --dbname="$POSTGRES_DB"' \
+  < postgres.dump
+```
+
+Este comando reemplaza objetos de la base destino. Debe utilizarse solo sobre
+la base aislada o sobre el destino de recuperación previamente identificado.
+
+### 24.3 Restaurar uploads
+
+Con `app` todavía detenido, conservar temporalmente el directorio actual como
+resguardo operativo y extraer el archivo en un directorio nuevo:
+
+```bash
+mv /opt/sportflow/uploads /opt/sportflow/uploads.before-restore
+mkdir -p /opt/sportflow/uploads
+tar -xzf uploads.tar.gz -C /opt/sportflow/uploads
+```
+
+Revisar propietario y permisos según el usuario configurado en el contenedor
+de producción. No se documenta un UID fijo porque el Dockerfile de producción
+se administra fuera de este repositorio. El servicio `app` debe poder leer los
+PDF existentes y escribir nuevos archivos dentro de `uploads/receipts`.
+
+### 24.4 Iniciar y verificar
+
+```bash
+docker compose \
+  --env-file /opt/sportflow/docker/.env \
+  -f /opt/sportflow/docker/compose.yml \
+  start app
+```
+
+Después de iniciar:
+
+1. Confirmar que la aplicación responde y que las migraciones corresponden al
+   código restaurado.
+2. Consultar un pago con recibo y comprobar que su `pdf_url` tenga un archivo
+   equivalente bajo `/opt/sportflow/uploads/receipts`.
+3. Abrir el recibo desde una sesión autorizada.
+4. Generar un enlace compartible nuevo y comprobar que sirve el PDF. Los links
+   firmados existentes pueden haber expirado y dependen del mismo
+   `TOKEN_SECRET`; no forman parte del archivo PDF.
+5. Generar un recibo de prueba en el entorno aislado y confirmar que el
+   contenedor puede escribir en `uploads/receipts`.
+
+No eliminar `uploads.before-restore` hasta terminar estas comprobaciones. Su
+eliminación es una acción operativa separada.
+
+## 25. Consistencia entre recibos y archivos
+
+`PaymentReceipt.pdf_url` se guarda en PostgreSQL, mientras que el PDF se guarda
+en `public/uploads/receipts`, que en producción corresponde a
+`/opt/sportflow/uploads/receipts`. Por eso ambos elementos deben pertenecer al
+mismo conjunto de respaldo.
+
+Para un respaldo consistente se recomienda detener temporalmente `app`, crear
+el conjunto y volver a iniciar la aplicación. El script no detiene servicios de
+forma automática. Así evita cambiar el estado operativo del servidor sin una
+decisión explícita del administrador.
+
+La restauración completa todavía no ha sido ejecutada en el VPS de producción.
+Los pasos anteriores quedaron preparados y la restauración de archivos se
+validó localmente durante la FASE 0.16; la tabla de la sección 19 mantiene el
+estado de producción como pendiente.

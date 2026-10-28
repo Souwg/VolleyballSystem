@@ -354,8 +354,10 @@ export const CategoryDetail = () => {
           !editingTeamId &&
           (teams.length === 0 ? (
             <Card>
-              <h4>Aún no tienes equipos</h4>
-              <p>Crea el primer equipo dentro de {category.name}.</p>
+              <div className="empty-state">
+                <h4>Aún no tienes equipos</h4>
+                <p>Crea el primer equipo dentro de {category.name}.</p>
+              </div>
             </Card>
           ) : (
             <div className="teams-grid">

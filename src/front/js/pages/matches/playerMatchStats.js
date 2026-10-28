@@ -333,15 +333,18 @@ export const PlayerMatchStats = () => {
 
   const showAttack = !isLibero;
   const showBlock = !isLibero;
+  const captureMode = context?.match?.capture_mode || null;
+  const isMatchCompleted = Boolean(context?.match?.is_completed);
+  const canEditStats = captureMode === "summary" && !isMatchCompleted;
 
   return (
     <>
       <PageHeader
-        title="Ajustar estadísticas"
+        title={canEditStats ? "Cargar resumen estadístico" : "Estadísticas"}
         subtitle={
           context
             ? `vs ${context.match.opponent_name}`
-            : "Revisión manual por jugadora"
+            : "Rendimiento por jugadora"
         }
       />
 
@@ -366,6 +369,27 @@ export const PlayerMatchStats = () => {
       )}
 
       <Card>
+        {isMatchCompleted && (
+          <p className="text-muted">
+            El partido está completado. Las estadísticas se muestran en modo
+            de solo lectura.
+          </p>
+        )}
+
+        {captureMode === "live" && (
+          <p className="text-muted">
+            Estas estadísticas se calculan desde las acciones registradas en
+            LiveMatch y son de solo lectura.
+          </p>
+        )}
+
+        {!captureMode && context && (
+          <p className="text-muted">
+            Este partido histórico no tiene un origen estadístico verificable.
+            Sus estadísticas se muestran en modo de solo lectura.
+          </p>
+        )}
+
         <div className="mt-4">
           <Button
             variant="secondary"
@@ -377,7 +401,11 @@ export const PlayerMatchStats = () => {
 
         {showLiveSummary && (
           <div className="card card-surface-alt mt-3 p-3">
-            <h3 className="mb-3">📊 Resumen en vivo</h3>
+            <h3 className="mb-3">
+              {captureMode === "live"
+                ? "📊 Estadísticas de LiveMatch"
+                : "📊 Resumen estadístico"}
+            </h3>
 
             <h4 className="mb-2">Rendimiento</h4>
 
@@ -418,36 +446,37 @@ export const PlayerMatchStats = () => {
           </div>
         )}
 
-        <div className="mt-4">
-          <h3 className="mb-3">Corregir estadísticas</h3>
-
-          {showAttack && (
-            <div className="mt-4">
-              <h4 className="mb-3">💥 Ataque</h4>
-              <StatCounter
-                label="Totales"
-                value={attacksTotal}
-                onChange={setAttacksTotal}
-              />
-              <StatCounter
-                label="Positivos"
-                value={attacksPositive}
-                onChange={setAttacksPositive}
-              />
-              <StatCounter
-                label="Neutrales"
-                value={attacksNeutral}
-                onChange={setAttacksNeutral}
-              />
-              <StatCounter
-                label="Errores"
-                value={attacksErrors}
-                onChange={setAttacksErrors}
-              />
-            </div>
-          )}
-
+        {canEditStats && (
           <div className="mt-4">
+            <h3 className="mb-3">Cargar estadísticas</h3>
+
+            {showAttack && (
+              <div className="mt-4">
+                <h4 className="mb-3">💥 Ataque</h4>
+                <StatCounter
+                  label="Totales"
+                  value={attacksTotal}
+                  onChange={setAttacksTotal}
+                />
+                <StatCounter
+                  label="Positivos"
+                  value={attacksPositive}
+                  onChange={setAttacksPositive}
+                />
+                <StatCounter
+                  label="Neutrales"
+                  value={attacksNeutral}
+                  onChange={setAttacksNeutral}
+                />
+                <StatCounter
+                  label="Errores"
+                  value={attacksErrors}
+                  onChange={setAttacksErrors}
+                />
+              </div>
+            )}
+
+            <div className="mt-4">
             <h4 className="mb-3">🛡️ Recepción</h4>
             <StatCounter
               label="Totales"
@@ -469,9 +498,9 @@ export const PlayerMatchStats = () => {
               value={receptionsNegative}
               onChange={setReceptionsNegative}
             />
-          </div>
+            </div>
 
-          <div className="mt-4">
+            <div className="mt-4">
             <h4 className="mb-3">🛡️ Defensa</h4>
             <StatCounter
               label="Totales"
@@ -493,9 +522,9 @@ export const PlayerMatchStats = () => {
               value={defensesNegative}
               onChange={setDefensesNegative}
             />
-          </div>
+            </div>
 
-          <div className="mt-4">
+            <div className="mt-4">
             <h4 className="mb-3">✋ Armado</h4>
             <StatCounter
               label="Totales"
@@ -517,9 +546,9 @@ export const PlayerMatchStats = () => {
               value={setsErrors}
               onChange={setSetsErrors}
             />
-          </div>
+            </div>
 
-          <div className="mt-4">
+            <div className="mt-4">
             <h4 className="mb-3">🎯 Saque</h4>
             <StatCounter
               label="Totales"
@@ -541,10 +570,10 @@ export const PlayerMatchStats = () => {
               value={servesErrors}
               onChange={setServesErrors}
             />
-          </div>
+            </div>
 
-          {showBlock && (
-            <div className="mt-4">
+            {showBlock && (
+              <div className="mt-4">
               <h4 className="mb-3">🧱 Bloqueo</h4>
 
               <StatCounter
@@ -570,16 +599,19 @@ export const PlayerMatchStats = () => {
                 value={blocksErrors}
                 onChange={setBlocksErrors}
               />
-            </div>
-          )}
-        </div>
+              </div>
+            )}
+          </div>
+        )}
       </Card>
       {error && <p className="form-error">{error}</p>}
-      <div className="mt-4">
-        <Button variant="primary" onClick={handleSave} disabled={loading}>
-          {loading ? "Guardando..." : "Guardar stats"}
-        </Button>
-      </div>
+      {canEditStats && (
+        <div className="mt-4">
+          <Button variant="primary" onClick={handleSave} disabled={loading}>
+            {loading ? "Guardando..." : "Guardar resumen"}
+          </Button>
+        </div>
+      )}
     </>
   );
 };

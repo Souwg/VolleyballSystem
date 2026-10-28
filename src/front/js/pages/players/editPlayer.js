@@ -1,5 +1,5 @@
 import React, { useEffect, useContext, useState } from "react";
-import { useParams, useNavigate } from "react-router-dom";
+import { Navigate, useParams, useNavigate } from "react-router-dom";
 import { Context } from "../../store/appContext";
 
 import { PageHeader } from "../../component/ui/pageHeader";
@@ -21,10 +21,14 @@ const POSITIONS = [
   { label: "Líbero", value: "libero" },
 ];
 
+const MAX_PLAYER_IMAGE_SIZE = 8 * 1024 * 1024;
+const MAX_PLAYER_IMAGE_SIZE_MB = MAX_PLAYER_IMAGE_SIZE / (1024 * 1024);
+
 export const EditPlayer = () => {
-  const { actions } = useContext(Context);
+  const { store, actions } = useContext(Context);
   const { player_id } = useParams();
   const navigate = useNavigate();
+  const canEditPlayer = ["club_owner", "coach"].includes(store.user?.role);
 
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -65,13 +69,28 @@ export const EditPlayer = () => {
   };
 
   useEffect(() => {
+    if (!canEditPlayer) return;
+
     loadPlayer();
-  }, [player_id]);
+  }, [player_id, canEditPlayer]);
 
   const handlePlayerImageChange = (e) => {
     const file = e.target.files?.[0];
 
     if (!file) return;
+
+    if (file.size > MAX_PLAYER_IMAGE_SIZE) {
+      setPlayerImageFile(null);
+      setPlayerImagePreview("");
+      setErrors((prev) => ({
+        ...prev,
+        IMAGE_TOO_LARGE: true,
+        INVALID_IMAGE_FORMAT: false,
+        IMAGE_REQUIRED: false,
+      }));
+      e.target.value = "";
+      return;
+    }
 
     setPlayerImageFile(file);
     setPlayerImagePreview(URL.createObjectURL(file));
@@ -143,6 +162,10 @@ export const EditPlayer = () => {
     navigate(`/players/${player_id}`);
   };
 
+  if (!canEditPlayer) {
+    return <Navigate to={`/players/${player_id}`} replace />;
+  }
+
   if (loading) {
     return <p>Cargando jugadora...</p>;
   }
@@ -180,7 +203,15 @@ export const EditPlayer = () => {
 
             <div className="player-photo-content">
               <strong>Foto del deportista</strong>
-              <p>Opcional. Se mostrará en el perfil del deportista.</p>
+              <p>
+                Opcional. PNG, JPG o WEBP. Máximo {MAX_PLAYER_IMAGE_SIZE_MB} MB.
+              </p>
+
+              {errors.IMAGE_TOO_LARGE && (
+                <p className="form-error">
+                  La imagen no puede pesar más de {MAX_PLAYER_IMAGE_SIZE_MB} MB.
+                </p>
+              )}
 
               <label className="button button-secondary player-photo-button">
                 Cambiar foto

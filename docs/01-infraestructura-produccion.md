@@ -142,17 +142,13 @@ El archivo .env contiene información sensible y no debe subirse a GitHub.
 
 backups
 
-Contiene el script y los respaldos de PostgreSQL:
+Contiene los conjuntos de respaldo generados fuera de los contenedores:
 
 /opt/sportflow/backups
 
-Respaldos:
+El script preparado en el repositorio se encuentra en:
 
-/opt/sportflow/backups/postgres
-
-Script:
-
-/opt/sportflow/backups/backup_postgres.sh
+/opt/sportflow/app/scripts/backup_sportflow.sh
 
 
 ## 6. Contenedores Docker
@@ -212,7 +208,7 @@ Entre ellas:
 * POSTGRES_USER
 * POSTGRES_PASSWORD
 * DATABASE_URL
-* FLASK_APP_KEY
+* TOKEN_SECRET
 * BACKEND_URL
 * REACT_APP_BACKEND_URL
 * FRONTEND_URL
@@ -220,6 +216,11 @@ Entre ellas:
 * ADMIN_PASSWORD
 
 Nunca deben escribirse valores reales de contraseñas o API keys en esta documentación.
+
+`TOKEN_SECRET` es obligatorio para iniciar en producción. Debe ser una clave
+impredecible de al menos 32 caracteres; firma los JWT y los enlaces de recibos.
+Antes de desplegar esta versión, configúralo fuera del repositorio y usa
+`APP_ENV=production`.
 
 
 
@@ -242,39 +243,60 @@ No está escrita directamente dentro del código fuente.
 
 ## 10. Respaldos
 
-Se ejecuta un respaldo automático de PostgreSQL todos los días.
+La automatización instalada actualmente respalda PostgreSQL antes de cada
+despliegue y mediante cron. Esa automatización anterior no incluye
+`/opt/sportflow/uploads`.
 
-Configuración de cron:
-
-```text
-0 2 * * * /opt/sportflow/backups/backup_postgres.sh >> /opt/sportflow/backups/backup_postgres.log 2>&1
-```
-
-El VPS utiliza UTC.
-
-Por lo tanto:
+La FASE 0.16 deja preparado el script versionado:
 
 ```text
-02:00 UTC = 22:00 del día anterior en Venezuela
+/opt/sportflow/app/scripts/backup_sportflow.sh
 ```
 
-Los respaldos se generan en formato:
+Cada ejecución crea, fuera de los contenedores, un conjunto con una sola marca
+de tiempo UTC:
 
 ```text
-sportflow_YYYY-MM-DD_HH-MM-SS.sql.gz
+/opt/sportflow/backups/sportflow_YYYY-MM-DD_HH-MM-SSZ/
+├── postgres.dump
+├── uploads.tar.gz
+├── MANIFEST.txt
+└── SHA256SUMS
 ```
 
-El script elimina respaldos con más de 30 días.
+`postgres.dump` usa el formato custom de PostgreSQL. `uploads.tar.gz` contiene
+todo `/opt/sportflow/uploads`, incluidos `clubs/`, `players/` y `receipts/`
+cuando existen. El script valida el dump con `pg_restore --list`, comprueba el
+archivo tar y verifica los hashes antes de publicar el conjunto. Un fallo deja
+un estado distinto de cero y elimina el conjunto temporal incompleto.
 
-También se genera un respaldo antes de cada despliegue.
+El destino predeterminado es el filesystem del host, no el contenedor ni el
+volumen de PostgreSQL. Para resistir la pérdida completa del VPS debe copiarse
+además cada conjunto verificado a almacenamiento fuera de ese VPS. También se
+puede apuntar `BACKUP_ROOT` a un almacenamiento externo ya montado; el script no
+configura ni presupone un proveedor.
 
-El respaldo actual protege PostgreSQL, pero no incluye los archivos almacenados en:
+La retención predeterminada es de 30 días y puede configurarse con
+`BACKUP_RETENTION_DAYS`. La limpieza solo considera directorios completos con
+el nombre generado por este script y se ejecuta después de verificar el nuevo
+respaldo.
+
+Antes de activarlo en producción hay que sustituir en cron y en
+`/opt/sportflow/deploy.sh` la llamada al script anterior. Ejemplo para la tarea
+diaria, con el VPS en UTC:
 
 ```text
-/opt/sportflow/uploads
+0 2 * * * /opt/sportflow/app/scripts/backup_sportflow.sh >> /opt/sportflow/backups/backup_sportflow.log 2>&1
 ```
 
-Estos archivos requieren un mecanismo de respaldo independiente.
+La instalación y esa sustitución son acciones de producción y no se realizaron
+durante la FASE 0.16.
+
+Para minimizar diferencias entre la base de datos y los PDF, un respaldo de
+recuperación debe ejecutarse en una ventana sin escrituras o con el servicio
+`app` detenido. El script toma primero el dump y después archiva `uploads`; si
+la aplicación continúa aceptando pagos durante ese intervalo, existe una
+ventana pequeña de inconsistencia entre ambos componentes.
 
 
 ## 11. Persistencia de archivos subidos
@@ -367,9 +389,9 @@ docker image prune -f
 
 no elimina esta carpeta.
 
-El respaldo automático de PostgreSQL no incluye `/opt/sportflow/uploads`.
-
-Por lo tanto, aunque los archivos ya sobreviven a los despliegues, debe configurarse un respaldo independiente para protegerlos ante una pérdida completa del VPS.
+El respaldo conjunto preparado en la sección anterior incluye este directorio.
+Hasta instalarlo en producción, la tarea automática existente continúa
+protegiendo únicamente PostgreSQL.
 
 
 ## 12. Despliegue

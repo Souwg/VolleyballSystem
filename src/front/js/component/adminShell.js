@@ -1,15 +1,16 @@
 import React, { useState, useContext } from "react";
 import { Context } from "../store/appContext";
-import { useNavigate, Outlet } from "react-router-dom";
+import { Navigate, useNavigate, Outlet } from "react-router-dom";
 
 import { Sidebar } from "./layout/sidebar";
 import { Topbar } from "./layout/topbar";
 import { Container } from "./ui/container";
+import { getRoleLandingPath } from "./roleRedirect";
 
 export const AdminShell = () => {
   const [menuOpen, setMenuOpen] = useState(false);
 
-  const { actions } = useContext(Context);
+  const { store, actions } = useContext(Context);
   const navigate = useNavigate();
 
   const navItems = [{ name: "Clients", path: "/admin/clients" }];
@@ -20,6 +21,12 @@ export const AdminShell = () => {
   };
 
   const closeMenu = () => setMenuOpen(false);
+
+  if (store.user?.role !== "system_admin") {
+    return (
+      <Navigate to={getRoleLandingPath(store.user?.role)} replace />
+    );
+  }
 
   return (
     <div className="app-shell">

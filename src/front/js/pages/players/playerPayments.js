@@ -1,7 +1,7 @@
 import React, { useContext, useEffect, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
-import { getAssetUrl } from "../../utils/getAssetUrl";
 import { Context } from "../../store/appContext";
+import { ReceiptShareHistory } from "../../component/receiptShareHistory";
 import { PageHeader } from "../../component/ui/pageHeader";
 import { Card } from "../../component/ui/card";
 import { Button } from "../../component/ui/button";
@@ -13,6 +13,13 @@ import {
   validatePaymentRegistration,
 } from "../../utils/validators";
 import { errorMessages } from "../../utils/errorMessages";
+import { getClubToday } from "../../utils/clubDate";
+import { formatMoney } from "../../utils/money";
+import {
+  buildReceiptWhatsappMessage,
+  navigateReceiptWhatsapp,
+  openReceiptWhatsappWindow,
+} from "../../utils/receiptSharing";
 import "../../../styles/paymentShared.css";
 import "../../../styles/playerPayments.css";
 import { AlertTriangle, Clock3, CircleCheckBig } from "lucide-react";
@@ -56,15 +63,6 @@ const formatDate = (date) => {
     year: "numeric",
   });
 };
-const formatMoney = (amount) => {
-  const value = Number(amount || 0);
-
-  return value.toLocaleString("es-ES", {
-    minimumFractionDigits: 2,
-    maximumFractionDigits: 2,
-  });
-};
-
 const getAnchoredCycleStart = (enrollmentDate, offset) => {
   if (!enrollmentDate) return null;
 
@@ -193,9 +191,13 @@ export const PlayerPayments = () => {
   const [expandedPaymentId, setExpandedPaymentId] = useState(null);
   const [receiptLoadingId, setReceiptLoadingId] = useState(null);
   const [receiptErrors, setReceiptErrors] = useState({});
-  const todayDate = new Date().toISOString().slice(0, 10);
+  const [receiptNotices, setReceiptNotices] = useState({});
+  const [receiptShareEvents, setReceiptShareEvents] = useState({});
+  const [shareHistoryLoadingId, setShareHistoryLoadingId] = useState(null);
+  const [shareHistoryErrors, setShareHistoryErrors] = useState({});
+  const todayDate = getClubToday(club);
   const [paymentRegisterForm, setPaymentRegisterForm] = useState({
-    payment_date: new Date().toISOString().slice(0, 10),
+    payment_date: todayDate,
     payment_method: "",
     reference: "",
     notes: "",
@@ -243,6 +245,16 @@ export const PlayerPayments = () => {
     (payment) => payment.payment_type === "enrollment",
   );
 
+  const effectiveMonthlyFee = customMonthlyFee
+    ? paymentForm.monthly_fee
+    : club?.default_monthly_fee;
+
+  const paymentCycleDay =
+    player?.payment_cycle_day ||
+    (paymentForm.enrollment_date
+      ? Number(paymentForm.enrollment_date.split("-")[2])
+      : null);
+
   const hasLegacyPaymentHistory = Boolean(
     player &&
       !player.payment_control_start_date &&
@@ -266,39 +278,17 @@ export const PlayerPayments = () => {
     )
     .sort((a, b) => new Date(a.due_date) - new Date(b.due_date))[0];
 
-  const getPlayerFullName = () => {
-    if (!player) return "el deportista";
-
-    return `${player.first_name} ${player.last_name}`;
-  };
-
   const getWhatsappPhone = () => {
     if (!player?.representative_phone) return null;
 
     return player.representative_phone.replace(/\D/g, "");
   };
 
-  const buildWhatsappMessage = (payment, receipt) => {
-    const playerName = getPlayerFullName();
-
-    const receiptUrl = receipt.pdf_url ? getAssetUrl(receipt.pdf_url) : "";
-
-    return encodeURIComponent(
-      `Hola, te compartimos el recibo de pago de ${playerName}.\n\n` +
-        `Recibo: ${receipt.receipt_number}\n` +
-        `Concepto: ${PAYMENT_TYPE_LABELS[payment.payment_type] || "Pago"}\n` +
-        `Monto: $${formatMoney(payment.amount)}\n` +
-        `Fecha: ${formatDate(payment.payment_date) || "No registrada"}\n` +
-        `Método: ${
-          PAYMENT_METHOD_LABELS[payment.payment_method] || "No registrado"
-        }\n` +
-        `Referencia: ${payment.reference || "Sin referencia"}` +
-        `${receiptUrl ? `\n\nVer PDF: ${receiptUrl}` : ""}`,
-    );
-  };
-
   const handleSendReceiptWhatsapp = async (payment) => {
+    if (receiptLoadingId === payment.id) return;
+
     setReceiptErrors({});
+    setReceiptNotices({});
 
     const phone = getWhatsappPhone();
 
@@ -309,13 +299,23 @@ export const PlayerPayments = () => {
       return;
     }
 
+    const whatsappWindow = openReceiptWhatsappWindow();
+
+    if (!whatsappWindow) {
+      setReceiptErrors({
+        [payment.id]:
+          "No se pudo abrir WhatsApp. Revisa el bloqueo de ventanas emergentes.",
+      });
+      return;
+    }
+
     setReceiptLoadingId(payment.id);
 
     const receiptResult = await actions.createPaymentReceipt(payment.id);
 
-    setReceiptLoadingId(null);
-
     if (!receiptResult.ok) {
+      whatsappWindow.close();
+      setReceiptLoadingId(null);
       setReceiptErrors({
         [payment.id]: receiptResult.message || "No se pudo generar el recibo.",
       });
@@ -323,16 +323,51 @@ export const PlayerPayments = () => {
     }
 
     const receipt = receiptResult.data.receipt;
-    const message = buildWhatsappMessage(payment, receipt);
+    const message = buildReceiptWhatsappMessage(receipt);
+    const whatsappOpened = navigateReceiptWhatsapp(
+      whatsappWindow,
+      phone,
+      message,
+    );
 
-    await actions.markPaymentReceiptShared(receipt.id, {
-      sent_channel: "whatsapp",
-      sent_to: phone,
+    if (!whatsappOpened) {
+      setReceiptLoadingId(null);
+      setReceiptErrors({
+        [payment.id]:
+          "No se pudo abrir WhatsApp. Revisa el bloqueo de ventanas emergentes.",
+      });
+      return;
+    }
+
+    const sharedResult = await actions.createPaymentReceiptShareEvent(
+      receipt.id,
+      {
+        channel: "whatsapp",
+        destination: phone,
+      },
+    );
+
+    setReceiptLoadingId(null);
+
+    if (!sharedResult.ok) {
+      setReceiptNotices({
+        [payment.id]:
+          "WhatsApp se abrió, pero no pudimos registrar la acción en el historial.",
+      });
+      return;
+    }
+
+    setReceiptShareEvents((current) => ({
+      ...current,
+      [payment.id]: [
+        sharedResult.data.share_event,
+        ...(current[payment.id] || []),
+      ],
+    }));
+    setReceiptNotices({
+      [payment.id]: "WhatsApp se abrió y la acción quedó registrada.",
     });
-
     await loadPlayerPayments();
-
-    window.open(`https://wa.me/${phone}?text=${message}`, "_blank");
   };
 
   const loadPlayerPayments = async () => {
@@ -472,6 +507,7 @@ export const PlayerPayments = () => {
       initial_payment_mode: paymentForm.initial_payment_mode,
       initial_enrollment_status: paymentForm.initial_enrollment_status,
       last_paid_month: paymentForm.last_paid_month,
+      todayDate,
     });
 
     setFormErrors(errors);
@@ -551,12 +587,53 @@ export const PlayerPayments = () => {
     setPaymentRegisterErrors({});
   };
 
-  const togglePaymentDetails = (paymentId) => {
+  const loadReceiptShareHistory = async (payment) => {
+    const receiptId = payment.receipt?.id;
+
+    if (!receiptId) {
+      setReceiptShareEvents((current) => ({
+        ...current,
+        [payment.id]: [],
+      }));
+      return;
+    }
+
+    setShareHistoryLoadingId(payment.id);
+    setShareHistoryErrors((current) => ({
+      ...current,
+      [payment.id]: "",
+    }));
+
+    const result = await actions.getPaymentReceiptShareEvents(receiptId);
+
+    if (result.ok) {
+      setReceiptShareEvents((current) => ({
+        ...current,
+        [payment.id]: result.data.share_events || [],
+      }));
+    } else {
+      setShareHistoryErrors((current) => ({
+        ...current,
+        [payment.id]:
+          result.message || "No pudimos cargar el historial de compartidos.",
+      }));
+    }
+
+    setShareHistoryLoadingId(null);
+  };
+
+  const togglePaymentDetails = (payment) => {
     setRegisteringPaymentId(null);
 
+    const isOpening = expandedPaymentId !== payment.id;
+
     setExpandedPaymentId((currentId) =>
-      currentId === paymentId ? null : paymentId,
+      currentId === payment.id ? null : payment.id,
     );
+
+    if (isOpening && payment.receipt?.id) {
+      loadReceiptShareHistory(payment);
+    }
   };
 
   const handlePaymentRegisterChange = (event) => {
@@ -578,7 +655,10 @@ export const PlayerPayments = () => {
   };
 
   const handleRegisterPayment = async (payment) => {
-    const errors = validatePaymentRegistration(paymentRegisterForm);
+    const errors = validatePaymentRegistration({
+      ...paymentRegisterForm,
+      todayDate,
+    });
 
     setPaymentRegisterErrors(errors);
 
@@ -640,7 +720,7 @@ export const PlayerPayments = () => {
             </div>
 
             <strong className="payment-history-amount">
-              ${formatMoney(payment.amount)}
+              {formatMoney(payment.amount, payment.currency_code)}
             </strong>
           </div>
         </div>
@@ -670,7 +750,7 @@ export const PlayerPayments = () => {
             </div>
 
             <strong className="payment-history-amount">
-              ${formatMoney(payment.amount)}
+              {formatMoney(payment.amount, payment.currency_code)}
             </strong>
           </div>
 
@@ -684,16 +764,14 @@ export const PlayerPayments = () => {
             >
               {receiptLoadingId === payment.id
                 ? "Preparando..."
-                : payment.receipt?.sent_at
-                ? "Reenviar recibo"
-                : "Enviar recibo"}
+                : "Compartir por WhatsApp"}
             </Button>
 
             <div className="payment-secondary-actions">
               <button
                 type="button"
                 className="payment-details-toggle"
-                onClick={() => togglePaymentDetails(payment.id)}
+                onClick={() => togglePaymentDetails(payment)}
               >
                 {expandedPaymentId === payment.id
                   ? "Ocultar detalles"
@@ -712,6 +790,12 @@ export const PlayerPayments = () => {
 
           {receiptErrors[payment.id] && (
             <p className="form-error">{receiptErrors[payment.id]}</p>
+          )}
+
+          {receiptNotices[payment.id] && (
+            <p className="receipt-share-notice">
+              {receiptNotices[payment.id]}
+            </p>
           )}
 
           {expandedPaymentId === payment.id && (
@@ -751,6 +835,14 @@ export const PlayerPayments = () => {
                   </div>
                 )}
               </div>
+
+              {payment.receipt?.id && (
+                <ReceiptShareHistory
+                  events={receiptShareEvents[payment.id] || []}
+                  loading={shareHistoryLoadingId === payment.id}
+                  error={shareHistoryErrors[payment.id] || ""}
+                />
+              )}
             </div>
           )}
         </div>
@@ -768,7 +860,8 @@ export const PlayerPayments = () => {
           >
             <h4>
               {PAYMENT_TYPE_LABELS[payment.payment_type] || "Pago"}
-              {!isOpenPayment && ` · $${formatMoney(payment.amount)}`}
+              {!isOpenPayment &&
+                ` · ${formatMoney(payment.amount, payment.currency_code)}`}
             </h4>
 
             <p>{getPaymentDescription(payment)}</p>
@@ -780,7 +873,7 @@ export const PlayerPayments = () => {
 
           {isOpenPayment && (
             <strong className="player-payment-open-amount">
-              ${formatMoney(payment.amount)}
+              {formatMoney(payment.amount, payment.currency_code)}
             </strong>
           )}
         </div>
@@ -802,8 +895,8 @@ export const PlayerPayments = () => {
             <div className="payment-register-header">
               <strong>Registrar pago</strong>
               <span>
-                {PAYMENT_TYPE_LABELS[payment.payment_type] || "Pago"} · $
-                {formatMoney(payment.amount)}
+                {PAYMENT_TYPE_LABELS[payment.payment_type] || "Pago"} ·{" "}
+                {formatMoney(payment.amount, payment.currency_code)}
               </span>
             </div>
 
@@ -927,6 +1020,17 @@ export const PlayerPayments = () => {
         onBack={() => navigate(`/players/${player_id}`)}
       />
       <div className="payments-page">
+        {player && !player.is_active && (
+          <Card className="player-payment-legacy-warning">
+            <strong>Control mensual pausado</strong>
+            <p>
+              Esta jugadora está inactiva. No se generarán nuevas
+              mensualidades mientras permanezca inactiva; su historial de
+              pagos se conserva.
+            </p>
+          </Card>
+        )}
+
         {!isInitialPaymentSetup && (
           <div className="payments-summary-grid">
             <Card className="payment-summary-card player-payment-stat overdue">
@@ -1056,6 +1160,12 @@ export const PlayerPayments = () => {
                             onChange={handlePaymentFormChange}
                           />
 
+                          <small>
+                            Esta fecha fija el inicio de cada ciclo mensual.
+                            Cada mensualidad vence 5 días después de comenzar
+                            su ciclo.
+                          </small>
+
                           {formErrors.ENROLLMENT_DATE_REQUIRED && (
                             <p className="form-error">
                               {errorMessages.ENROLLMENT_DATE_REQUIRED}
@@ -1078,8 +1188,9 @@ export const PlayerPayments = () => {
                           </strong>
 
                           <small>
-                            Esta fecha define el ciclo histórico de pagos y ya
-                            no puede modificarse.
+                            Esta fecha fija el día de inicio de los ciclos y ya
+                            no puede modificarse. Cada mensualidad vence 5 días
+                            después de comenzar su ciclo.
                           </small>
                         </div>
                       )}
@@ -1096,22 +1207,23 @@ export const PlayerPayments = () => {
                             paymentForm.initial_enrollment_status ===
                               "not_applicable"
                               ? "No aplica"
-                              : `$${formatMoney(
+                              : formatMoney(
                                   customEnrollmentFee
                                     ? paymentForm.enrollment_fee
                                     : club?.default_enrollment_fee,
-                                )}`}
+                                  club?.currency_code,
+                                )}
                           </strong>
                         </div>
 
                         <div>
                           <small>Mensualidad</small>
                           <strong>
-                            $
                             {formatMoney(
                               customMonthlyFee
                                 ? paymentForm.monthly_fee
                                 : club?.default_monthly_fee,
+                              club?.currency_code,
                             )}
                           </strong>
                         </div>
@@ -1175,7 +1287,7 @@ export const PlayerPayments = () => {
 
                                 {customEnrollmentFee && (
                                   <FormField
-                                    label="Monto de inscripción"
+                                    label={`Monto de inscripción (${club?.currency_code || "moneda no configurada"})`}
                                     error={
                                       formErrors.ENROLLMENT_FEE_REQUIRED
                                         ? errorMessages.ENROLLMENT_FEE_REQUIRED
@@ -1242,7 +1354,7 @@ export const PlayerPayments = () => {
 
                             {customMonthlyFee && (
                               <FormField
-                                label="Monto mensual"
+                                label={`Monto mensual (${club?.currency_code || "moneda no configurada"})`}
                                 error={
                                   formErrors.MONTHLY_FEE_REQUIRED
                                     ? errorMessages.MONTHLY_FEE_REQUIRED
@@ -1513,16 +1625,51 @@ export const PlayerPayments = () => {
                 )}
               </>
             ) : (
-              <p className="player-payment-settings-help">
-                $
-                {formatMoney(
-                  customMonthlyFee
-                    ? paymentForm.monthly_fee
-                    : club?.default_monthly_fee,
-                )}{" "}
-                mensual · Desde{" "}
-                {formatDate(paymentForm.enrollment_date) || "sin fecha"}
-              </p>
+              <>
+                <div className="player-payment-defaults-grid">
+                  <div>
+                    <small>Mensualidad</small>
+                    <strong>
+                      {formatMoney(effectiveMonthlyFee, club?.currency_code)}
+                    </strong>
+                  </div>
+
+                  <div>
+                    <small>Inicio del ciclo mensual</small>
+                    <strong>
+                      {paymentCycleDay
+                        ? `Día ${paymentCycleDay} de cada mes`
+                        : "Sin definir"}
+                    </strong>
+                  </div>
+
+                  <div>
+                    <small>Controlar mensualidades desde</small>
+                    <strong>
+                      {formatDate(player?.payment_control_start_date) ||
+                        "Sin definir"}
+                    </strong>
+                  </div>
+
+                  <div>
+                    <small>Inscripción</small>
+                    <strong>
+                      {enrollmentPayment
+                        ? formatMoney(
+                            enrollmentPayment.amount,
+                            enrollmentPayment.currency_code,
+                          )
+                        : "Sin cobro registrado"}
+                    </strong>
+                  </div>
+                </div>
+
+                <p className="player-payment-settings-help">
+                  El ciclo comienza el día indicado y vence 5 días después.
+                  Los montos personalizados sustituyen los valores por defecto
+                  del club solo para esta jugadora.
+                </p>
+              </>
             ))}
         </Card>
         {!isInitialPaymentSetup && (

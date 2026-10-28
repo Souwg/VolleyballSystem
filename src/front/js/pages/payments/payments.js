@@ -1,7 +1,7 @@
 import React, { useContext, useEffect, useMemo, useState } from "react";
-import { getAssetUrl } from "../../utils/getAssetUrl";
 import { useLocation, useNavigate } from "react-router-dom";
 import { Context } from "../../store/appContext";
+import { ReceiptShareHistory } from "../../component/receiptShareHistory";
 import { PageHeader } from "../../component/ui/pageHeader";
 import { Card } from "../../component/ui/card";
 import { Button } from "../../component/ui/button";
@@ -10,6 +10,13 @@ import { Select } from "../../component/ui/select";
 import { FormField } from "../../component/ui/formField";
 import { validatePaymentRegistration } from "../../utils/validators";
 import { errorMessages } from "../../utils/errorMessages";
+import { getClubToday } from "../../utils/clubDate";
+import { formatMoney } from "../../utils/money";
+import {
+  buildReceiptWhatsappMessage,
+  navigateReceiptWhatsapp,
+  openReceiptWhatsappWindow,
+} from "../../utils/receiptSharing";
 import "../../../styles/paymentShared.css";
 import "../../../styles/payments.css";
 import {
@@ -57,15 +64,6 @@ const formatDate = (date) => {
     day: "2-digit",
     month: "short",
     year: "numeric",
-  });
-};
-
-const formatMoney = (amount) => {
-  const value = Number(amount || 0);
-
-  return value.toLocaleString("es-ES", {
-    minimumFractionDigits: 2,
-    maximumFractionDigits: 2,
   });
 };
 
@@ -146,6 +144,8 @@ export const Payments = () => {
   const { store, actions } = useContext(Context);
   const location = useLocation();
   const navigate = useNavigate();
+  const club = store.club || store.user?.club;
+  const todayDate = getClubToday(club);
 
   const searchParams = useMemo(
     () => new URLSearchParams(location.search),
@@ -170,7 +170,7 @@ export const Payments = () => {
   const [registeringPaymentId, setRegisteringPaymentId] = useState(null);
   const [expandedPaymentId, setExpandedPaymentId] = useState(null);
   const [paymentRegisterForm, setPaymentRegisterForm] = useState({
-    payment_date: new Date().toISOString().slice(0, 10),
+    payment_date: todayDate,
     payment_method: "",
     reference: "",
     notes: "",
@@ -178,8 +178,22 @@ export const Payments = () => {
   const [paymentRegisterErrors, setPaymentRegisterErrors] = useState({});
   const [receiptLoadingId, setReceiptLoadingId] = useState(null);
   const [receiptErrors, setReceiptErrors] = useState({});
+  const [receiptNotices, setReceiptNotices] = useState({});
+  const [receiptShareEvents, setReceiptShareEvents] = useState({});
+  const [shareHistoryLoadingId, setShareHistoryLoadingId] = useState(null);
+  const [shareHistoryErrors, setShareHistoryErrors] = useState({});
+  const [syncPanelOpen, setSyncPanelOpen] = useState(false);
+  const [syncPreview, setSyncPreview] = useState(null);
+  const [syncResult, setSyncResult] = useState(null);
+  const [syncError, setSyncError] = useState("");
+  const [syncPreviewLoading, setSyncPreviewLoading] = useState(false);
+  const [syncApplying, setSyncApplying] = useState(false);
+  const [syncConfirmationOpen, setSyncConfirmationOpen] = useState(false);
 
   const payments = store.payments || [];
+  const canManagePayments = ["club_owner", "staff"].includes(
+    store.user?.role,
+  );
 
   const filteredPayments = useMemo(() => {
     const normalizedSearch = searchTerm.trim().toLowerCase();
@@ -243,6 +257,68 @@ export const Payments = () => {
     setLoading(false);
   };
 
+  const loadSyncPreview = async () => {
+    setSyncPreviewLoading(true);
+    setSyncError("");
+
+    const result = await actions.getPaymentsSyncPreview();
+
+    if (result.ok) {
+      setSyncPreview(result.data);
+    } else {
+      setSyncPreview(null);
+      setSyncError(
+        result.message ||
+          errorMessages[result.code] ||
+          "No pudimos cargar la vista previa.",
+      );
+    }
+
+    setSyncPreviewLoading(false);
+  };
+
+  const openSyncPanel = async () => {
+    setSyncPanelOpen(true);
+    setSyncResult(null);
+    setSyncConfirmationOpen(false);
+    await loadSyncPreview();
+  };
+
+  const closeSyncPanel = () => {
+    if (syncApplying) return;
+
+    setSyncPanelOpen(false);
+    setSyncPreview(null);
+    setSyncResult(null);
+    setSyncError("");
+    setSyncConfirmationOpen(false);
+  };
+
+  const handlePaymentsSync = async () => {
+    if (syncApplying) return;
+
+    setSyncApplying(true);
+    setSyncError("");
+
+    const result = await actions.syncPayments();
+
+    if (!result.ok) {
+      setSyncError(
+        result.message ||
+          errorMessages[result.code] ||
+          "No pudimos sincronizar los pagos.",
+      );
+      setSyncApplying(false);
+      return;
+    }
+
+    setSyncResult(result.data);
+    setSyncConfirmationOpen(false);
+    await loadPayments();
+    await loadSyncPreview();
+    setSyncApplying(false);
+  };
+
   useEffect(() => {
     loadPayments();
   }, [statusFilter, typeFilter]);
@@ -263,7 +339,7 @@ export const Payments = () => {
     setExpandedPaymentId(null);
 
     setPaymentRegisterForm({
-      payment_date: new Date().toISOString().slice(0, 10),
+      payment_date: todayDate,
       payment_method: "",
       reference: "",
       notes: "",
@@ -277,12 +353,53 @@ export const Payments = () => {
     setPaymentRegisterErrors({});
   };
 
-  const togglePaymentDetails = (paymentId) => {
+  const loadReceiptShareHistory = async (payment) => {
+    const receiptId = payment.receipt?.id;
+
+    if (!receiptId) {
+      setReceiptShareEvents((current) => ({
+        ...current,
+        [payment.id]: [],
+      }));
+      return;
+    }
+
+    setShareHistoryLoadingId(payment.id);
+    setShareHistoryErrors((current) => ({
+      ...current,
+      [payment.id]: "",
+    }));
+
+    const result = await actions.getPaymentReceiptShareEvents(receiptId);
+
+    if (result.ok) {
+      setReceiptShareEvents((current) => ({
+        ...current,
+        [payment.id]: result.data.share_events || [],
+      }));
+    } else {
+      setShareHistoryErrors((current) => ({
+        ...current,
+        [payment.id]:
+          result.message || "No pudimos cargar el historial de compartidos.",
+      }));
+    }
+
+    setShareHistoryLoadingId(null);
+  };
+
+  const togglePaymentDetails = (payment) => {
     setRegisteringPaymentId(null);
 
+    const isOpening = expandedPaymentId !== payment.id;
+
     setExpandedPaymentId((currentId) =>
-      currentId === paymentId ? null : paymentId,
+      currentId === payment.id ? null : payment.id,
     );
+
+    if (isOpening && payment.receipt?.id) {
+      loadReceiptShareHistory(payment);
+    }
   };
 
   const handlePaymentRegisterChange = (event) => {
@@ -311,7 +428,10 @@ export const Payments = () => {
   };
 
   const handleRegisterPayment = async (payment) => {
-    const errors = validatePaymentRegistration(paymentRegisterForm);
+    const errors = validatePaymentRegistration({
+      ...paymentRegisterForm,
+      todayDate,
+    });
 
     setPaymentRegisterErrors(errors);
 
@@ -356,13 +476,6 @@ export const Payments = () => {
     }
   };
 
-  const getPlayerFullName = (payment) => {
-    const firstName = payment.player?.first_name || "";
-    const lastName = payment.player?.last_name || "";
-
-    return `${firstName} ${lastName}`.trim() || "el deportista";
-  };
-
   const getWhatsappPhone = (payment) => {
     const phone = payment.player?.representative_phone;
 
@@ -371,27 +484,11 @@ export const Payments = () => {
     return phone.replace(/\D/g, "");
   };
 
-  const buildWhatsappMessage = (payment, receipt) => {
-    const playerName = getPlayerFullName(payment);
-
-    const receiptUrl = receipt.pdf_url ? getAssetUrl(receipt.pdf_url) : "";
-
-    return encodeURIComponent(
-      `Hola, te compartimos el recibo de pago de ${playerName}.\n\n` +
-        `Recibo: ${receipt.receipt_number}\n` +
-        `Concepto: ${PAYMENT_TYPE_LABELS[payment.payment_type] || "Pago"}\n` +
-        `Monto: $${formatMoney(payment.amount)}\n` +
-        `Fecha: ${formatDate(payment.payment_date) || "No registrada"}\n` +
-        `Método: ${
-          PAYMENT_METHOD_LABELS[payment.payment_method] || "No registrado"
-        }\n` +
-        `Referencia: ${payment.reference || "Sin referencia"}` +
-        `${receiptUrl ? `\n\nVer PDF: ${receiptUrl}` : ""}`,
-    );
-  };
-
   const handleSendReceiptWhatsapp = async (payment) => {
+    if (receiptLoadingId === payment.id) return;
+
     setReceiptErrors({});
+    setReceiptNotices({});
 
     const phone = getWhatsappPhone(payment);
 
@@ -403,11 +500,22 @@ export const Payments = () => {
       return;
     }
 
+    const whatsappWindow = openReceiptWhatsappWindow();
+
+    if (!whatsappWindow) {
+      setReceiptErrors({
+        [payment.id]:
+          "No se pudo abrir WhatsApp. Revisa el bloqueo de ventanas emergentes.",
+      });
+      return;
+    }
+
     setReceiptLoadingId(payment.id);
 
     const receiptResult = await actions.createPaymentReceipt(payment.id);
 
     if (!receiptResult.ok) {
+      whatsappWindow.close();
       setReceiptLoadingId(null);
 
       setReceiptErrors({
@@ -418,32 +526,51 @@ export const Payments = () => {
     }
 
     const receipt = receiptResult.data.receipt;
-    const message = buildWhatsappMessage(payment, receipt);
+    const message = buildReceiptWhatsappMessage(receipt);
+    const whatsappOpened = navigateReceiptWhatsapp(
+      whatsappWindow,
+      phone,
+      message,
+    );
 
-    const sharedResult = await actions.markPaymentReceiptShared(receipt.id, {
-      sent_channel: "whatsapp",
-      sent_to: phone,
-    });
+    if (!whatsappOpened) {
+      setReceiptLoadingId(null);
+      setReceiptErrors({
+        [payment.id]:
+          "No se pudo abrir WhatsApp. Revisa el bloqueo de ventanas emergentes.",
+      });
+      return;
+    }
+
+    const sharedResult = await actions.createPaymentReceiptShareEvent(
+      receipt.id,
+      {
+        channel: "whatsapp",
+        destination: phone,
+      },
+    );
 
     setReceiptLoadingId(null);
 
     if (!sharedResult.ok) {
-      setReceiptErrors({
+      setReceiptNotices({
         [payment.id]:
-          sharedResult.message ||
-          "Se generó el recibo, pero no se pudo registrar el envío.",
+          "WhatsApp se abrió, pero no pudimos registrar la acción en el historial.",
       });
-
       return;
     }
 
+    setReceiptShareEvents((current) => ({
+      ...current,
+      [payment.id]: [
+        sharedResult.data.share_event,
+        ...(current[payment.id] || []),
+      ],
+    }));
+    setReceiptNotices({
+      [payment.id]: "WhatsApp se abrió y la acción quedó registrada.",
+    });
     await loadPayments();
-
-    window.open(
-      `https://wa.me/${phone}?text=${message}`,
-      "_blank",
-      "noopener,noreferrer",
-    );
   };
 
   const renderPaymentRow = (payment) => {
@@ -476,7 +603,7 @@ export const Payments = () => {
             </div>
 
             <strong className="payment-history-amount">
-              ${formatMoney(payment.amount)}
+              {formatMoney(payment.amount, payment.currency_code)}
             </strong>
           </div>
         </div>
@@ -508,7 +635,7 @@ export const Payments = () => {
             </div>
 
             <strong className="payment-history-amount">
-              ${formatMoney(payment.amount)}
+              {formatMoney(payment.amount, payment.currency_code)}
             </strong>
           </div>
 
@@ -522,16 +649,14 @@ export const Payments = () => {
             >
               {receiptLoadingId === payment.id
                 ? "Preparando..."
-                : payment.receipt?.sent_at
-                ? "Reenviar recibo"
-                : "Enviar recibo"}
+                : "Compartir por WhatsApp"}
             </Button>
 
             <div className="payment-secondary-actions">
               <button
                 type="button"
                 className="payment-details-toggle"
-                onClick={() => togglePaymentDetails(payment.id)}
+                onClick={() => togglePaymentDetails(payment)}
               >
                 {expandedPaymentId === payment.id
                   ? "Ocultar detalles"
@@ -550,6 +675,12 @@ export const Payments = () => {
 
           {receiptErrors[payment.id] && (
             <p className="form-error">{receiptErrors[payment.id]}</p>
+          )}
+
+          {receiptNotices[payment.id] && (
+            <p className="receipt-share-notice">
+              {receiptNotices[payment.id]}
+            </p>
           )}
 
           {expandedPaymentId === payment.id && (
@@ -589,6 +720,14 @@ export const Payments = () => {
                   </div>
                 )}
               </div>
+
+              {payment.receipt?.id && (
+                <ReceiptShareHistory
+                  events={receiptShareEvents[payment.id] || []}
+                  loading={shareHistoryLoadingId === payment.id}
+                  error={shareHistoryErrors[payment.id] || ""}
+                />
+              )}
             </div>
           )}
         </div>
@@ -611,7 +750,7 @@ export const Payments = () => {
               {PAYMENT_TYPE_LABELS[payment.payment_type] || "Pago"}
             </span>
 
-            <strong>${formatMoney(payment.amount)}</strong>
+            <strong>{formatMoney(payment.amount, payment.currency_code)}</strong>
           </div>
 
           <p className="payment-origin">{getPaymentDescription(payment)}</p>
@@ -636,8 +775,8 @@ export const Payments = () => {
             <div className="payment-register-header">
               <strong>Registrar pago</strong>
               <span>
-                {PAYMENT_TYPE_LABELS[payment.payment_type] || "Pago"} · $
-                {formatMoney(payment.amount)}
+                {PAYMENT_TYPE_LABELS[payment.payment_type] || "Pago"} ·{" "}
+                {formatMoney(payment.amount, payment.currency_code)}
               </span>
             </div>
 
@@ -645,16 +784,24 @@ export const Payments = () => {
               <FormField
                 label="Fecha de pago"
                 error={
-                  paymentRegisterErrors.PAYMENT_DATE_REQUIRED &&
-                  errorMessages.PAYMENT_DATE_REQUIRED
+                  paymentRegisterErrors.PAYMENT_DATE_REQUIRED
+                    ? errorMessages.PAYMENT_DATE_REQUIRED
+                    : paymentRegisterErrors.INVALID_PAYMENT_DATE
+                    ? errorMessages.INVALID_PAYMENT_DATE
+                    : paymentRegisterErrors.INVALID_DATE_FORMAT
+                    ? errorMessages.INVALID_DATE_FORMAT
+                    : null
                 }
               >
                 <Input
                   type="date"
                   name="payment_date"
                   value={paymentRegisterForm.payment_date}
+                  max={todayDate}
                   className={
-                    paymentRegisterErrors.PAYMENT_DATE_REQUIRED
+                    paymentRegisterErrors.PAYMENT_DATE_REQUIRED ||
+                    paymentRegisterErrors.INVALID_PAYMENT_DATE ||
+                    paymentRegisterErrors.INVALID_DATE_FORMAT
                       ? "input-error"
                       : ""
                   }
@@ -767,8 +914,189 @@ export const Payments = () => {
         eyebrow="Control financiero"
         title="Pagos del club"
         subtitle="Revisa pagos pendientes, atrasados, registrados y recibos generados."
+        actions={
+          canManagePayments && (
+            <div className="payments-header-actions">
+              <Button
+                type="button"
+                onClick={openSyncPanel}
+                disabled={syncPreviewLoading || syncApplying}
+              >
+                {syncPreviewLoading ? "Consultando..." : "Sincronizar pagos"}
+              </Button>
+
+              <Button
+                type="button"
+                variant="secondary"
+                onClick={() => navigate("/payments/tournament-charges")}
+              >
+                Cargos de torneos
+              </Button>
+            </div>
+          )
+        }
       />
       <div className="payments-page">
+        {syncPanelOpen && (
+          <Card className="payments-sync-card">
+            <div className="payments-sync-header">
+              <div>
+                <span>Sincronización manual</span>
+                <h3>Antes de sincronizar</h3>
+                <p>
+                  Revisa los cambios calculados con la configuración actual del
+                  club.
+                </p>
+              </div>
+
+              <Button
+                type="button"
+                variant="secondary"
+                onClick={closeSyncPanel}
+                disabled={syncApplying}
+              >
+                Cerrar
+              </Button>
+            </div>
+
+            {syncPreviewLoading && !syncPreview ? (
+              <p className="empty-state">Calculando vista previa...</p>
+            ) : syncPreview ? (
+              <>
+                <div className="payments-sync-summary">
+                  <div>
+                    <span>Mensualidades que se crearán</span>
+                    <strong>
+                      {syncPreview.summary?.payments_to_create || 0}
+                    </strong>
+                  </div>
+
+                  <div>
+                    <span>Pagos que pasarán a vencidos</span>
+                    <strong>
+                      {syncPreview.summary?.payments_to_mark_overdue || 0}
+                    </strong>
+                  </div>
+
+                  <div>
+                    <span>Jugadoras inactivas omitidas</span>
+                    <strong>
+                      {syncPreview.summary?.players_skipped_inactive || 0}
+                    </strong>
+                  </div>
+
+                  <div>
+                    <span>Configuraciones por revisar</span>
+                    <strong>{syncPreview.warnings?.length || 0}</strong>
+                  </div>
+                </div>
+
+                {syncPreview.warnings?.length > 0 && (
+                  <div className="payments-sync-warnings">
+                    <strong>Requieren revisión</strong>
+                    <ul>
+                      {syncPreview.warnings.slice(0, 3).map((warning) => (
+                        <li key={`${warning.player_id}-${warning.reason}`}>
+                          {warning.player_name}: {warning.message}
+                        </li>
+                      ))}
+                    </ul>
+
+                    {syncPreview.warnings.length > 3 && (
+                      <small>
+                        Hay {syncPreview.warnings.length - 3} configuraciones
+                        adicionales por revisar.
+                      </small>
+                    )}
+                  </div>
+                )}
+
+                {syncResult && (
+                  <div className="payments-sync-result" role="status">
+                    <strong>
+                      {syncResult.applied?.payments_created === 0 &&
+                      syncResult.applied?.payments_marked_overdue === 0
+                        ? "Los pagos ya estaban actualizados."
+                        : "Sincronización completada."}
+                    </strong>
+                    <p>
+                      {syncResult.applied?.payments_created || 0} mensualidades
+                      creadas. {syncResult.applied?.payments_marked_overdue || 0}{" "}
+                      pagos marcados como vencidos.
+                    </p>
+                  </div>
+                )}
+
+                {syncError && <p className="form-error">{syncError}</p>}
+
+                {syncConfirmationOpen ? (
+                  <div className="payments-sync-confirmation">
+                    <strong>¿Sincronizar pagos?</strong>
+                    <p>
+                      SportFlow creará las mensualidades pendientes que
+                      correspondan y actualizará los pagos vencidos según la
+                      configuración actual.
+                    </p>
+
+                    <div className="payments-sync-actions">
+                      <Button
+                        type="button"
+                        variant="secondary"
+                        onClick={() => setSyncConfirmationOpen(false)}
+                        disabled={syncApplying}
+                      >
+                        Cancelar
+                      </Button>
+
+                      <Button
+                        type="button"
+                        onClick={handlePaymentsSync}
+                        disabled={syncApplying}
+                      >
+                        {syncApplying ? "Sincronizando..." : "Sincronizar"}
+                      </Button>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="payments-sync-actions">
+                    <Button
+                      type="button"
+                      variant="secondary"
+                      onClick={closeSyncPanel}
+                    >
+                      Cancelar
+                    </Button>
+
+                    <Button
+                      type="button"
+                      onClick={() => setSyncConfirmationOpen(true)}
+                      disabled={syncPreviewLoading}
+                    >
+                      Confirmar sincronización
+                    </Button>
+                  </div>
+                )}
+              </>
+            ) : (
+              <>
+                {syncError && <p className="form-error">{syncError}</p>}
+                <div className="payments-sync-actions">
+                  <Button
+                    type="button"
+                    variant="secondary"
+                    onClick={closeSyncPanel}
+                  >
+                    Cerrar
+                  </Button>
+                  <Button type="button" onClick={loadSyncPreview}>
+                    Volver a intentar
+                  </Button>
+                </div>
+              </>
+            )}
+          </Card>
+        )}
+
         {(requestedTournamentTeamId || requestedMatchId) && (
           <Card className="payments-context-card">
             <div className="payments-context-copy">
@@ -809,7 +1137,9 @@ export const Payments = () => {
                 <span>Atrasado</span>
               </div>
 
-              <strong>${formatMoney(summary?.overdue_amount)}</strong>
+              <strong>
+                {formatMoney(summary?.overdue_amount, club?.currency_code)}
+              </strong>
               <small>{summary?.overdue || 0} pagos fuera de fecha</small>
             </Card>
 
@@ -819,7 +1149,9 @@ export const Payments = () => {
                 <span>Por cobrar</span>
               </div>
 
-              <strong>${formatMoney(summary?.pending_amount)}</strong>
+              <strong>
+                {formatMoney(summary?.pending_amount, club?.currency_code)}
+              </strong>
               <small>{summary?.pending || 0} pendientes</small>
             </Card>
 
@@ -829,7 +1161,12 @@ export const Payments = () => {
                 <span>Cobrado</span>
               </div>
 
-              <strong>${formatMoney(summary?.registered_paid_amount)}</strong>
+              <strong>
+                {formatMoney(
+                  summary?.registered_paid_amount,
+                  club?.currency_code,
+                )}
+              </strong>
               <small>{summary?.registered_paid || 0} pagos registrados</small>
             </Card>
           </div>

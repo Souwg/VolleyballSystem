@@ -30,7 +30,7 @@ const getStatusData = (status) => {
       className: "status-success",
     },
     completed: {
-      label: "Finalizado",
+      label: "Completado",
       className: "status-info",
     },
     cancelled: {
@@ -50,6 +50,7 @@ const getStatusData = (status) => {
 export const Tournaments = () => {
   const { store, actions } = useContext(Context);
   const navigate = useNavigate();
+  const club = store.club || store.user?.club;
 
   const [showForm, setShowForm] = useState(false);
   const [loadingTournaments, setLoadingTournaments] = useState(true);
@@ -275,7 +276,9 @@ export const Tournaments = () => {
             </div>
 
             <FormField
-              label="Arbitraje predeterminado por partido"
+              label={`Arbitraje predeterminado por partido (${
+                club?.currency_code || "moneda no configurada"
+              })`}
               helper="Podrás modificar este monto individualmente al crear cada partido."
               error={
                 errors.INVALID_AMOUNT ? errorMessages.INVALID_AMOUNT : null

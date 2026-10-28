@@ -6,6 +6,9 @@ import { Card } from "../../component/ui/card";
 import { Button } from "../../component/ui/button";
 import { Input } from "../../component/ui/input";
 import { getAssetUrl } from "../../utils/getAssetUrl";
+import { errorMessages } from "../../utils/errorMessages";
+import { formatMoney } from "../../utils/money";
+import { useToast } from "../../../../context/toastContext";
 import { Pencil } from "lucide-react";
 
 const POSITION_LABELS = {
@@ -90,10 +93,11 @@ const getPaymentMetaText = (payment) => {
   return null;
 };
 export const PlayerDetail = () => {
-  const { actions } = useContext(Context);
+  const { store, actions } = useContext(Context);
   const { player_id } = useParams();
   const navigate = useNavigate();
   const location = useLocation();
+  const { showToast } = useToast();
 
   const [player, setPlayer] = useState(null);
   const [summary, setSummary] = useState(null);
@@ -102,16 +106,30 @@ export const PlayerDetail = () => {
   const [trainingHistory, setTrainingHistory] = useState([]);
 
   const [performance, setPerformance] = useState(null);
-  const [performanceMatches, setPerformanceMatches] = useState([]);
+  const [officialPerformanceMatches, setOfficialPerformanceMatches] =
+    useState([]);
+  const [provisionalPerformanceMatches, setProvisionalPerformanceMatches] =
+    useState([]);
   const [payments, setPayments] = useState([]);
   const [loading, setLoading] = useState(true);
   const [editingRepresentative, setEditingRepresentative] = useState(false);
   const [savingRepresentative, setSavingRepresentative] = useState(false);
+  const [playerAction, setPlayerAction] = useState(null);
   const [representativeForm, setRepresentativeForm] = useState({
     representative_name: "",
     representative_phone: "",
   });
   const [activeTab, setActiveTab] = useState("profile");
+  const canManagePayments = ["club_owner", "staff"].includes(
+    store.user?.role,
+  );
+  const canViewSports = ["club_owner", "coach"].includes(store.user?.role);
+  const canViewPerformance = ["club_owner", "coach", "staff"].includes(
+    store.user?.role,
+  );
+  const canEditPlayer = ["club_owner", "coach"].includes(store.user?.role);
+  const canManagePlayerStatus = store.user?.role === "club_owner";
+  const canDeletePlayer = store.user?.role === "club_owner";
 
   const handleBack = () => {
     if (location.state?.from) {
@@ -125,14 +143,29 @@ export const PlayerDetail = () => {
   const loadPlayerData = async () => {
     setLoading(true);
 
-    const [attendanceResult, performanceResult, paymentsResult] =
+    const [playersResult, attendanceResult, performanceResult, paymentsResult] =
       await Promise.all([
-        actions.getPlayerAttendance(player_id),
-        actions.getPlayerPerformance(player_id),
-        actions.getPlayerPayments(player_id),
+        canViewSports ? null : actions.getPlayers(),
+        canViewSports ? actions.getPlayerAttendance(player_id) : null,
+        canViewPerformance ? actions.getPlayerPerformance(player_id) : null,
+        canManagePayments ? actions.getPlayerPayments(player_id) : null,
       ]);
 
-    if (attendanceResult.ok) {
+    if (playersResult?.ok) {
+      const loadedPlayer = playersResult.data.players.find(
+        (item) => item.id === player_id,
+      );
+
+      if (loadedPlayer) {
+        setPlayer(loadedPlayer);
+        setRepresentativeForm({
+          representative_name: loadedPlayer.representative_name || "",
+          representative_phone: loadedPlayer.representative_phone || "",
+        });
+      }
+    }
+
+    if (attendanceResult?.ok) {
       const data = attendanceResult.data;
 
       setPlayer(data.player);
@@ -145,15 +178,21 @@ export const PlayerDetail = () => {
       });
     }
 
-    if (performanceResult.ok) {
+    if (performanceResult?.ok) {
       setPerformance(performanceResult.data);
-      setPerformanceMatches(performanceResult.data.matches || []);
+      setOfficialPerformanceMatches(
+        performanceResult.data.official_matches || [],
+      );
+      setProvisionalPerformanceMatches(
+        performanceResult.data.provisional_matches || [],
+      );
     } else {
       setPerformance(null);
-      setPerformanceMatches([]);
+      setOfficialPerformanceMatches([]);
+      setProvisionalPerformanceMatches([]);
     }
 
-    if (paymentsResult.ok) {
+    if (paymentsResult?.ok) {
       setPayments(paymentsResult.data.payments || []);
     }
 
@@ -205,6 +244,91 @@ export const PlayerDetail = () => {
     }
 
     setSavingRepresentative(false);
+  };
+
+  const handleActiveChange = async () => {
+    if (playerAction) return;
+
+    const nextIsActive = !player.is_active;
+    const confirmed = window.confirm(
+      nextIsActive
+        ? "¿Reactivar a esta jugadora?\n\nVolverá a estar disponible para nuevas operaciones deportivas según las reglas actuales."
+        : "¿Desactivar a esta jugadora?\n\nLa jugadora permanecerá registrada y conservará su historial, pero dejará de estar disponible para nuevas operaciones deportivas según las reglas actuales.",
+    );
+
+    if (!confirmed) return;
+
+    setPlayerAction("status");
+
+    try {
+      const result = await actions.updatePlayerActiveStatus(
+        player.id,
+        nextIsActive,
+      );
+
+      if (result.ok) {
+        setPlayer((current) => ({
+          ...current,
+          is_active: nextIsActive,
+        }));
+      }
+    } finally {
+      setPlayerAction(null);
+    }
+  };
+
+  const handleRemoveFromTeam = async (team) => {
+    if (playerAction) return;
+
+    const confirmed = window.confirm(
+      `¿Quitar a esta jugadora del equipo?\n\nContinuará registrada en el club y su historial no se eliminará.`,
+    );
+
+    if (!confirmed) return;
+
+    setPlayerAction(`team-${team.id}`);
+
+    try {
+      const result = await actions.removePlayerFromTeam(team.id, player.id);
+
+      if (result.ok) {
+        setPlayer((current) => ({
+          ...current,
+          teams: (current.teams || []).filter((item) => item.id !== team.id),
+        }));
+      }
+    } finally {
+      setPlayerAction(null);
+    }
+  };
+
+  const handleDeletePlayer = async () => {
+    if (playerAction || !canDeletePlayer) return;
+
+    const confirmed = window.confirm(
+      "¿Eliminar esta jugadora del club?\n\nEsta acción solo está disponible si la jugadora no tiene historial que deba conservarse.",
+    );
+
+    if (!confirmed) return;
+
+    setPlayerAction("delete");
+
+    try {
+      const result = await actions.deletePlayer(player.id);
+
+      if (!result.ok) {
+        showToast(
+          errorMessages[result.code] || result.message ||
+            "No se pudo eliminar la jugadora del club",
+          "error",
+        );
+        return;
+      }
+
+      navigate("/players", { replace: true });
+    } finally {
+      setPlayerAction(null);
+    }
   };
 
   if (loading) {
@@ -268,14 +392,16 @@ export const PlayerDetail = () => {
           </div>
         </div>
 
-        <div className="player-profile-actions">
-          <Button
-            variant="secondary"
-            onClick={() => navigate(`/players/${player_id}/edit`)}
-          >
-            Editar perfil
-          </Button>
-        </div>
+        {canEditPlayer && (
+          <div className="player-profile-actions">
+            <Button
+              variant="secondary"
+              onClick={() => navigate(`/players/${player_id}/edit`)}
+            >
+              Editar perfil
+            </Button>
+          </div>
+        )}
       </section>
 
       <div className="player-tabs">
@@ -286,25 +412,67 @@ export const PlayerDetail = () => {
           Perfil
         </button>
 
-        <button
-          className={`player-tab ${
-            activeTab === "performance" ? "active" : ""
-          }`}
-          onClick={() => setActiveTab("performance")}
-        >
-          Rendimiento
-        </button>
+        {canViewPerformance && (
+          <button
+            className={`player-tab ${
+              activeTab === "performance" ? "active" : ""
+            }`}
+            onClick={() => setActiveTab("performance")}
+          >
+            Rendimiento
+          </button>
+        )}
 
-        <button
-          className={`player-tab ${activeTab === "payments" ? "active" : ""}`}
-          onClick={() => setActiveTab("payments")}
-        >
-          Pagos
-        </button>
+        {canManagePayments && (
+          <button
+            className={`player-tab ${
+              activeTab === "payments" ? "active" : ""
+            }`}
+            onClick={() => setActiveTab("payments")}
+          >
+            Pagos
+          </button>
+        )}
       </div>
 
       {activeTab === "profile" && (
         <>
+          <Card className="player-info-card player-global-status-card">
+            <div className="player-section-header">
+              <div>
+                <span className="player-card-label">Estado del Club</span>
+                <h3>Disponibilidad de la jugadora</h3>
+              </div>
+
+              <span
+                className={`status-badge ${
+                  player.is_active ? "status-success" : "status-muted"
+                }`}
+              >
+                {player.is_active ? "Activa" : "Inactiva"}
+              </span>
+            </div>
+
+            {canManagePlayerStatus && (
+              <div className="player-global-actions">
+                <Button
+                  type="button"
+                  variant={player.is_active ? "secondary" : "primary"}
+                  disabled={playerAction !== null}
+                  onClick={handleActiveChange}
+                >
+                  {playerAction === "status"
+                    ? player.is_active
+                      ? "Desactivando jugadora..."
+                      : "Reactivando jugadora..."
+                    : player.is_active
+                    ? "Desactivar jugadora"
+                    : "Reactivar jugadora"}
+                </Button>
+              </div>
+            )}
+          </Card>
+
           {/* 🔥 PERFIL GENERAL */}
           <Card className="player-info-card">
             <h3>Perfil general</h3>
@@ -340,7 +508,7 @@ export const PlayerDetail = () => {
             <div className="player-card-edit-header">
               <h3>Contacto del representante</h3>
 
-              {!editingRepresentative && (
+              {canEditPlayer && !editingRepresentative && (
                 <button
                   type="button"
                   className="player-inline-edit-button"
@@ -439,21 +607,36 @@ export const PlayerDetail = () => {
                       </span>
                     </div>
 
-                    <span
-                      className={`status-badge ${
-                        team.status === "active"
-                          ? "status-success"
+                    <div className="player-team-row-actions">
+                      <span
+                        className={`status-badge ${
+                          team.status === "active"
+                            ? "status-success"
+                            : team.status === "injured"
+                            ? "status-warning"
+                            : "status-muted"
+                        }`}
+                      >
+                        {team.status === "active"
+                          ? "Activo"
                           : team.status === "injured"
-                          ? "status-warning"
-                          : "status-muted"
-                      }`}
-                    >
-                      {team.status === "active"
-                        ? "Activo"
-                        : team.status === "injured"
-                        ? "Lesionado"
-                        : "Inactivo"}
-                    </span>
+                          ? "Lesionado"
+                          : "Inactivo"}
+                      </span>
+
+                      {canEditPlayer && (
+                        <Button
+                          type="button"
+                          variant="secondary"
+                          disabled={playerAction !== null}
+                          onClick={() => handleRemoveFromTeam(team)}
+                        >
+                          {playerAction === `team-${team.id}`
+                            ? "Quitando..."
+                            : "Quitar del equipo"}
+                        </Button>
+                      )}
+                    </div>
                   </div>
                 ))}
               </div>
@@ -461,10 +644,34 @@ export const PlayerDetail = () => {
               <p className="player-empty-text">Sin equipo asignado</p>
             )}
           </Card>
+
+          {canDeletePlayer && (
+            <Card className="player-delete-card">
+              <div>
+                <span className="player-card-label">Acción excepcional</span>
+                <h3>Eliminar jugadora del club</h3>
+                <p>
+                  Solo puede eliminarse si no posee historial deportivo o
+                  financiero. Si tiene historial, desactívala para conservarlo.
+                </p>
+              </div>
+
+              <Button
+                type="button"
+                variant="danger"
+                disabled={playerAction !== null}
+                onClick={handleDeletePlayer}
+              >
+                {playerAction === "delete"
+                  ? "Eliminando jugadora..."
+                  : "Eliminar jugadora del club"}
+              </Button>
+            </Card>
+          )}
         </>
       )}
 
-      {activeTab === "performance" && (
+      {canViewPerformance && activeTab === "performance" && (
         <>
           {/* ===== RENDIMIENTO EN PARTIDOS ===== */}
 
@@ -473,14 +680,14 @@ export const PlayerDetail = () => {
               <div>
                 <span className="player-card-label">Partidos</span>
 
-                <h3>Rendimiento general</h3>
+                <h3>Rendimiento oficial</h3>
               </div>
             </div>
 
             {!performance || performance.summary.matches_played === 0 ? (
               <p className="player-empty-text">
-                Esta deportista todavía no tiene rendimiento registrado en
-                partidos.
+                Esta deportista todavía no tiene rendimiento oficial en
+                partidos finalizados.
               </p>
             ) : (
               <div className="player-summary-grid">
@@ -597,28 +804,28 @@ export const PlayerDetail = () => {
             </Card>
           )}
 
-          {/* ===== PARTIDOS RECIENTES ===== */}
+          {/* ===== PARTIDOS OFICIALES ===== */}
 
           <Card className="player-info-card">
             <div className="player-section-header">
               <div>
                 <span className="player-card-label">Historial</span>
 
-                <h3>Partidos recientes</h3>
+                <h3>Partidos oficiales</h3>
               </div>
 
               <span className="player-teams-count">
-                {performanceMatches.length}
+                {officialPerformanceMatches.length}
               </span>
             </div>
 
-            {performanceMatches.length === 0 ? (
+            {officialPerformanceMatches.length === 0 ? (
               <p className="player-empty-text">
-                No hay partidos con participación registrada.
+                No hay partidos finalizados con participación registrada.
               </p>
             ) : (
               <div className="player-match-history">
-                {performanceMatches.map((match) => (
+                {officialPerformanceMatches.map((match) => (
                   <div key={match.match_player_id} className="player-match-row">
                     <div className="player-match-row-info">
                       <strong>vs. {match.opponent_name}</strong>
@@ -632,6 +839,8 @@ export const PlayerDetail = () => {
                         {match.points_total} puntos · {match.errors_total}{" "}
                         errores
                       </span>
+
+                      <span>Oficial · Partido finalizado</span>
                     </div>
                   </div>
                 ))}
@@ -639,48 +848,93 @@ export const PlayerDetail = () => {
             )}
           </Card>
 
+          {provisionalPerformanceMatches.length > 0 && (
+            <Card className="player-info-card">
+              <div className="player-section-header">
+                <div>
+                  <span className="player-card-label">Pendientes</span>
+
+                  <h3>Partidos pendientes de confirmar</h3>
+                </div>
+
+                <span className="player-teams-count">
+                  {provisionalPerformanceMatches.length}
+                </span>
+              </div>
+
+              <p className="text-muted">
+                Estas estadísticas todavía no forman parte del rendimiento
+                oficial.
+              </p>
+
+              <div className="player-match-history">
+                {provisionalPerformanceMatches.map((match) => (
+                  <div key={match.match_player_id} className="player-match-row">
+                    <div className="player-match-row-info">
+                      <strong>vs. {match.opponent_name}</strong>
+
+                      <span>
+                        {formatDate(match.date)}
+                        {match.team?.name ? ` · ${match.team.name}` : ""}
+                      </span>
+
+                      <span>
+                        {match.points_total} puntos · {match.errors_total}{" "}
+                        errores
+                      </span>
+
+                      <span>Provisional · Partido sin finalizar</span>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </Card>
+          )}
+
           {/* ===== ENTRENAMIENTOS ===== */}
 
-          <Card className="player-summary-card">
-            <div className="player-section-header">
-              <div>
-                <span className="player-card-label">Entrenamientos</span>
-
-                <h3>Resumen de asistencia</h3>
-              </div>
-            </div>
-
-            {attendanceSummary ? (
-              <div className="player-summary-grid">
+          {canViewSports && (
+            <Card className="player-summary-card">
+              <div className="player-section-header">
                 <div>
-                  <strong>{attendanceSummary.present}</strong>
-                  <span>Presentes</span>
-                </div>
+                  <span className="player-card-label">Entrenamientos</span>
 
-                <div>
-                  <strong>{attendanceSummary.late}</strong>
-                  <span>Tardes</span>
-                </div>
-
-                <div>
-                  <strong>{attendanceSummary.absent}</strong>
-                  <span>Ausencias</span>
-                </div>
-
-                <div>
-                  <strong>{attendanceSummary.attendance_rate}%</strong>
-                  <span>Asistencia</span>
+                  <h3>Resumen de asistencia</h3>
                 </div>
               </div>
-            ) : (
-              <p className="player-empty-text">
-                No hay asistencia de entrenamientos registrada.
-              </p>
-            )}
-          </Card>
+
+              {attendanceSummary ? (
+                <div className="player-summary-grid">
+                  <div>
+                    <strong>{attendanceSummary.present}</strong>
+                    <span>Presentes</span>
+                  </div>
+
+                  <div>
+                    <strong>{attendanceSummary.late}</strong>
+                    <span>Tardes</span>
+                  </div>
+
+                  <div>
+                    <strong>{attendanceSummary.absent}</strong>
+                    <span>Ausencias</span>
+                  </div>
+
+                  <div>
+                    <strong>{attendanceSummary.attendance_rate}%</strong>
+                    <span>Asistencia</span>
+                  </div>
+                </div>
+              ) : (
+                <p className="player-empty-text">
+                  No hay asistencia de entrenamientos registrada.
+                </p>
+              )}
+            </Card>
+          )}
         </>
       )}
-      {activeTab === "payments" && (
+      {canManagePayments && activeTab === "payments" && (
         <>
           {" "}
           {/* 💳 PAGOS */}
@@ -730,7 +984,7 @@ export const PlayerDetail = () => {
                       <div className="player-payment-row-info">
                         <strong>
                           {PAYMENT_TYPE_LABELS[payment.payment_type] || "Pago"}{" "}
-                          · ${payment.amount}
+                          · {formatMoney(payment.amount, payment.currency_code)}
                         </strong>
 
                         <span>{getPaymentDescription(payment)}</span>

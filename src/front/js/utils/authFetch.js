@@ -1,11 +1,65 @@
 const BACKEND_URL = process.env.REACT_APP_BACKEND_URL;
 
 let actionsRef = null;
-let isRefreshing = false;
+let refreshPromise = null;
+let firstLoginRedirectPending = false;
+
+const clearLocalSession = () => {
+  const hadStoredSession = Boolean(
+    localStorage.getItem("token") ||
+      localStorage.getItem("user") ||
+      localStorage.getItem("refresh")
+  );
+
+  localStorage.removeItem("token");
+  localStorage.removeItem("user");
+  localStorage.removeItem("refresh");
+
+  if (hadStoredSession && actionsRef?.logoutLocal) actionsRef.logoutLocal();
+};
+
+const isClubSuspendedResponse = async (response) => {
+  if (response?.status !== 403) return false;
+
+  try {
+    const data = await response.clone().json();
+    return data?.code === "CLUB_SUSPENDED";
+  } catch (error) {
+    return false;
+  }
+};
+
+const redirectFirstLoginIfRequired = async (response) => {
+  if (response?.status !== 403) return false;
+
+  try {
+    const data = await response.clone().json();
+
+    if (data?.code !== "FIRST_LOGIN_REQUIRED") return false;
+
+    const basename = (process.env.BASENAME || "").replace(/\/$/, "");
+    const setPasswordPath = `${basename}/set-password`;
+
+    if (
+      window.location.pathname !== setPasswordPath &&
+      !firstLoginRedirectPending
+    ) {
+      firstLoginRedirectPending = true;
+      window.location.replace(setPasswordPath);
+    }
+
+    return true;
+  } catch (error) {
+    return false;
+  }
+};
+
 async function refreshToken() {
   const refresh = localStorage.getItem("refresh");
 
-  if (!refresh) return null;
+  if (!refresh) {
+    return { token: null, response: null, sessionChanged: false };
+  }
 
   try {
     const resp = await fetch(`${BACKEND_URL}/api/refresh`, {
@@ -15,61 +69,120 @@ async function refreshToken() {
       },
     });
 
-    if (!resp.ok) return null;
+    if (!resp.ok) {
+      return {
+        token: null,
+        response: (await isClubSuspendedResponse(resp)) ? resp : null,
+        sessionChanged: false,
+      };
+    }
 
     const data = await resp.json();
 
-    localStorage.setItem("token", data.token);
+    // A manual logout or a new login that happens while refresh is pending
+    // owns the final session state. Do not restore the previous session.
+    if (localStorage.getItem("refresh") !== refresh) {
+      return { token: null, response: null, sessionChanged: true };
+    }
 
+    localStorage.setItem("token", data.token);
     localStorage.setItem("refresh", data.refresh);
 
-    return data.token;
+    return { token: data.token, response: null, sessionChanged: false };
   } catch (err) {
     console.error("Error refreshing token:", err);
-    return null;
+    return { token: null, response: null, sessionChanged: false };
   }
 }
+
+const getSharedRefresh = () => {
+  if (!refreshPromise) {
+    refreshPromise = refreshToken()
+      .then((result) => {
+        if (!result.token && !result.sessionChanged) {
+          clearLocalSession();
+        }
+
+        return result;
+      })
+      .finally(() => {
+        refreshPromise = null;
+      });
+  }
+
+  return refreshPromise;
+};
+
+const buildRequestOptions = (options, token) => {
+  const headers = new Headers(options.headers || {});
+  const isFormData =
+    typeof FormData !== "undefined" && options.body instanceof FormData;
+
+  if (options.body && !isFormData && !headers.has("Content-Type")) {
+    headers.set("Content-Type", "application/json");
+  }
+
+  headers.set("Authorization", `Bearer ${token}`);
+
+  return {
+    ...options,
+    headers,
+  };
+};
+
+const applyResponseGuards = async (response) => {
+  if (await isClubSuspendedResponse(response)) {
+    clearLocalSession();
+    return;
+  }
+
+  await redirectFirstLoginIfRequired(response);
+};
+
+const cloneResponseIfPossible = (response) =>
+  response?.clone ? response.clone() : response;
 
 let showToastGlobal = null;
 
 export const setAuthActions = (actions, toastFn) => {
-  actionsRef = actions;
-  showToastGlobal = toastFn;
+  if (actions) actionsRef = actions;
+  if (toastFn) showToastGlobal = toastFn;
 };
 
 export const authFetch = async (endpoint, options = {}) => {
-  const token = localStorage.getItem("token");
+  const requestToken = localStorage.getItem("token");
+  const requestUrl = `${BACKEND_URL}${endpoint}`;
 
-  if (!options.headers) options.headers = {};
+  const sendRequest = (token) =>
+    fetch(requestUrl, buildRequestOptions(options, token));
 
-  if (options.body && !(options.body instanceof FormData)) {
-    options.headers["Content-Type"] = "application/json";
+  let response = await sendRequest(requestToken);
+  await applyResponseGuards(response);
+
+  if (response.status !== 401) return response;
+
+  const currentToken = localStorage.getItem("token");
+
+  // Another request may have completed refresh before this 401 was handled.
+  // Retry with that token instead of rotating the session a second time.
+  if (currentToken && currentToken !== requestToken) {
+    response = await sendRequest(currentToken);
+    await applyResponseGuards(response);
+    return response;
   }
 
-  options.headers.Authorization = `Bearer ${token}`;
+  const refreshResult = await getSharedRefresh();
 
-  let response = await fetch(`${BACKEND_URL}${endpoint}`, options);
+  if (!refreshResult.token) {
+    if (refreshResult.sessionChanged) return response;
 
-  if (response.status === 401 && !isRefreshing) {
-    isRefreshing = true;
-
-    const newToken = await refreshToken();
-
-    isRefreshing = false;
-
-    if (!newToken) {
-      localStorage.removeItem("token");
-      localStorage.removeItem("user");
-      localStorage.removeItem("refresh");
-
-      if (actionsRef?.logoutLocal) actionsRef.logoutLocal();
-
-      return null;
-    }
-
-    options.headers.Authorization = `Bearer ${newToken}`;
-    response = await fetch(`${BACKEND_URL}${endpoint}`, options);
+    return cloneResponseIfPossible(refreshResult.response);
   }
+
+  // This direct retry is deliberately not passed through authFetch again:
+  // a second 401 is returned to the caller without another refresh attempt.
+  response = await sendRequest(refreshResult.token);
+  await applyResponseGuards(response);
 
   return response;
 };
@@ -84,6 +197,10 @@ const FORM_ERRORS = [
   "CLUB_NAME_REQUIRED",
   "STATE_REQUIRED",
   "CLIENT_ALREADY_EXISTS",
+  "EMAIL_ALREADY_EXISTS",
+  "INVALID_ROLE",
+  "CURRENCY_REQUIRED",
+  "INVALID_CURRENCY",
 
   // LOGIN
   "PASSWORD_REQUIRED",
@@ -94,6 +211,7 @@ const FORM_ERRORS = [
   "PASSWORD_TOO_SHORT",
   "CONFIRM_PASSWORD_REQUIRED",
   "PASSWORDS_NOT_MATCH",
+  "FIRST_LOGIN_ALREADY_COMPLETED",
 
   // ONBOARDING / CLUB / TEAMS / PLAYERS
   "LOCATION_REQUIRED",
@@ -128,6 +246,7 @@ const FORM_ERRORS = [
   "ATTENDANCE_REQUIRED",
   "TEAM_NOT_FOUND",
   "TRAINING_NOT_FOUND",
+  "TRAINING_CANCELLED",
   "INVALID_ATTENDANCE_STATUS",
 
   // MATCHES
@@ -136,9 +255,12 @@ const FORM_ERRORS = [
   "MATCH_STATUS_REQUIRED",
   "MATCH_PARTICIPATION_REQUIRED",
   "MATCH_ROSTER_REQUIRED",
+  "INVALID_MATCH_ROSTER",
   "INVALID_MATCH_STATUS",
   "INVALID_MATCH_TYPE",
   "INVALID_MATCH_RESULT",
+  "MATCH_RESULT_INCOMPLETE",
+  "MATCH_FINALIZED",
   "INVALID_ATTACK_STATS",
   "INVALID_RECEPTION_STATS",
   "INVALID_SERVE_STATS",

@@ -29,7 +29,6 @@
 }
 
 .tournament-card {
-  cursor: pointer;
   display: flex;
   flex-direction: column;
   gap: 16px;
@@ -149,7 +148,6 @@
 }
 
 .tournament-team-card {
-  cursor: pointer;
   display: flex;
   flex-direction: column;
   gap: 14px;

@@ -126,10 +126,11 @@ Las variables de entorno utilizadas por Docker se encuentran en:
 
 Este archivo no forma parte del repositorio Git y debe permanecer únicamente en el servidor.
 
-Entre las variables configuradas actualmente se encuentran:
+Entre las variables que deben configurarse para producción se encuentran:
 
 - DATABASE_URL
-- FLASK_APP_KEY
+- APP_ENV=production
+- TOKEN_SECRET
 - RESEND_API_KEY
 - MAIL_FROM_EMAIL
 - MAIL_FROM_NAME

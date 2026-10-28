@@ -57,6 +57,118 @@
   color: var(--color-danger);
 }
 
+.match-capture-mode-options {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 12px;
+}
+
+.match-capture-mode-option {
+  width: 100%;
+  padding: 16px;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 4px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-lg);
+  background: var(--color-surface-soft);
+  color: var(--color-text);
+  text-align: left;
+  cursor: pointer;
+}
+
+.match-capture-mode-option:hover:not(:disabled) {
+  border-color: var(--color-primary);
+}
+
+.match-capture-mode-option:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.match-capture-mode-option span,
+.match-capture-mode-current small {
+  color: var(--color-muted);
+  font-size: var(--font-size-sm);
+}
+
+.match-capture-mode-current {
+  margin-bottom: 16px;
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 12px;
+}
+
+.match-capture-mode-current > div {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.match-participation-section,
+.match-participation-editor {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 12px;
+}
+
+.match-participation-section {
+  margin-bottom: 16px;
+}
+
+.match-participation-editor {
+  width: 100%;
+  padding: 14px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-lg);
+  background: var(--color-surface-soft);
+}
+
+.match-participation-options {
+  width: 100%;
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 8px;
+}
+
+.match-participation-option {
+  width: 100%;
+  padding: 12px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  background: var(--color-surface);
+  color: var(--color-text);
+  text-align: left;
+  cursor: pointer;
+}
+
+.match-participation-option.selected {
+  border-color: var(--color-primary);
+  background: var(--color-primary-light);
+}
+
+.match-participation-option:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.match-participation-option > span:last-child {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.match-participation-option small {
+  color: var(--color-muted);
+}
+
 /* ===== REFEREE CHARGES ===== */
 
 .match-referee-card {
@@ -241,6 +353,20 @@
 }
 
 @media (min-width: 768px) {
+  .match-capture-mode-options {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .match-capture-mode-current {
+    flex-direction: row;
+    align-items: center;
+    justify-content: space-between;
+  }
+
+  .match-participation-options {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
   .match-referee-heading {
     flex-direction: row;
     align-items: flex-start;

@@ -63,6 +63,8 @@ export const LiveMatch = () => {
   const { match_id } = useParams();
   const navigate = useNavigate();
 
+  const [match, setMatch] = useState(null);
+  const [loadingMatch, setLoadingMatch] = useState(true);
   const [roster, setRoster] = useState([]);
   const [showSubstitutionPanel, setShowSubstitutionPanel] = useState(false);
   const [selectedOutPlayer, setSelectedOutPlayer] = useState(null);
@@ -87,6 +89,30 @@ export const LiveMatch = () => {
 
     const rosterData = result.data || [];
     setRoster(rosterData);
+  };
+
+  const loadMatchContext = async () => {
+    setLoadingMatch(true);
+
+    const result = await actions.getMatchDetail(match_id);
+
+    if (!result.ok) {
+      setLiveError(result.message || "No se pudo cargar el partido");
+      setLoadingMatch(false);
+      return;
+    }
+
+    const matchData = result.data.match;
+    setMatch(matchData);
+
+    if (
+      matchData.capture_mode === "live" &&
+      !matchData.is_completed
+    ) {
+      await loadRoster();
+    }
+
+    setLoadingMatch(false);
   };
 
   const toggleStartingPlayer = (player) => {
@@ -134,7 +160,7 @@ export const LiveMatch = () => {
   };
 
   useEffect(() => {
-    loadRoster();
+    loadMatchContext();
   }, [match_id]);
 
   const getActionLabel = (value) => {
@@ -270,6 +296,70 @@ export const LiveMatch = () => {
       setSetMessage("");
     }, 2500);
   };
+
+  if (loadingMatch) {
+    return <p>Cargando partido...</p>;
+  }
+
+  if (!match || match.capture_mode !== "live") {
+    return (
+      <div className="live-match-page">
+        <div className="live-topbar">
+          <button
+            type="button"
+            className="live-back-button"
+            onClick={() => navigate(`/matches/${match_id}`)}
+          >
+            ← Volver
+          </button>
+
+          <span className="live-topbar-label">Partido en vivo</span>
+        </div>
+
+        <section className="live-lineup-card">
+          <h3>Modo en vivo no disponible</h3>
+          <p className="live-section-helper mb-0">
+            {match?.capture_mode === "summary"
+              ? "Este partido utiliza carga de resumen estadístico."
+              : "Primero elige el modo de captura desde el detalle del partido."}
+          </p>
+          {liveError && <p className="form-error">{liveError}</p>}
+        </section>
+      </div>
+    );
+  }
+
+  if (match.is_completed) {
+    return (
+      <div className="live-match-page">
+        <div className="live-topbar">
+          <button
+            type="button"
+            className="live-back-button"
+            onClick={() => navigate(`/matches/${match_id}`)}
+          >
+            ← Volver
+          </button>
+
+          <span className="live-topbar-label">Partido en vivo</span>
+        </div>
+
+        <section className="live-lineup-card">
+          <h3>Partido completado</h3>
+          <p className="live-section-helper">
+            La captura en vivo está cerrada. Las estadísticas históricas
+            continúan disponibles desde el detalle del partido.
+          </p>
+          <Button
+            variant="secondary"
+            onClick={() => navigate(`/matches/${match_id}`)}
+          >
+            Consultar partido
+          </Button>
+        </section>
+      </div>
+    );
+  }
 
   return (
     <div className="live-match-page">

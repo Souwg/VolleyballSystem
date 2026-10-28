@@ -15,6 +15,7 @@ import {
   validatePlayerAssignment,
 } from "../../utils/validators";
 import { errorMessages } from "../../utils/errorMessages";
+import "../../../styles/playerShared.css";
 import "../../../styles/players.css";
 
 const POSITIONS = [
@@ -52,6 +53,10 @@ export const Players = () => {
   const [createLoading, setCreateLoading] = useState(false);
   const [createMainPosition, setCreateMainPosition] = useState("");
   const [mainPosition, setMainPosition] = useState("");
+  const canManagePlayers = ["club_owner", "coach"].includes(
+    store.user?.role,
+  );
+  const canManagePlayerStatus = store.user?.role === "club_owner";
 
   const assignAvailableTeams = assigningPlayer
     ? store.teams.filter(
@@ -342,10 +347,10 @@ export const Players = () => {
   const handleActiveChange = async (e, player, isActive) => {
     e.stopPropagation();
 
-    const actionText = isActive ? "activar" : "desactivar";
-
     const confirmed = window.confirm(
-      `¿Seguro que deseas ${actionText} a ${player.first_name}?`,
+      isActive
+        ? `¿Reactivar a esta jugadora?\n\n${player.first_name} volverá a estar disponible para nuevas operaciones deportivas según las reglas actuales.`
+        : `¿Desactivar a esta jugadora?\n\n${player.first_name} permanecerá registrada y conservará su historial, pero dejará de estar disponible para nuevas operaciones deportivas según las reglas actuales.`,
     );
 
     if (!confirmed) return;
@@ -389,12 +394,12 @@ export const Players = () => {
         title="Deportistas"
         subtitle="Administra los perfiles, estados, equipos y datos deportivos del club."
         actions={
-          !showCreateForm && (
+          canManagePlayers && !showCreateForm && (
             <Button onClick={openCreateForm}>+ Añadir deportista</Button>
           )
         }
       />
-      {showCreateForm && (
+      {canManagePlayers && showCreateForm && (
         <Card className="player-create-card">
           <h4>Nuevo deportista</h4>
 
@@ -685,9 +690,11 @@ export const Players = () => {
             {store.players.length === 0 ? (
               <>
                 <p>Aún no tienes jugadores 👀</p>
-                <Button onClick={() => navigate("/categories")}>
-                  Crear primer jugador
-                </Button>
+                {canManagePlayers && (
+                  <Button onClick={() => navigate("/categories")}>
+                    Crear primer jugador
+                  </Button>
+                )}
               </>
             ) : (
               <>
@@ -922,33 +929,39 @@ export const Players = () => {
                       </div>
                     </div>
 
-                    <div className="player-actions">
-                      {!player.teams?.length && player.is_active && (
-                        <Button
-                          type="button"
-                          className="button-primary"
-                          onClick={(e) => openAssignTeam(e, player)}
-                        >
-                          Asignar equipo
-                        </Button>
-                      )}
+                    {canManagePlayers &&
+                      ((!player.teams?.length && player.is_active) ||
+                        canManagePlayerStatus) && (
+                      <div className="player-actions">
+                        {!player.teams?.length && player.is_active && (
+                          <Button
+                            type="button"
+                            className="button-primary"
+                            onClick={(e) => openAssignTeam(e, player)}
+                          >
+                            Asignar equipo
+                          </Button>
+                        )}
 
-                      <button
-                        type="button"
-                        className={`player-state-action ${
-                          player.is_active ? "danger" : "success"
-                        }`}
-                        onClick={(e) =>
-                          handleActiveChange(e, player, !player.is_active)
-                        }
-                      >
-                        {player.is_active
-                          ? "Desactivar deportista"
-                          : "Reactivar deportista"}
-                      </button>
-                    </div>
+                        {canManagePlayerStatus && (
+                          <button
+                            type="button"
+                            className={`player-state-action ${
+                              player.is_active ? "danger" : "success"
+                            }`}
+                            onClick={(e) =>
+                              handleActiveChange(e, player, !player.is_active)
+                            }
+                          >
+                            {player.is_active
+                              ? "Desactivar jugadora"
+                              : "Reactivar jugadora"}
+                          </button>
+                        )}
+                      </div>
+                    )}
 
-                    {assigningPlayer?.id === player.id && (
+                    {canManagePlayers && assigningPlayer?.id === player.id && (
                       <Card className="assign-team-inline">
                         <h4>Asignar equipo</h4>
 

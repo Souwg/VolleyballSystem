@@ -10,6 +10,7 @@ import { FormField } from "../../component/ui/formField";
 import { validateClubProfile } from "../../utils/validators";
 import { errorMessages } from "../../utils/errorMessages";
 import { getAssetUrl } from "../../utils/getAssetUrl";
+import "../../../styles/clubShared.css";
 import "../../../styles/clubProfile.css";
 import { Shield } from "lucide-react";
 
@@ -17,20 +18,21 @@ export const ClubProfile = () => {
   const { store, actions } = useContext(Context);
   const navigate = useNavigate();
 
-  const [location, setLocation] = useState("");
+  const [city, setCity] = useState("");
   const [imageUrl, setImageUrl] = useState("");
   const [defaultEnrollmentFee, setDefaultEnrollmentFee] = useState("");
   const [defaultMonthlyFee, setDefaultMonthlyFee] = useState("");
   const [clubImageFile, setClubImageFile] = useState(null);
   const [clubImagePreview, setClubImagePreview] = useState("");
   const [name, setName] = useState("");
-  const [state, setState] = useState("");
 
   const [errors, setErrors] = useState({});
   const [saving, setSaving] = useState(false);
   const [uploadingImage, setUploadingImage] = useState(false);
 
   const club = store.club || store.user?.club;
+  const canEditClubProfile = store.user?.role === "club_owner";
+  const isReadOnly = !canEditClubProfile;
 
   const getInitials = (value = "") => {
     return value
@@ -44,12 +46,11 @@ export const ClubProfile = () => {
 
   useEffect(() => {
     if (club) {
-      setLocation(club.location?.trim() || "");
+      setCity((club.city || club.location || "").trim());
       setImageUrl(club.image_url?.trim() || "");
       setDefaultEnrollmentFee(club.default_enrollment_fee ?? "");
       setDefaultMonthlyFee(club.default_monthly_fee ?? "");
       setName(club.name?.trim() || "");
-      setState(club.state?.trim() || "");
     }
   }, [club]);
 
@@ -64,14 +65,15 @@ export const ClubProfile = () => {
   const handleSave = async (e) => {
     e.preventDefault();
 
+    if (!canEditClubProfile) return;
+
     if (saving || uploadingImage) return;
 
     setErrors({});
 
     const newErrors = validateClubProfile({
       name,
-      location,
-      state,
+      city,
       defaultEnrollmentFee,
       defaultMonthlyFee,
     });
@@ -103,8 +105,7 @@ export const ClubProfile = () => {
 
     const result = await actions.updateClub({
       name: name.trim(),
-      location: location.trim(),
-      state: state.trim(),
+      city: city.trim(),
       image_url: finalImageUrl,
       default_enrollment_fee: defaultEnrollmentFee || 0,
       default_monthly_fee: defaultMonthlyFee || 0,
@@ -125,9 +126,13 @@ export const ClubProfile = () => {
       <PageHeader
         tone="dashboard"
         icon={Shield}
-        eyebrow="Configuración"
+        eyebrow={isReadOnly ? "Información" : "Configuración"}
         title="Mi club"
-        subtitle="Actualiza la información principal, imagen y configuración de pagos del club."
+        subtitle={
+          isReadOnly
+            ? "Consulta la información principal y la configuración de pagos del club."
+            : "Actualiza la información principal, imagen y configuración de pagos del club."
+        }
       />
 
       <Card>
@@ -146,47 +151,49 @@ export const ClubProfile = () => {
 
             <div>
               <h3>{club?.name}</h3>
-              <p>{location || "Ubicación sin definir"}</p>
+              <p>{city || "Ubicación sin definir"}</p>
             </div>
           </div>
 
-          <FormField label="Escudo o avatar del club">
-            <div className="club-image-picker">
-              <label className="button button-secondary club-image-button">
-                Cambiar imagen
-                <input
-                  type="file"
-                  accept="image/png,image/jpeg,image/jpg,image/webp"
-                  hidden
-                  onChange={(e) => {
-                    const file = e.target.files?.[0];
+          {canEditClubProfile && (
+            <FormField label="Escudo o avatar del club">
+              <div className="club-image-picker">
+                <label className="button button-secondary club-image-button">
+                  Cambiar imagen
+                  <input
+                    type="file"
+                    accept="image/png,image/jpeg,image/jpg,image/webp"
+                    hidden
+                    onChange={(e) => {
+                      const file = e.target.files?.[0];
 
-                    if (!file) return;
+                      if (!file) return;
 
-                    const previewUrl = URL.createObjectURL(file);
+                      const previewUrl = URL.createObjectURL(file);
 
-                    setClubImageFile(file);
-                    setClubImagePreview(previewUrl);
-                    setErrors((prev) => ({
-                      ...prev,
-                      IMAGE_TOO_LARGE: false,
-                      INVALID_IMAGE_FORMAT: false,
-                      IMAGE_REQUIRED: false,
-                      SESSION_EXPIRED: false,
-                      NETWORK_ERROR: false,
-                      FORBIDDEN: false,
-                      CLUB_NOT_FOUND: false,
-                    }));
-                  }}
-                />
-              </label>
+                      setClubImageFile(file);
+                      setClubImagePreview(previewUrl);
+                      setErrors((prev) => ({
+                        ...prev,
+                        IMAGE_TOO_LARGE: false,
+                        INVALID_IMAGE_FORMAT: false,
+                        IMAGE_REQUIRED: false,
+                        SESSION_EXPIRED: false,
+                        NETWORK_ERROR: false,
+                        FORBIDDEN: false,
+                        CLUB_NOT_FOUND: false,
+                      }));
+                    }}
+                  />
+                </label>
 
-              <small className="form-helper">
-                Puedes subir un escudo o avatar desde tu galería. Formatos: PNG,
-                JPG o WEBP.
-              </small>
-            </div>
-          </FormField>
+                <small className="form-helper">
+                  Puedes subir un escudo o avatar desde tu galería. Formatos:
+                  PNG, JPG o WEBP.
+                </small>
+              </div>
+            </FormField>
+          )}
           <FormField
             label="Nombre del club"
             error={
@@ -198,8 +205,9 @@ export const ClubProfile = () => {
             <Input
               type="text"
               className={errors.CLUB_NAME_REQUIRED ? "input-error" : ""}
-              placeholder="Ej: Los Halcones"
+              placeholder={isReadOnly ? "No registrado" : "Ej: Los Halcones"}
               value={name}
+              disabled={isReadOnly}
               onChange={(e) => {
                 setName(e.target.value);
                 setErrors((prev) => ({
@@ -217,19 +225,30 @@ export const ClubProfile = () => {
           <FormField
             label="Ciudad"
             error={
-              errors.LOCATION_REQUIRED ? errorMessages.LOCATION_REQUIRED : null
+              errors.CITY_REQUIRED
+                ? errorMessages.CITY_REQUIRED
+                : errors.CITY_TOO_LONG
+                ? errorMessages.CITY_TOO_LONG
+                : null
             }
           >
             <Input
               type="text"
-              className={errors.LOCATION_REQUIRED ? "input-error" : ""}
-              placeholder="Ej: Cagua"
-              value={location}
+              className={
+                errors.CITY_REQUIRED || errors.CITY_TOO_LONG
+                  ? "input-error"
+                  : ""
+              }
+              placeholder={isReadOnly ? "No registrado" : "Ej: Cagua"}
+              value={city}
+              maxLength={120}
+              disabled={isReadOnly}
               onChange={(e) => {
-                setLocation(e.target.value);
+                setCity(e.target.value);
                 setErrors((prev) => ({
                   ...prev,
-                  LOCATION_REQUIRED: false,
+                  CITY_REQUIRED: false,
+                  CITY_TOO_LONG: false,
                   SESSION_EXPIRED: false,
                   NETWORK_ERROR: false,
                   FORBIDDEN: false,
@@ -240,25 +259,48 @@ export const ClubProfile = () => {
           </FormField>
 
           <FormField
-            label="Estado"
-            error={errors.STATE_REQUIRED ? errorMessages.STATE_REQUIRED : null}
+            label="País"
           >
             <Input
               type="text"
-              className={errors.STATE_REQUIRED ? "input-error" : ""}
-              placeholder="Ej: Aragua"
-              value={state}
-              onChange={(e) => {
-                setState(e.target.value);
-                setErrors((prev) => ({
-                  ...prev,
-                  STATE_REQUIRED: false,
-                  SESSION_EXPIRED: false,
-                  NETWORK_ERROR: false,
-                  FORBIDDEN: false,
-                  CLUB_NOT_FOUND: false,
-                }));
-              }}
+              value={club?.country?.name || "No clasificado"}
+              disabled
+              className="input-readonly"
+            />
+          </FormField>
+
+          <FormField label="Estado / Provincia / Región">
+            <Input
+              type="text"
+              value={
+                club?.administrative_area?.name ||
+                club?.state ||
+                "No clasificado"
+              }
+              disabled
+              className="input-readonly"
+            />
+          </FormField>
+
+          <FormField label="Zona horaria">
+            <Input
+              type="text"
+              value={club?.timezone || "No configurada"}
+              disabled
+              className="input-readonly"
+            />
+          </FormField>
+
+          <FormField label="Moneda">
+            <Input
+              type="text"
+              value={
+                club?.currency
+                  ? `${club.currency.code} — ${club.currency.name}`
+                  : club?.currency_code || "No configurada"
+              }
+              disabled
+              className="input-readonly"
             />
           </FormField>
 
@@ -266,13 +308,16 @@ export const ClubProfile = () => {
             <div>
               <h3>Configuración de pagos</h3>
               <p>
-                Define los montos base que se usarán al configurar pagos de
-                nuevos deportistas.
+                Define los montos base que se usarán al configurar pagos de las
+                jugadoras. Cada jugadora puede tener un monto personalizado sin
+                cambiar estos valores del club.
               </p>
             </div>
 
             <FormField
-              label="Inscripción por defecto"
+              label={`Inscripción por defecto (${
+                club?.currency_code || "moneda no configurada"
+              })`}
               error={
                 errors.INVALID_DEFAULT_ENROLLMENT_FEE
                   ? errorMessages.INVALID_DEFAULT_ENROLLMENT_FEE
@@ -284,8 +329,9 @@ export const ClubProfile = () => {
                 className={
                   errors.INVALID_DEFAULT_ENROLLMENT_FEE ? "input-error" : ""
                 }
-                placeholder="Ej: 20"
+                placeholder={isReadOnly ? "No registrado" : "Ej: 20"}
                 value={defaultEnrollmentFee}
+                disabled={isReadOnly}
                 onChange={(e) => {
                   setDefaultEnrollmentFee(e.target.value);
                   setErrors((prev) => ({
@@ -301,7 +347,9 @@ export const ClubProfile = () => {
             </FormField>
 
             <FormField
-              label="Mensualidad por defecto"
+              label={`Mensualidad por defecto (${
+                club?.currency_code || "moneda no configurada"
+              })`}
               error={
                 errors.INVALID_DEFAULT_MONTHLY_FEE
                   ? errorMessages.INVALID_DEFAULT_MONTHLY_FEE
@@ -313,8 +361,9 @@ export const ClubProfile = () => {
                 className={
                   errors.INVALID_DEFAULT_MONTHLY_FEE ? "input-error" : ""
                 }
-                placeholder="Ej: 25"
+                placeholder={isReadOnly ? "No registrado" : "Ej: 25"}
                 value={defaultMonthlyFee}
+                disabled={isReadOnly}
                 onChange={(e) => {
                   setDefaultMonthlyFee(e.target.value);
                   setErrors((prev) => ({
@@ -358,16 +407,18 @@ export const ClubProfile = () => {
           )}
 
           <div className="form-actions">
-            <Button type="submit" disabled={saving || uploadingImage}>
-              {saving || uploadingImage ? "Guardando..." : "Guardar cambios"}
-            </Button>
+            {canEditClubProfile && (
+              <Button type="submit" disabled={saving || uploadingImage}>
+                {saving || uploadingImage ? "Guardando..." : "Guardar cambios"}
+              </Button>
+            )}
 
             <Button
               type="button"
               variant="secondary"
               onClick={() => navigate("/dashboard")}
             >
-              Cancelar
+              {isReadOnly ? "Volver al panel" : "Cancelar"}
             </Button>
           </div>
         </form>

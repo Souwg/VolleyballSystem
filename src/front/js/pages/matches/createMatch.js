@@ -14,7 +14,7 @@ import { errorMessages } from "../../utils/errorMessages";
 import { validateMatch } from "../../utils/validators";
 
 export const CreateMatch = () => {
-  const { actions } = useContext(Context);
+  const { store, actions } = useContext(Context);
   const { team_id } = useParams();
   const navigate = useNavigate();
 
@@ -30,6 +30,14 @@ export const CreateMatch = () => {
   const [tournamentTeamId, setTournamentTeamId] = useState("");
   const [refereeFee, setRefereeFee] = useState("");
   const [loadingTournaments, setLoadingTournaments] = useState(true);
+  const selectedTournamentEntry = tournamentEntries.find(
+    (entry) => entry.id === tournamentTeamId,
+  );
+  const refereeCurrencyCode =
+    selectedTournamentEntry?.currency_code ||
+    selectedTournamentEntry?.tournament?.currency_code ||
+    store.club?.currency_code ||
+    store.user?.club?.currency_code;
 
   useEffect(() => {
     const loadTournamentEntries = async () => {
@@ -48,10 +56,6 @@ export const CreateMatch = () => {
 
     loadTournamentEntries();
   }, [team_id]);
-
-  const selectedTournamentEntry = tournamentEntries.find(
-    (entry) => entry.id === tournamentTeamId,
-  );
 
   const clearFieldError = (errorCode) => {
     setErrors((prev) => ({
@@ -230,7 +234,9 @@ export const CreateMatch = () => {
           </FormField>
 
           <FormField
-            label="Costo de arbitraje"
+            label={`Costo de arbitraje (${
+              refereeCurrencyCode || "moneda no configurada"
+            })`}
             helper={
               tournamentTeamId
                 ? "Se tomó el monto predeterminado del torneo. Puedes modificarlo para este partido."

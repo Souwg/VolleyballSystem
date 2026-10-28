@@ -14,6 +14,7 @@ import { FormField } from "../../component/ui/formField";
 import { Select } from "../../component/ui/select";
 import { Button } from "../../component/ui/button";
 import { Card } from "../../component/ui/card";
+import "../../../styles/playerShared.css";
 import "../../../styles/teamDetails.css";
 
 export const TeamDetail = () => {
@@ -219,7 +220,7 @@ export const TeamDetail = () => {
     e.stopPropagation();
 
     const confirmed = window.confirm(
-      `¿Quitar a ${player.first_name} de ${team.name}?`,
+      `¿Quitar a esta jugadora del equipo?\n\n${player.first_name} continuará registrada en el club y su historial no se eliminará.`,
     );
 
     if (!confirmed) return;
@@ -876,7 +877,7 @@ export const TeamDetail = () => {
                         className="player-remove-link"
                         onClick={(e) => handleRemovePlayer(e, player)}
                       >
-                        Quitar
+                        Quitar del equipo
                       </button>
                     </>
                   )}

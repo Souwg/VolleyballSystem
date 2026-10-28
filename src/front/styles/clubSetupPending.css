@@ -1,0 +1,12 @@
+.setup-pending-content {
+  text-align: left;
+}
+
+.setup-pending-club {
+  margin: 0;
+  padding: 14px 16px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  background: var(--color-surface-soft);
+  color: var(--color-text);
+}

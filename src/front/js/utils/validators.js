@@ -1,10 +1,21 @@
-export const validateClient = ({ full_name, email, club_name, state }) => {
+export const validateClient = ({
+  full_name,
+  email,
+  club_name,
+  sport_id,
+  country_id,
+  administrative_area_id,
+  city,
+  timezone,
+  currency_code,
+}) => {
   const errors = {};
 
   const cleanFullName = full_name?.trim() || "";
   const cleanEmail = email?.trim() || "";
   const cleanClubName = club_name?.trim() || "";
-  const cleanState = state?.trim() || "";
+  const cleanCity = city?.trim() || "";
+  const cleanTimezone = timezone?.trim() || "";
 
   if (!cleanFullName) {
     errors.FULL_NAME_REQUIRED = true;
@@ -20,8 +31,52 @@ export const validateClient = ({ full_name, email, club_name, state }) => {
     errors.CLUB_NAME_REQUIRED = true;
   }
 
-  if (!cleanState) {
-    errors.STATE_REQUIRED = true;
+  if (!sport_id) {
+    errors.SPORT_REQUIRED = true;
+  }
+
+  if (!country_id) {
+    errors.COUNTRY_REQUIRED = true;
+  }
+
+  if (!administrative_area_id) {
+    errors.ADMINISTRATIVE_AREA_REQUIRED = true;
+  }
+
+  if (!cleanCity) {
+    errors.CITY_REQUIRED = true;
+  } else if (cleanCity.length > 120) {
+    errors.CITY_TOO_LONG = true;
+  }
+
+  if (!cleanTimezone) {
+    errors.TIMEZONE_REQUIRED = true;
+  }
+
+  if (!currency_code) {
+    errors.CURRENCY_REQUIRED = true;
+  }
+
+  return errors;
+};
+
+export const validateClubUser = ({ full_name, email, role }) => {
+  const errors = {};
+  const cleanFullName = full_name?.trim() || "";
+  const cleanEmail = email?.trim() || "";
+
+  if (!cleanFullName) {
+    errors.FULL_NAME_REQUIRED = true;
+  }
+
+  if (!cleanEmail) {
+    errors.EMAIL_REQUIRED = true;
+  } else if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(cleanEmail)) {
+    errors.INVALID_EMAIL = true;
+  }
+
+  if (!["coach", "staff"].includes(role)) {
+    errors.INVALID_ROLE = true;
   }
 
   return errors;
@@ -29,35 +84,39 @@ export const validateClient = ({ full_name, email, club_name, state }) => {
 
 export const validateClubProfile = ({
   name,
-  location,
-  state,
+  city,
   defaultEnrollmentFee,
   defaultMonthlyFee,
 }) => {
   const errors = {};
 
   const cleanName = name?.trim() || "";
-  const cleanLocation = location?.trim() || "";
-  const cleanState = state?.trim() || "";
+  const cleanCity = city?.trim() || "";
 
   if (!cleanName) {
     errors.CLUB_NAME_REQUIRED = true;
   }
 
-  if (!cleanLocation) {
-    errors.LOCATION_REQUIRED = true;
+  if (!cleanCity) {
+    errors.CITY_REQUIRED = true;
+  } else if (cleanCity.length > 120) {
+    errors.CITY_TOO_LONG = true;
   }
 
-  if (!cleanState) {
-    errors.STATE_REQUIRED = true;
+  if (defaultEnrollmentFee !== "") {
+    const parsedEnrollmentFee = Number(defaultEnrollmentFee);
+
+    if (!Number.isFinite(parsedEnrollmentFee) || parsedEnrollmentFee < 0) {
+      errors.INVALID_DEFAULT_ENROLLMENT_FEE = true;
+    }
   }
 
-  if (defaultEnrollmentFee !== "" && Number(defaultEnrollmentFee) < 0) {
-    errors.INVALID_DEFAULT_ENROLLMENT_FEE = true;
-  }
+  if (defaultMonthlyFee !== "") {
+    const parsedMonthlyFee = Number(defaultMonthlyFee);
 
-  if (defaultMonthlyFee !== "" && Number(defaultMonthlyFee) < 0) {
-    errors.INVALID_DEFAULT_MONTHLY_FEE = true;
+    if (!Number.isFinite(parsedMonthlyFee) || parsedMonthlyFee < 0) {
+      errors.INVALID_DEFAULT_MONTHLY_FEE = true;
+    }
   }
 
   return errors;
@@ -304,6 +363,7 @@ export const validatePlayerPaymentSettings = ({
   initial_payment_mode = "",
   initial_enrollment_status = "",
   last_paid_month = "",
+  todayDate = "",
 }) => {
   const errors = {};
 
@@ -343,12 +403,7 @@ export const validatePlayerPaymentSettings = ({
     }
 
     if (cleanEnrollmentDate && initial_payment_mode === "import_history") {
-      const enrollmentDate = new Date(`${cleanEnrollmentDate}T00:00:00`);
-
-      const today = new Date();
-      today.setHours(0, 0, 0, 0);
-
-      if (enrollmentDate > today) {
+      if (todayDate && cleanEnrollmentDate > todayDate) {
         errors.INVALID_HISTORY_ENROLLMENT_DATE = true;
       }
     }
@@ -375,7 +430,10 @@ export const validatePlayerPaymentSettings = ({
 
     if (enrollment_fee === "" || enrollment_fee === null) {
       errors.ENROLLMENT_FEE_REQUIRED = true;
-    } else if (Number.isNaN(parsedEnrollmentFee) || parsedEnrollmentFee <= 0) {
+    } else if (
+      !Number.isFinite(parsedEnrollmentFee) ||
+      parsedEnrollmentFee <= 0
+    ) {
       errors.INVALID_ENROLLMENT_FEE = true;
     }
   }
@@ -393,7 +451,10 @@ export const validatePlayerPaymentSettings = ({
 
     if (monthly_fee === "" || monthly_fee === null) {
       errors.MONTHLY_FEE_REQUIRED = true;
-    } else if (Number.isNaN(parsedMonthlyFee) || parsedMonthlyFee <= 0) {
+    } else if (
+      !Number.isFinite(parsedMonthlyFee) ||
+      parsedMonthlyFee <= 0
+    ) {
       errors.INVALID_MONTHLY_FEE = true;
     }
   }
@@ -432,10 +493,11 @@ export const validatePlayerPaymentSettings = ({
             monthsDifference,
           );
 
-          const today = new Date();
-          today.setHours(0, 0, 0, 0);
+          const today = todayDate
+            ? new Date(`${todayDate}T00:00:00`)
+            : null;
 
-          if (selectedCycle > today) {
+          if (today && selectedCycle > today) {
             errors.LAST_PAID_MONTH_NOT_REACHED = true;
           }
         }
@@ -449,6 +511,7 @@ export const validatePlayerPaymentSettings = ({
 export const validatePaymentRegistration = ({
   payment_date,
   payment_method,
+  todayDate = "",
 }) => {
   const errors = {};
 
@@ -458,12 +521,7 @@ export const validatePaymentRegistration = ({
   if (!cleanPaymentDate) {
     errors.PAYMENT_DATE_REQUIRED = true;
   } else {
-    const selectedDate = new Date(`${cleanPaymentDate}T00:00:00`);
-    const today = new Date();
-
-    today.setHours(0, 0, 0, 0);
-
-    if (selectedDate > today) {
+    if (todayDate && cleanPaymentDate > todayDate) {
       errors.INVALID_PAYMENT_DATE = true;
     }
   }

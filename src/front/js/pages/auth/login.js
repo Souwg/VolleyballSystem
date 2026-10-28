@@ -6,6 +6,10 @@ import { Button } from "../../component/ui/button";
 import { Input } from "../../component/ui/input";
 import { validateLogin } from "../../utils/validators";
 import { errorMessages } from "../../utils/errorMessages";
+import {
+  getPostLoginPath,
+  getRoleLandingPath,
+} from "../../component/roleRedirect";
 
 export const Login = () => {
   const { actions } = useContext(Context);
@@ -47,11 +51,16 @@ export const Login = () => {
     const role = result.data.user.role;
 
     if (role === "system_admin") {
-      navigate("/admin/clients", { replace: true });
-    } else {
-      await actions.getOnboardingStatus();
-      navigate("/dashboard", { replace: true });
+      navigate(getRoleLandingPath(role), { replace: true });
+      return;
     }
+
+    const statusResult = await actions.getOnboardingStatus();
+    const onboardingStatus = statusResult?.ok
+      ? statusResult.data.status
+      : "pending";
+
+    navigate(getPostLoginPath(role, onboardingStatus), { replace: true });
   };
   return (
     <AuthLayout
@@ -70,7 +79,8 @@ export const Login = () => {
               errors.EMAIL_REQUIRED ||
               errors.INVALID_EMAIL ||
               errors.INVALID_CREDENTIALS ||
-              errors.ACCOUNT_DISABLED
+              errors.ACCOUNT_DISABLED ||
+              errors.CLUB_SUSPENDED
                 ? "input-error"
                 : ""
             }
@@ -82,6 +92,7 @@ export const Login = () => {
                 INVALID_EMAIL: false,
                 INVALID_CREDENTIALS: false,
                 ACCOUNT_DISABLED: false,
+                CLUB_SUSPENDED: false,
                 NETWORK_ERROR: false,
               }));
             }}
@@ -107,7 +118,8 @@ export const Login = () => {
               className={
                 errors.PASSWORD_REQUIRED ||
                 errors.INVALID_CREDENTIALS ||
-                errors.ACCOUNT_DISABLED
+                errors.ACCOUNT_DISABLED ||
+                errors.CLUB_SUSPENDED
                   ? "input-error"
                   : ""
               }
@@ -118,6 +130,7 @@ export const Login = () => {
                   PASSWORD_REQUIRED: false,
                   INVALID_CREDENTIALS: false,
                   ACCOUNT_DISABLED: false,
+                  CLUB_SUSPENDED: false,
                   NETWORK_ERROR: false,
                 }));
               }}
@@ -147,12 +160,15 @@ export const Login = () => {
         </div>
         {(errors.INVALID_CREDENTIALS ||
           errors.ACCOUNT_DISABLED ||
+          errors.CLUB_SUSPENDED ||
           errors.NETWORK_ERROR) && (
           <p className="form-error">
             {errors.INVALID_CREDENTIALS
               ? errorMessages.INVALID_CREDENTIALS
               : errors.ACCOUNT_DISABLED
               ? errorMessages.ACCOUNT_DISABLED
+              : errors.CLUB_SUSPENDED
+              ? errorMessages.CLUB_SUSPENDED
               : errorMessages.NETWORK_ERROR}
           </p>
         )}

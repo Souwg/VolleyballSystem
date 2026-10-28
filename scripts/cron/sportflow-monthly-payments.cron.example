@@ -1,0 +1,4 @@
+# Plantilla para el crontab del usuario operativo de SportFlow.
+# No se instala automáticamente.
+CRON_TZ=UTC
+15 3 * * * flock -n /opt/sportflow/logs/monthly-payments.lock /opt/sportflow/app/scripts/sync_monthly_payments.sh >> /opt/sportflow/logs/monthly-payments.log 2>&1

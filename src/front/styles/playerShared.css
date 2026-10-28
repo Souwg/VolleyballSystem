@@ -1,0 +1,71 @@
+.players-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.player-card {
+  padding: 14px;
+}
+
+.player-row {
+  width: 100%;
+}
+
+.player-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  width: 100%;
+}
+
+.player-header-clickable {
+  cursor: pointer;
+}
+
+.player-info {
+  min-width: 0;
+  flex: 1;
+}
+
+.player-name {
+  font-size: var(--font-size-md);
+  font-weight: var(--font-weight-bold);
+  color: var(--color-text);
+  margin-bottom: 4px;
+  overflow-wrap: break-word;
+}
+
+.player-meta {
+  font-size: var(--font-size-sm);
+  color: var(--color-muted);
+  margin-bottom: 0;
+}
+
+.player-card-side {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-shrink: 0;
+}
+
+.player-card-arrow {
+  color: var(--color-muted);
+  font-size: var(--font-size-lg);
+  font-weight: var(--font-weight-bold);
+}
+
+.selectable-player {
+  cursor: pointer;
+}
+
+.selectable-player:hover {
+  border-color: var(--color-primary);
+}
+
+@media (max-width: 767px) {
+  .player-card-side {
+    gap: 6px;
+  }
+}

@@ -36,7 +36,7 @@ textarea {
       rgba(30, 58, 138, 0.12) 0%,
       rgba(30, 58, 138, 0) 30%
     ),
-    linear-gradient(180deg, #b8c9e1 0%, #ccd8e8 38%, #f8fafc 100%);
+    linear-gradient(180deg, #b8c9e1 0%, #ccd8e8 38%, var(--color-bg) 100%);
   --color-surface: #ffffff;
   --color-surface-soft: #f1f5f9;
   /* Text */
@@ -56,6 +56,8 @@ textarea {
   --color-info: #3b82f6;
   --color-info-soft: #dbeafe;
   --color-success: #22c55e;
+  --color-success-soft: #dcfce7;
+  --color-success-dark: #15803d;
 
   /*Toast*/
   --color-toast-success: rgba(34, 197, 94, 0.95);
@@ -79,7 +81,6 @@ textarea {
   --font-size-xl: 22px;
   --font-size-2xl: 24px;
   --font-size-3xl: 30px;
-  --font-size-metric: 30px;
 
   --font-weight-medium: 500;
   --font-weight-semibold: 600;

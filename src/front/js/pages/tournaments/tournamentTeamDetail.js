@@ -5,6 +5,7 @@ import { PageHeader } from "../../component/ui/pageHeader";
 import { Button } from "../../component/ui/button";
 import { Card } from "../../component/ui/card";
 import { errorMessages } from "../../utils/errorMessages";
+import { formatMoney } from "../../utils/money";
 import {
   Users,
   Check,
@@ -14,14 +15,6 @@ import {
 } from "lucide-react";
 
 import "../../../styles/tournaments.css";
-
-const formatCurrency = (value) => {
-  return Number(value || 0).toLocaleString("es", {
-    style: "currency",
-    currency: "USD",
-    minimumFractionDigits: 2,
-  });
-};
 
 const getPaymentStatus = (status) => {
   const statuses = {
@@ -52,7 +45,7 @@ const getPaymentStatus = (status) => {
 };
 
 export const TournamentTeamDetail = () => {
-  const { actions } = useContext(Context);
+  const { store, actions } = useContext(Context);
   const { tournament_team_id } = useParams();
   const navigate = useNavigate();
 
@@ -137,6 +130,8 @@ export const TournamentTeamDetail = () => {
   }, [registrationFee, registeredCount]);
 
   const existingChargesCount = preview?.existing_charges_count || 0;
+  const canManageSports = ["club_owner", "coach"].includes(store.user?.role);
+  const canManageFinancial = store.user?.role === "club_owner";
 
   const allChargesCreated =
     Boolean(preview) &&
@@ -251,6 +246,7 @@ export const TournamentTeamDetail = () => {
 
   useEffect(() => {
     const canLoadPreview =
+      canManageFinancial &&
       !loadingPage &&
       !selectionChanged &&
       registeredCount > 0 &&
@@ -269,6 +265,7 @@ export const TournamentTeamDetail = () => {
     registeredCount,
     registrationFee,
     tournament_team_id,
+    canManageFinancial,
   ]);
 
   const handleGenerateCharges = async () => {
@@ -327,7 +324,9 @@ export const TournamentTeamDetail = () => {
   const team = tournamentTeam.team;
 
   const canEditPlayers =
-    tournamentTeam.status === "active" && tournament?.status === "active";
+    canManageSports &&
+    tournamentTeam.status === "active" &&
+    tournament?.status === "active";
 
   return (
     <div className="tournament-team-detail-page">
@@ -526,6 +525,7 @@ export const TournamentTeamDetail = () => {
         </Card>
       </section>
 
+      {canManageFinancial && (
       <section className="tournament-detail-section">
         <div className="tournament-section-title">
           <span className="tournament-section-step">2</span>
@@ -542,7 +542,9 @@ export const TournamentTeamDetail = () => {
         <Card className="tournament-cost-summary-card">
           <div>
             <span>Inscripción del equipo</span>
-            <strong>{formatCurrency(registrationFee)}</strong>
+            <strong>
+              {formatMoney(registrationFee, tournamentTeam.currency_code)}
+            </strong>
           </div>
 
           <div>
@@ -554,7 +556,10 @@ export const TournamentTeamDetail = () => {
             <span>Por deportista</span>
             <strong>
               {registeredCount > 0
-                ? formatCurrency(estimatedAmountPerPlayer)
+                ? formatMoney(
+                    estimatedAmountPerPlayer,
+                    tournamentTeam.currency_code,
+                  )
                 : "—"}
             </strong>
           </div>
@@ -652,7 +657,10 @@ export const TournamentTeamDetail = () => {
                     {preview.registered_players_count === 1
                       ? "cobro"
                       : "cobros"}{" "}
-                    de {formatCurrency(estimatedAmountPerPlayer)}
+                    de {formatMoney(
+                      estimatedAmountPerPlayer,
+                      preview.currency_code || tournamentTeam.currency_code,
+                    )}
                   </strong>
                 </div>
               )}
@@ -660,7 +668,12 @@ export const TournamentTeamDetail = () => {
               <div className="tournament-charge-summary">
                 <div>
                   <span>Monto total</span>
-                  <strong>{formatCurrency(preview.registration_fee)}</strong>
+                  <strong>
+                    {formatMoney(
+                      preview.registration_fee,
+                      preview.currency_code || tournamentTeam.currency_code,
+                    )}
+                  </strong>
                 </div>
 
                 <div>
@@ -670,7 +683,12 @@ export const TournamentTeamDetail = () => {
 
                 <div>
                   <span>Por deportista</span>
-                  <strong>{formatCurrency(estimatedAmountPerPlayer)}</strong>
+                  <strong>
+                    {formatMoney(
+                      estimatedAmountPerPlayer,
+                      preview.currency_code || tournamentTeam.currency_code,
+                    )}
+                  </strong>
                 </div>
               </div>
 
@@ -720,7 +738,13 @@ export const TournamentTeamDetail = () => {
                             </span>
                           )}
 
-                          <strong>{formatCurrency(row.amount)}</strong>
+                          <strong>
+                            {formatMoney(
+                              row.amount,
+                              preview.currency_code ||
+                                tournamentTeam.currency_code,
+                            )}
+                          </strong>
                         </div>
                       </div>
                     );
@@ -741,7 +765,10 @@ export const TournamentTeamDetail = () => {
                           preview.registered_players_count === 1
                             ? "cobro"
                             : "cobros"
-                        } de ${formatCurrency(estimatedAmountPerPlayer)}`}
+                        } de ${formatMoney(
+                          estimatedAmountPerPlayer,
+                          preview.currency_code || tournamentTeam.currency_code,
+                        )}`}
                   </Button>
                 ) : (
                   <Button type="button" onClick={handleGoToPayments}>
@@ -762,6 +789,7 @@ export const TournamentTeamDetail = () => {
           )}
         </Card>
       </section>
+      )}
     </div>
   );
 };

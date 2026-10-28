@@ -11,6 +11,7 @@ export const Sidebar = ({
   handleLogout,
   title,
   club,
+  homePath = "/dashboard",
 }) => {
   const location = useLocation();
 
@@ -30,7 +31,7 @@ export const Sidebar = ({
 
   return (
     <aside className={`sidebar ${menuOpen ? "open" : ""}`}>
-      <Link to="/dashboard" onClick={closeMenu} className="sidebar-brand">
+      <Link to={homePath} onClick={closeMenu} className="sidebar-brand">
         <img
           src={sportflowLogo}
           alt={title || "SportFlow"}

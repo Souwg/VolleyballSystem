@@ -56,48 +56,8 @@
 
 /* ===== PLAYER PAYMENT SECTIONS ===== */
 
-.player-payment-open-card {
-  position: relative;
-  overflow: hidden;
-  border-left: 4px solid var(--color-warning);
-}
-
-.player-payment-open-card.has-overdue {
-  border-left-color: var(--color-danger);
-}
-
-.player-payment-open-card.has-pending {
-  border-left-color: var(--color-warning);
-}
-
 .player-payment-open-card .payments-list {
   gap: 0;
-}
-
-.player-payment-open-row + .player-payment-open-row {
-  margin-top: 14px;
-  padding-top: 14px;
-  border-top: 1px solid var(--color-border);
-}
-
-.player-payment-open-card .payment-row-actions .button {
-  min-height: 44px;
-}
-
-.player-payment-section-count {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-
-  min-height: 24px;
-  padding: 4px 8px;
-
-  border-radius: 999px;
-  background: var(--color-surface-soft);
-
-  color: var(--color-muted);
-  font-size: var(--font-size-xs);
-  font-weight: var(--font-weight-semibold);
 }
 
 .player-payment-history-list {

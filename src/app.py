@@ -12,7 +12,7 @@ load_dotenv()
 
 
 from src.api.utils import APIException, generate_sitemap
-from src.api.models import db, TokenBlockedList
+from src.api.models import db, User, TokenBlockedList
 from src.api.routes import api
 from src.api.admin import setup_admin
 from src.api.commands import setup_commands
@@ -21,8 +21,26 @@ from src.api.commands import setup_commands
 # CREATE APP
 # -------------------------------------------------------------------
 
-ENV = os.getenv("APP_ENV", "production")
+ENV = (os.getenv("APP_ENV") or "production").strip().lower()
 static_file_dir = os.path.join(os.path.dirname(os.path.realpath(__file__)), '../public/')
+
+token_secret = (os.getenv("TOKEN_SECRET") or "").strip()
+if ENV != "development":
+    if (
+        len(token_secret) < 32
+        or len(set(token_secret)) == 1
+        or token_secret.lower() in {
+            "any key works",
+            "dev-secret-local",
+            "sample key"
+        }
+    ):
+        raise RuntimeError(
+            "TOKEN_SECRET es obligatorio en producción y debe tener al menos 32 caracteres"
+        )
+    jwt_secret = token_secret
+else:
+    jwt_secret = token_secret or os.getenv("FLASK_APP_KEY") or "dev-secret-local"
 
 app = Flask(__name__)
 app.url_map.strict_slashes = False
@@ -36,11 +54,7 @@ CORS(app, resources={r"/api/*": {"origins": "*"}}, supports_credentials=True)
 # -------------------------------------------------------------------
 # JWT CONFIG
 # -------------------------------------------------------------------
-app.config["JWT_SECRET_KEY"] = (
-    os.getenv("TOKEN_SECRET")
-    or os.getenv("FLASK_APP_KEY")
-    or "dev-secret-local"
-)
+app.config["JWT_SECRET_KEY"] = jwt_secret
 # Access corto (seguro)
 app.config["JWT_ACCESS_TOKEN_EXPIRES"] = timedelta(minutes=15)
 
@@ -58,7 +72,21 @@ jwt = JWTManager(app)
 def check_if_token_revoked(jwt_header, jwt_payload: dict) -> bool:
     jti = jwt_payload["jti"]
     token = TokenBlockedList.query.filter_by(jti=jti).first()
-    return token is not None
+
+    if token is not None:
+        return True
+
+    user = User.query.get(jwt_payload["sub"])
+
+    if not user:
+        return False
+
+    token_session_version = jwt_payload.get(
+        "session_version",
+        0
+    )
+
+    return token_session_version != user.session_version
 
 # -------------------------------------------------------------------
 # DATABASE
@@ -85,6 +113,15 @@ if ENV == "development":
 
 setup_commands(app)
 app.register_blueprint(api, url_prefix='/api')
+
+
+@app.route('/api/<path:path>', methods=['GET', 'POST'])
+def api_not_found(path):
+    return jsonify({
+        "error": True,
+        "message": "Recurso no encontrado",
+        "code": "NOT_FOUND"
+    }), 404
 
 # -------------------------------------------------------------------
 # ERROR HANDLER
@@ -126,6 +163,21 @@ def sitemap():
 
 @app.route('/<path:path>', methods=['GET'])
 def serve_any_other_file(path):
+    receipts_dir = os.path.realpath(
+        os.path.join(static_file_dir, 'uploads', 'receipts')
+    )
+    requested_file = os.path.realpath(os.path.join(static_file_dir, path))
+
+    if (
+        requested_file == receipts_dir
+        or requested_file.startswith(receipts_dir + os.sep)
+    ):
+        return jsonify({
+            "error": True,
+            "message": "Recibo no encontrado",
+            "code": "RECEIPT_NOT_FOUND"
+        }), 404
+
     if not os.path.isfile(os.path.join(static_file_dir, path)):
         path = 'index.html'
     response = send_from_directory(static_file_dir, path)

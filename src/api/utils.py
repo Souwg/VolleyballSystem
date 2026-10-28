@@ -45,7 +45,7 @@ def generate_sitemap(app):
         <p>Remember to specify a real endpoint path like: </p>
         <ul style="text-align: left;">"""+links_html+"</ul></div>"
 
-def get_current_user():
+def get_current_user(*, allow_first_login=False):
     """
     Obtiene el usuario autenticado usando el JWT.
     Lanza una APIException si el usuario no existe.
@@ -60,7 +60,35 @@ def get_current_user():
             status_code=404
         )
 
+    if not user.is_active:
+        raise APIException(
+            "Tu cuenta está desactivada. Contacta al administrador.",
+            status_code=403,
+            payload={"error": True, "code": "ACCOUNT_DISABLED"}
+        )
+
+    ensure_club_access(user)
+
+    if user.first_login is True and not allow_first_login:
+        raise APIException(
+            "Debes establecer tu nueva contraseña antes de continuar.",
+            status_code=403,
+            payload={"error": True, "code": "FIRST_LOGIN_REQUIRED"}
+        )
+
     return user
+
+
+def ensure_club_access(user):
+    if user.role == "system_admin":
+        return
+
+    if user.club and user.club.access_status == "suspended":
+        raise APIException(
+            "El acceso a este club se encuentra suspendido.",
+            status_code=403,
+            payload={"error": True, "code": "CLUB_SUSPENDED"}
+        )
 
 def error_response(message, code, status):
     return jsonify({
