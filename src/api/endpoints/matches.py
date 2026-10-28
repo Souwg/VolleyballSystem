@@ -24,7 +24,11 @@ from src.api.payment_charge_helpers import (
     parse_money,
     split_money_exactly,
 )
-from src.api.sports import get_club_sport_adapter
+from src.api.sports import (
+    InvalidClubSportError,
+    SportAdapterNotFoundError,
+    get_club_sport_adapter,
+)
 from src.api.stats_validator import validate_match_stats
 from src.api.utils import error_response, get_current_user
 
@@ -33,6 +37,26 @@ PLAYABLE_MATCH_STATUSES = ["present", "late"]
 VALID_MATCH_STEPS = [0, 1, 2, 3, 4]
 VALID_MATCH_TYPES = ["official", "friendly", "scrimmage"]
 VALID_MATCH_CAPTURE_MODES = ["live", "summary"]
+
+
+def _get_match_lineup_size(match):
+    try:
+        sport_adapter = get_club_sport_adapter(match.team.club)
+    except (InvalidClubSportError, SportAdapterNotFoundError):
+        return None
+
+    capabilities = getattr(sport_adapter, "capabilities", None)
+    lineup_size = getattr(capabilities, "lineup_size", None)
+
+    if (
+        not getattr(capabilities, "supports_lineup", False)
+        or isinstance(lineup_size, bool)
+        or not isinstance(lineup_size, int)
+        or lineup_size <= 0
+    ):
+        return None
+
+    return lineup_size
 
 
 def validate_match_result_values(home_sets_value, opponent_sets_value):
@@ -1628,6 +1652,15 @@ def save_starting_lineup(match_id):
             409
         )
 
+    lineup_size = _get_match_lineup_size(match)
+
+    if lineup_size is None:
+        return error_response(
+            "El deporte del club no tiene una alineación válida configurada.",
+            "MATCH_LINEUP_NOT_SUPPORTED",
+            409
+        )
+
     body = request.get_json() or {}
     players = body.get("players")
 
@@ -1638,9 +1671,12 @@ def save_starting_lineup(match_id):
             400
         )
 
-    if len(players) != 6:
+    if len(players) != lineup_size:
         return error_response(
-            "Debes seleccionar exactamente 6 jugadoras en cancha",
+            (
+                "Debes seleccionar exactamente "
+                f"{lineup_size} jugadoras en cancha"
+            ),
             "STARTING_LINEUP_MUST_HAVE_6",
             400
         )
@@ -1655,7 +1691,7 @@ def save_starting_lineup(match_id):
         if row.id in selected_ids:
             valid_rows.append(row)
 
-    if len(valid_rows) != 6:
+    if len(valid_rows) != lineup_size:
         return error_response(
             "Una o más jugadoras no pertenecen a este partido",
             "INVALID_STARTING_LINEUP",
