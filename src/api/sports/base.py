@@ -25,6 +25,7 @@ class PositionDefinition:
 class SportEventDefinition:
     code: str
     allowed_results: tuple[str, ...]
+    stat_updates: tuple[tuple[str, tuple[str, ...]], ...] = ()
 
 
 @dataclass(frozen=True)
@@ -78,3 +79,40 @@ class SportAdapter:
             return False, False
 
         return True, result in event.allowed_results
+
+    def get_event_stat_updates(self, code, result):
+        event = self.get_event_definition(code)
+
+        if event is None or result not in event.allowed_results:
+            raise LookupError
+
+        updates = next(
+            (
+                fields
+                for mapped_result, fields in event.stat_updates
+                if mapped_result == result
+            ),
+            None
+        )
+
+        if not updates:
+            raise NotImplementedError
+
+        return updates
+
+    def get_event_stat_fields(self):
+        if not self.events:
+            raise NotImplementedError
+
+        fields = []
+
+        for event in self.events:
+            for result in event.allowed_results:
+                for field in self.get_event_stat_updates(
+                    event.code,
+                    result,
+                ):
+                    if field not in fields:
+                        fields.append(field)
+
+        return tuple(fields)

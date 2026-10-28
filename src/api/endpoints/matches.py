@@ -401,7 +401,41 @@ def recalculate_player_match_stats(match_player_id):
     row = MatchPlayer.query.get(match_player_id)
 
     if not row:
-        return
+        return False
+
+    try:
+        sport_adapter = get_club_sport_adapter(row.match.team.club)
+        stat_fields = sport_adapter.get_event_stat_fields()
+    except (
+        InvalidClubSportError,
+        SportAdapterNotFoundError,
+        LookupError,
+        NotImplementedError,
+    ):
+        return False
+
+    if any(
+        not hasattr(PlayerMatchStat, field)
+        for field in stat_fields
+    ):
+        return False
+
+    events = MatchEvent.query.filter_by(
+        match_player_id=match_player_id
+    ).all()
+
+    planned_updates = []
+
+    try:
+        for event in events:
+            planned_updates.append(
+                sport_adapter.get_event_stat_updates(
+                    event.action_type,
+                    event.result,
+                )
+            )
+    except (LookupError, NotImplementedError):
+        return False
 
     stat = PlayerMatchStat.query.filter_by(
         match_player_id=match_player_id
@@ -411,106 +445,14 @@ def recalculate_player_match_stats(match_player_id):
         stat = PlayerMatchStat(match_player_id=match_player_id)
         db.session.add(stat)
 
+    for field in stat_fields:
+        setattr(stat, field, 0)
 
-    events = MatchEvent.query.filter_by(
-        match_player_id=match_player_id
-    ).all()
+    for updates in planned_updates:
+        for field in updates:
+            setattr(stat, field, getattr(stat, field) + 1)
 
-    # Reset stats
-    stat.attacks_total = 0
-    stat.attacks_positive = 0
-    stat.attacks_neutral = 0
-    stat.attacks_errors = 0
-
-    stat.receptions_total = 0
-    stat.receptions_positive = 0
-    stat.receptions_neutral = 0
-    stat.receptions_negative = 0
-
-    stat.defenses_total = 0
-    stat.defenses_positive = 0
-    stat.defenses_neutral = 0
-    stat.defenses_negative = 0
-
-    stat.sets_total = 0
-    stat.sets_positive = 0
-    stat.sets_neutral = 0
-    stat.sets_errors = 0
-
-    stat.serves_total = 0
-    stat.serves_in = 0
-    stat.serves_aces = 0
-    stat.serves_errors = 0
-
-    stat.blocks_total = 0
-    stat.blocks_points = 0
-    stat.blocks_neutral = 0
-    stat.blocks_errors = 0
-
-
-    for event in events:
-        action = event.action_type
-        result = event.result
-
-        if action == "attack":
-            stat.attacks_total += 1
-
-            if result == "positive":
-                stat.attacks_positive += 1
-            elif result == "neutral":
-                stat.attacks_neutral += 1
-            elif result == "error":
-                stat.attacks_errors += 1
-
-        elif action == "reception":
-            stat.receptions_total += 1
-
-            if result == "positive":
-                stat.receptions_positive += 1
-            elif result == "neutral":
-                stat.receptions_neutral += 1
-            elif result == "negative":
-                stat.receptions_negative += 1
-
-        elif action == "defense":
-            stat.defenses_total += 1
-
-            if result == "positive":
-                stat.defenses_positive += 1
-            elif result == "neutral":
-                stat.defenses_neutral += 1
-            elif result == "negative":
-                stat.defenses_negative += 1
-
-        elif action == "set":
-            stat.sets_total += 1
-
-            if result == "positive":
-                stat.sets_positive += 1
-            elif result == "neutral":
-                stat.sets_neutral += 1
-            elif result == "error":
-                stat.sets_errors += 1
-
-        elif action == "serve":
-            stat.serves_total += 1
-
-            if result == "ace":
-                stat.serves_aces += 1
-            elif result == "in":
-                stat.serves_in += 1
-            elif result == "error":
-                stat.serves_errors += 1
-
-        elif action == "block":
-            stat.blocks_total += 1
-
-            if result == "point":
-                stat.blocks_points += 1
-            elif result == "neutral":
-                stat.blocks_neutral += 1
-            elif result == "error":
-                stat.blocks_errors += 1
+    return True
 
 
 ############################################# MATCHES #############################################
@@ -2570,7 +2512,13 @@ def create_match_event():
     db.session.add(event)
     db.session.flush()
 
-    recalculate_player_match_stats(match_player_id)
+    if not recalculate_player_match_stats(match_player_id):
+        db.session.rollback()
+        return error_response(
+            "El deporte del club no tiene eventos válidos configurados.",
+            "MATCH_EVENT_RULES_NOT_SUPPORTED",
+            409
+        )
 
     db.session.commit()
 
@@ -2633,7 +2581,13 @@ def delete_match_event(event_id):
     db.session.delete(event)
     db.session.flush()
 
-    recalculate_player_match_stats(match_player_id)
+    if not recalculate_player_match_stats(match_player_id):
+        db.session.rollback()
+        return error_response(
+            "El deporte del club no tiene eventos válidos configurados.",
+            "MATCH_EVENT_RULES_NOT_SUPPORTED",
+            409
+        )
 
     db.session.commit()
 

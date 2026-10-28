@@ -34,26 +34,56 @@ VOLLEYBALL_EVENTS = (
     SportEventDefinition(
         code="attack",
         allowed_results=("positive", "neutral", "error"),
+        stat_updates=(
+            ("positive", ("attacks_total", "attacks_positive")),
+            ("neutral", ("attacks_total", "attacks_neutral")),
+            ("error", ("attacks_total", "attacks_errors")),
+        ),
     ),
     SportEventDefinition(
         code="reception",
         allowed_results=("positive", "neutral", "negative"),
+        stat_updates=(
+            ("positive", ("receptions_total", "receptions_positive")),
+            ("neutral", ("receptions_total", "receptions_neutral")),
+            ("negative", ("receptions_total", "receptions_negative")),
+        ),
     ),
     SportEventDefinition(
         code="defense",
         allowed_results=("positive", "neutral", "negative"),
+        stat_updates=(
+            ("positive", ("defenses_total", "defenses_positive")),
+            ("neutral", ("defenses_total", "defenses_neutral")),
+            ("negative", ("defenses_total", "defenses_negative")),
+        ),
     ),
     SportEventDefinition(
         code="set",
         allowed_results=("positive", "neutral", "error"),
+        stat_updates=(
+            ("positive", ("sets_total", "sets_positive")),
+            ("neutral", ("sets_total", "sets_neutral")),
+            ("error", ("sets_total", "sets_errors")),
+        ),
     ),
     SportEventDefinition(
         code="serve",
         allowed_results=("ace", "in", "error"),
+        stat_updates=(
+            ("ace", ("serves_total", "serves_aces")),
+            ("in", ("serves_total", "serves_in")),
+            ("error", ("serves_total", "serves_errors")),
+        ),
     ),
     SportEventDefinition(
         code="block",
         allowed_results=("point", "neutral", "error"),
+        stat_updates=(
+            ("point", ("blocks_total", "blocks_points")),
+            ("neutral", ("blocks_total", "blocks_neutral")),
+            ("error", ("blocks_total", "blocks_errors")),
+        ),
     ),
 )
 

@@ -62,6 +62,22 @@ def test_volleyball_event_catalog_is_frozen():
     )
 
 
+def test_every_volleyball_event_result_has_a_valid_stat_mapping():
+    adapter = VolleyballAdapter()
+
+    for event in adapter.events:
+        assert tuple(
+            result
+            for result, _fields in event.stat_updates
+        ) == event.allowed_results
+
+        for result in event.allowed_results:
+            fields = adapter.get_event_stat_updates(event.code, result)
+
+            assert fields
+            assert set(fields) <= set(STAT_FIELDS)
+
+
 @pytest.mark.parametrize("action,result,total_field,result_field", EVENT_CASES)
 def test_each_event_updates_exact_counters(
     client, world, auth_headers, match_factory, action, result, total_field, result_field
@@ -78,6 +94,52 @@ def test_each_event_updates_exact_counters(
     stat = PlayerMatchStat.query.filter_by(match_player_id=created.rows[0].id).one()
     nonzero = {field: getattr(stat, field) for field in STAT_FIELDS if getattr(stat, field)}
     assert nonzero == {total_field: 1, result_field: 1}
+
+
+def test_event_sequence_accumulates_all_expected_counters(
+    client, world, auth_headers, match_factory
+):
+    created = match_factory(world, on_court_count=1)
+    headers = auth_headers(world.owner_a)
+    events = (
+        ("attack", "positive"),
+        ("attack", "positive"),
+        ("attack", "error"),
+        ("serve", "ace"),
+        ("block", "point"),
+    )
+
+    for action, result in events:
+        response = client.post(
+            "/api/match-events",
+            headers=headers,
+            json=event_payload(
+                created.match,
+                created.rows[0],
+                action,
+                result,
+            ),
+        )
+        assert response.status_code == 201
+
+    stat = PlayerMatchStat.query.filter_by(
+        match_player_id=created.rows[0].id
+    ).one()
+    nonzero = {
+        field: getattr(stat, field)
+        for field in STAT_FIELDS
+        if getattr(stat, field)
+    }
+
+    assert nonzero == {
+        "attacks_total": 3,
+        "attacks_positive": 2,
+        "attacks_errors": 1,
+        "serves_total": 1,
+        "serves_aces": 1,
+        "blocks_total": 1,
+        "blocks_points": 1,
+    }
 
 
 @pytest.mark.parametrize(
@@ -234,6 +296,46 @@ def test_adapter_without_event_support_fails_explicitly(
     assert MatchEvent.query.count() == 0
 
 
+def test_adapter_without_stat_mapping_rolls_back_event(
+    client,
+    world,
+    auth_headers,
+    match_factory,
+    monkeypatch,
+):
+    volleyball = VolleyballAdapter()
+    adapter = SportAdapter(
+        code="TEST_EVENTS_WITHOUT_STATS",
+        name="Deporte sin mapping estadístico",
+        capabilities=volleyball.capabilities,
+        positions=volleyball.positions,
+        events=(
+            SportEventDefinition(
+                code="goal",
+                allowed_results=("scored",),
+            ),
+        ),
+    )
+    register_event_adapter(monkeypatch, world, adapter)
+    created = match_factory(world, on_court_count=1)
+
+    response = client.post(
+        "/api/match-events",
+        headers=auth_headers(world.owner_a),
+        json=event_payload(
+            created.match,
+            created.rows[0],
+            "goal",
+            "scored",
+        ),
+    )
+
+    assert response.status_code == 409
+    assert response.get_json()["code"] == "MATCH_EVENT_RULES_NOT_SUPPORTED"
+    assert MatchEvent.query.count() == 0
+    assert PlayerMatchStat.query.count() == 0
+
+
 def test_event_endpoint_uses_club_sport_adapter_catalog(
     client,
     world,
@@ -251,6 +353,10 @@ def test_event_endpoint_uses_club_sport_adapter_catalog(
             SportEventDefinition(
                 code="goal",
                 allowed_results=("scored", "missed"),
+                stat_updates=(
+                    ("scored", ("blocks_total", "blocks_points")),
+                    ("missed", ("serves_total", "serves_errors")),
+                ),
             ),
         ),
     )
@@ -298,6 +404,21 @@ def test_event_endpoint_uses_club_sport_adapter_catalog(
     assert invalid_result.status_code == 400
     assert invalid_result.get_json()["code"] == "INVALID_EVENT_RESULT"
     assert MatchEvent.query.count() == 2
+
+    stat = PlayerMatchStat.query.filter_by(
+        match_player_id=created.rows[0].id
+    ).one()
+    nonzero = {
+        field: getattr(stat, field)
+        for field in STAT_FIELDS
+        if getattr(stat, field)
+    }
+    assert nonzero == {
+        "blocks_total": 1,
+        "blocks_points": 1,
+        "serves_total": 1,
+        "serves_errors": 1,
+    }
 
 
 @pytest.mark.parametrize(
