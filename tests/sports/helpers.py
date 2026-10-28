@@ -1,4 +1,11 @@
+from dataclasses import replace
+
 from src.api.models import PlayerMatchStat, db
+from src.api.sports import (
+    SportAdapter,
+    VolleyballAdapter,
+    sport_adapter_registry,
+)
 
 
 STAT_FIELDS = [
@@ -19,6 +26,39 @@ def event_payload(match, row, action="attack", result="positive", set_number=1):
         "result": result,
         "set_number": set_number,
     }
+
+
+def register_test_period_adapter(
+    monkeypatch,
+    world,
+    *,
+    period_min,
+    period_max,
+    supports_periods=True,
+):
+    code = "TEST_PERIODS"
+    volleyball = VolleyballAdapter()
+    adapter = SportAdapter(
+        code=code,
+        name="Deporte de prueba",
+        capabilities=replace(
+            volleyball.capabilities,
+            supports_periods=supports_periods,
+            period_min=period_min,
+            period_max=period_max,
+        ),
+        positions=volleyball.positions,
+    )
+
+    monkeypatch.setitem(
+        sport_adapter_registry._adapters,
+        code,
+        adapter,
+    )
+    world.sport.code = code
+    db.session.commit()
+
+    return adapter
 
 
 def zero_stats():

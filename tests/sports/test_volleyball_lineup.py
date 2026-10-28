@@ -16,6 +16,7 @@ from src.api.sports import (
     VolleyballAdapter,
     sport_adapter_registry,
 )
+from tests.sports.helpers import register_test_period_adapter
 
 
 def _lineup(client, headers, created, rows):
@@ -291,6 +292,47 @@ def test_invalid_substitution_set_is_rejected(
     )
     assert response.status_code == 400
     assert response.get_json()["code"] == "INVALID_SET_NUMBER"
+
+
+@pytest.mark.parametrize(
+    "set_number,expected_status",
+    [(1, 400), (2, 201), (4, 201), (5, 400)],
+)
+def test_substitution_uses_adapter_period_range(
+    client,
+    world,
+    auth_headers,
+    match_factory,
+    monkeypatch,
+    set_number,
+    expected_status,
+):
+    register_test_period_adapter(
+        monkeypatch,
+        world,
+        period_min=2,
+        period_max=4,
+    )
+    created = match_factory(world, on_court_count=6)
+
+    response = client.post(
+        f"/api/matches/{created.match.id}/substitutions",
+        headers=auth_headers(world.owner_a),
+        json={
+            "player_out_id": created.rows[0].id,
+            "player_in_id": created.rows[6].id,
+            "set_number": set_number,
+        },
+    )
+
+    assert response.status_code == expected_status
+
+    if expected_status == 400:
+        assert response.get_json()["code"] == "INVALID_SET_NUMBER"
+    else:
+        assert response.get_json()["substitution"]["set_number"] == (
+            set_number
+        )
 
 
 @pytest.mark.parametrize(

@@ -210,6 +210,8 @@ export const errorMessages = {
     "Los eventos no están disponibles en el modo resumen.",
   MATCH_LINEUP_NOT_SUPPORTED:
     "El deporte del club no tiene una alineación válida configurada.",
+  MATCH_PERIODS_NOT_SUPPORTED:
+    "El deporte del club no tiene períodos válidos configurados.",
 
   PLAYER_NOT_CALLED: "La jugadora no está convocada para este partido.",
   PLAYER_NOT_ELIGIBLE_FOR_PARTICIPATION:

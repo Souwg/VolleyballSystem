@@ -1,7 +1,11 @@
 import pytest
 
 from src.api.models import MatchEvent, PlayerMatchStat, db
-from tests.sports.helpers import STAT_FIELDS, event_payload
+from tests.sports.helpers import (
+    STAT_FIELDS,
+    event_payload,
+    register_test_period_adapter,
+)
 
 
 EVENT_CASES = [
@@ -78,6 +82,129 @@ def test_event_accepts_boundary_sets(
     )
     assert response.status_code == 201
     assert response.get_json()["event"]["set_number"] == set_number
+
+
+@pytest.mark.parametrize(
+    "set_number,expected_status",
+    [(1, 400), (2, 201), (4, 201), (5, 400)],
+)
+def test_event_uses_adapter_period_range(
+    client,
+    world,
+    auth_headers,
+    match_factory,
+    monkeypatch,
+    set_number,
+    expected_status,
+):
+    adapter = register_test_period_adapter(
+        monkeypatch,
+        world,
+        period_min=2,
+        period_max=4,
+    )
+    created = match_factory(world, on_court_count=1)
+
+    response = client.post(
+        "/api/match-events",
+        headers=auth_headers(world.owner_a),
+        json=event_payload(
+            created.match,
+            created.rows[0],
+            "serve",
+            "in",
+            set_number,
+        ),
+    )
+
+    assert adapter.capabilities.period_min == 2
+    assert adapter.capabilities.period_max == 4
+    assert response.status_code == expected_status
+
+    if expected_status == 400:
+        assert response.get_json()["code"] == "INVALID_SET_NUMBER"
+    else:
+        assert response.get_json()["event"]["set_number"] == set_number
+
+
+def test_event_defaults_to_adapter_period_min(
+    client,
+    world,
+    auth_headers,
+    match_factory,
+    monkeypatch,
+):
+    register_test_period_adapter(
+        monkeypatch,
+        world,
+        period_min=2,
+        period_max=4,
+    )
+    created = match_factory(world, on_court_count=1)
+    payload = event_payload(created.match, created.rows[0])
+    payload.pop("set_number")
+
+    response = client.post(
+        "/api/match-events",
+        headers=auth_headers(world.owner_a),
+        json=payload,
+    )
+
+    assert response.status_code == 201
+    assert response.get_json()["event"]["set_number"] == 2
+
+
+def test_event_missing_adapter_does_not_fallback_to_volleyball_range(
+    client,
+    world,
+    auth_headers,
+    match_factory,
+):
+    world.sport.code = "UNREGISTERED"
+    db.session.commit()
+    created = match_factory(world, on_court_count=1)
+
+    response = client.post(
+        "/api/match-events",
+        headers=auth_headers(world.owner_a),
+        json=event_payload(created.match, created.rows[0]),
+    )
+
+    assert response.status_code == 409
+    assert response.get_json()["code"] == "MATCH_PERIODS_NOT_SUPPORTED"
+
+
+@pytest.mark.parametrize(
+    "supports_periods,period_min,period_max",
+    [(False, 1, 5), (True, 5, 1), (True, True, 5)],
+)
+def test_invalid_period_capabilities_fail_explicitly(
+    client,
+    world,
+    auth_headers,
+    match_factory,
+    monkeypatch,
+    supports_periods,
+    period_min,
+    period_max,
+):
+    register_test_period_adapter(
+        monkeypatch,
+        world,
+        supports_periods=supports_periods,
+        period_min=period_min,
+        period_max=period_max,
+    )
+    created = match_factory(world, on_court_count=1)
+
+    response = client.post(
+        "/api/match-events",
+        headers=auth_headers(world.owner_a),
+        json=event_payload(created.match, created.rows[0]),
+    )
+
+    assert response.status_code == 409
+    assert response.get_json()["code"] == "MATCH_PERIODS_NOT_SUPPORTED"
 
 
 def test_event_for_bench_player_is_rejected(client, world, auth_headers, match_factory):

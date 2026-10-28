@@ -59,6 +59,29 @@ def _get_match_lineup_size(match):
     return lineup_size
 
 
+def _get_match_period_range(match):
+    try:
+        sport_adapter = get_club_sport_adapter(match.team.club)
+    except (InvalidClubSportError, SportAdapterNotFoundError):
+        return None
+
+    capabilities = getattr(sport_adapter, "capabilities", None)
+    period_min = getattr(capabilities, "period_min", None)
+    period_max = getattr(capabilities, "period_max", None)
+
+    if (
+        not getattr(capabilities, "supports_periods", False)
+        or isinstance(period_min, bool)
+        or isinstance(period_max, bool)
+        or not isinstance(period_min, int)
+        or not isinstance(period_max, int)
+        or period_min > period_max
+    ):
+        return None
+
+    return period_min, period_max
+
+
 def validate_match_result_values(home_sets_value, opponent_sets_value):
     def parse_integer_set(value):
         if isinstance(value, bool):
@@ -1792,13 +1815,24 @@ def create_match_substitution(match_id):
             409
         )
 
+    period_range = _get_match_period_range(match)
+
+    if period_range is None:
+        return error_response(
+            "El deporte del club no tiene períodos válidos configurados.",
+            "MATCH_PERIODS_NOT_SUPPORTED",
+            409
+        )
+
+    period_min, period_max = period_range
+
     body = request.get_json() or {}
 
     player_out_id = body.get("player_out_id")
     player_in_id = body.get("player_in_id")
 
     try:
-        set_number = int(body.get("set_number", 1))
+        set_number = int(body.get("set_number", period_min))
     except (TypeError, ValueError):
         return error_response(
             "Set inválido",
@@ -1806,9 +1840,9 @@ def create_match_substitution(match_id):
             400
         )
 
-    if set_number < 1 or set_number > 5:
+    if set_number < period_min or set_number > period_max:
         return error_response(
-            "El set debe estar entre 1 y 5",
+            f"El set debe estar entre {period_min} y {period_max}",
             "INVALID_SET_NUMBER",
             400
         )
@@ -2420,23 +2454,18 @@ def create_match_event():
     match_player_id = body.get("match_player_id")
     action = body.get("action_type")
     result = body.get("result")
+    set_number_was_provided = "set_number" in body
+    set_number = None
 
-    try:
-        set_number = int(body.get("set_number", 1))
-    except (TypeError, ValueError):
-        return error_response(
-            "Set inválido",
-            "INVALID_SET_NUMBER",
-            400
-        )
-
-    if set_number < 1 or set_number > 5:
-        return error_response(
-            "El set debe estar entre 1 y 5",
-            "INVALID_SET_NUMBER",
-            400
-        )
-
+    if set_number_was_provided:
+        try:
+            set_number = int(body.get("set_number"))
+        except (TypeError, ValueError):
+            return error_response(
+                "Set inválido",
+                "INVALID_SET_NUMBER",
+                400
+            )
 
     if not match_id or not match_player_id:
         return error_response(
@@ -2482,6 +2511,27 @@ def create_match_event():
             "El partido ya está finalizado y no admite nuevos eventos.",
             "MATCH_COMPLETED",
             409
+        )
+
+    period_range = _get_match_period_range(match)
+
+    if period_range is None:
+        return error_response(
+            "El deporte del club no tiene períodos válidos configurados.",
+            "MATCH_PERIODS_NOT_SUPPORTED",
+            409
+        )
+
+    period_min, period_max = period_range
+
+    if not set_number_was_provided:
+        set_number = period_min
+
+    if set_number < period_min or set_number > period_max:
+        return error_response(
+            f"El set debe estar entre {period_min} y {period_max}",
+            "INVALID_SET_NUMBER",
+            400
         )
 
     mode_error = capture_mode_write_error(match, "live")
