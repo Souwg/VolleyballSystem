@@ -82,65 +82,36 @@ def _get_match_period_range(match):
     return period_min, period_max
 
 
-def validate_match_result_values(home_sets_value, opponent_sets_value):
-    def parse_integer_set(value):
-        if isinstance(value, bool):
-            raise ValueError
-
-        if isinstance(value, int):
-            return value
-
-        if isinstance(value, float):
-            if not value.is_integer():
-                raise ValueError
-
-            return int(value)
-
-        if isinstance(value, str):
-            return int(value)
-
-        raise TypeError
-
+def _validate_match_result(match, home_value, opponent_value):
     try:
-        home_sets = parse_integer_set(home_sets_value)
-        opponent_sets = parse_integer_set(opponent_sets_value)
-    except (TypeError, ValueError):
-        return None, "Los sets deben ser números enteros"
-
-    if home_sets < 0 or opponent_sets < 0:
-        return None, "Los sets no pueden ser negativos"
-
-    if home_sets > 3 or opponent_sets > 3:
-        return None, "Ningún equipo puede superar 3 sets"
-
-    if home_sets == opponent_sets:
-        return None, "No puede haber empate en sets"
-
-    if max(home_sets, opponent_sets) != 3:
-        return None, "Uno de los equipos debe ganar 3 sets"
-
-    if min(home_sets, opponent_sets) > 2:
-        return None, "El equipo perdedor no puede superar 2 sets"
-
-    return (home_sets, opponent_sets), None
+        sport_adapter = get_club_sport_adapter(match.team.club)
+        return sport_adapter.validate_match_result(home_value, opponent_value)
+    except (
+        InvalidClubSportError,
+        SportAdapterNotFoundError,
+        NotImplementedError,
+    ):
+        return None, None
 
 
-def match_has_valid_result(match):
+def match_has_valid_result(match, validated_result=None):
     if not match or match.result not in ["win", "loss"]:
         return False
 
-    validated_result, validation_error = validate_match_result_values(
-        match.home_sets,
-        match.opponent_sets
-    )
+    if validated_result is None:
+        validated_result, validation_error = _validate_match_result(
+            match,
+            match.home_sets,
+            match.opponent_sets
+        )
 
-    if validation_error:
+        if validation_error:
+            return False
+
+    if validated_result is None:
         return False
 
-    home_sets, opponent_sets = validated_result
-    expected_result = "win" if home_sets > opponent_sets else "loss"
-
-    return match.result == expected_result
+    return match.result == validated_result.result
 
 
 
@@ -2343,10 +2314,18 @@ def update_match_result(match_id):
 
     body = request.get_json() or {}
 
-    validated_result, validation_error = validate_match_result_values(
+    validated_result, validation_error = _validate_match_result(
+        match,
         body.get("home_sets", 0),
         body.get("opponent_sets", 0)
     )
+
+    if validated_result is None and validation_error is None:
+        return error_response(
+            "El deporte del club no tiene una validación de resultado configurada.",
+            "MATCH_RESULT_NOT_SUPPORTED",
+            409
+        )
 
     if validation_error:
         return error_response(
@@ -2355,11 +2334,9 @@ def update_match_result(match_id):
             400
         )
 
-    home_sets, opponent_sets = validated_result
-
-    match.home_sets = home_sets
-    match.opponent_sets = opponent_sets
-    match.result = "win" if home_sets > opponent_sets else "loss"
+    match.home_sets = validated_result.home_value
+    match.opponent_sets = validated_result.opponent_value
+    match.result = validated_result.result
 
     db.session.commit()
 
@@ -2397,7 +2374,20 @@ def finalize_match(match_id):
             403
         )
 
-    if not match_has_valid_result(match):
+    validated_result, validation_error = _validate_match_result(
+        match,
+        match.home_sets,
+        match.opponent_sets
+    )
+
+    if validated_result is None and validation_error is None:
+        return error_response(
+            "El deporte del club no tiene una validación de resultado configurada.",
+            "MATCH_RESULT_NOT_SUPPORTED",
+            409
+        )
+
+    if validation_error or not match_has_valid_result(match, validated_result):
         return error_response(
             "Debes guardar un resultado válido antes de finalizar el partido.",
             "MATCH_RESULT_INCOMPLETE",

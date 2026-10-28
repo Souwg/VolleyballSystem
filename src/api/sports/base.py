@@ -22,6 +22,13 @@ class PositionDefinition:
 
 
 @dataclass(frozen=True)
+class ValidatedMatchResult:
+    home_value: int
+    opponent_value: int
+    result: str
+
+
+@dataclass(frozen=True)
 class SportAdapter:
     code: str
     name: str
@@ -40,3 +47,6 @@ class SportAdapter:
             ),
             None
         )
+
+    def validate_match_result(self, home_value, opponent_value):
+        raise NotImplementedError

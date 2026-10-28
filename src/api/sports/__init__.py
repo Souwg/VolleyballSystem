@@ -2,6 +2,7 @@ from src.api.sports.base import (
     PositionDefinition,
     SportAdapter,
     SportCapabilities,
+    ValidatedMatchResult,
 )
 from src.api.sports.registry import (
     DuplicateSportAdapterError,
@@ -25,6 +26,7 @@ __all__ = [
     "SportAdapterNotFoundError",
     "SportAdapterRegistry",
     "SportCapabilities",
+    "ValidatedMatchResult",
     "VolleyballAdapter",
     "get_club_sport_adapter",
     "get_sport_adapter",

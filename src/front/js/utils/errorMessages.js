@@ -195,6 +195,8 @@ export const errorMessages = {
     "Resultado inválido. Debe ser máximo 5 sets y uno de los equipos debe llegar a 3.",
   MATCH_RESULT_INCOMPLETE:
     "Debes guardar un resultado válido antes de finalizar el partido.",
+  MATCH_RESULT_NOT_SUPPORTED:
+    "El deporte del club no tiene una validación de resultado configurada.",
   MATCH_FINALIZED:
     "El partido ya fue finalizado y no puede modificarse.",
   INVALID_MATCH_CAPTURE_MODE: "Selecciona un modo de captura válido.",
