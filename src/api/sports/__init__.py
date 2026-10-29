@@ -3,6 +3,7 @@ from src.api.sports.base import (
     SportAdapter,
     SportCapabilities,
     SportEventDefinition,
+    SummaryStatGroupDefinition,
     ValidatedMatchResult,
 )
 from src.api.sports.registry import (
@@ -28,6 +29,7 @@ __all__ = [
     "SportAdapterRegistry",
     "SportCapabilities",
     "SportEventDefinition",
+    "SummaryStatGroupDefinition",
     "ValidatedMatchResult",
     "VolleyballAdapter",
     "get_club_sport_adapter",

@@ -29,6 +29,13 @@ class SportEventDefinition:
 
 
 @dataclass(frozen=True)
+class SummaryStatGroupDefinition:
+    total_field: str
+    component_fields: tuple[str, ...]
+    error_code: str
+
+
+@dataclass(frozen=True)
 class ValidatedMatchResult:
     home_value: int
     opponent_value: int
@@ -42,6 +49,7 @@ class SportAdapter:
     capabilities: SportCapabilities
     positions: tuple[PositionDefinition, ...]
     events: tuple[SportEventDefinition, ...] = ()
+    summary_stat_groups: tuple[SummaryStatGroupDefinition, ...] = ()
 
     def has_position(self, code):
         return self.get_position(code) is not None
@@ -116,3 +124,79 @@ class SportAdapter:
                         fields.append(field)
 
         return tuple(fields)
+
+    def _get_valid_summary_stat_groups(self):
+        if (
+            not self.capabilities.supports_summary_stats
+            or not self.summary_stat_groups
+        ):
+            raise NotImplementedError
+
+        used_fields = set()
+
+        for group in self.summary_stat_groups:
+            if not isinstance(group, SummaryStatGroupDefinition):
+                raise ValueError
+
+            if (
+                not isinstance(group.total_field, str)
+                or not group.total_field.strip()
+                or not isinstance(group.component_fields, tuple)
+                or not group.component_fields
+                or not isinstance(group.error_code, str)
+                or not group.error_code.strip()
+            ):
+                raise ValueError
+
+            group_fields = (
+                group.total_field,
+                *group.component_fields,
+            )
+
+            if any(
+                not isinstance(field, str) or not field.strip()
+                for field in group_fields
+            ):
+                raise ValueError
+
+            if (
+                len(set(group_fields)) != len(group_fields)
+                or used_fields.intersection(group_fields)
+            ):
+                raise ValueError
+
+            used_fields.update(group_fields)
+
+        return self.summary_stat_groups
+
+    def get_summary_stat_fields(self):
+        fields = []
+
+        for group in self._get_valid_summary_stat_groups():
+            fields.append(group.total_field)
+            fields.extend(group.component_fields)
+
+        return tuple(fields)
+
+    def validate_summary_stats(self, payload):
+        groups = self._get_valid_summary_stat_groups()
+
+        def to_int(value):
+            try:
+                return max(0, int(value))
+            except:
+                return 0
+
+        stats = {
+            field: to_int(payload.get(field))
+            for field in self.get_summary_stat_fields()
+        }
+
+        for group in groups:
+            if stats[group.total_field] != sum(
+                stats[field]
+                for field in group.component_fields
+            ):
+                return None, group.error_code
+
+        return stats, None

@@ -208,6 +208,8 @@ export const errorMessages = {
     "Este partido tiene estadísticas históricas cuyo origen debe revisarse antes de permitir cambios.",
   MATCH_STATS_MANAGED_BY_LIVE:
     "Las estadísticas de este partido se generan desde LiveMatch.",
+  MATCH_SUMMARY_STATS_NOT_SUPPORTED:
+    "El deporte del club no tiene estadísticas resumen válidas configuradas.",
   MATCH_EVENTS_NOT_AVAILABLE:
     "Los eventos no están disponibles en el modo resumen.",
   MATCH_EVENT_RULES_NOT_SUPPORTED:

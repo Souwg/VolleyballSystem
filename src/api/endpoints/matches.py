@@ -29,7 +29,6 @@ from src.api.sports import (
     SportAdapterNotFoundError,
     get_club_sport_adapter,
 )
-from src.api.stats_validator import validate_match_stats
 from src.api.utils import error_response, get_current_user
 
 VALID_MATCH_STATUSES = ["present", "late", "absent", "injured"]
@@ -2102,13 +2101,75 @@ def save_match_stats(match_player_id):
 
     body = request.get_json() or {}
 
-    validated_stats, error = validate_match_stats(body)
+    try:
+        sport_adapter = get_club_sport_adapter(
+            row.match.team.club
+        )
+        summary_stat_fields = (
+            sport_adapter.get_summary_stat_fields()
+        )
+    except (
+        InvalidClubSportError,
+        SportAdapterNotFoundError,
+        NotImplementedError,
+        TypeError,
+        ValueError,
+    ):
+        return error_response(
+            (
+                "El deporte del club no tiene estadísticas "
+                "resumen válidas configuradas."
+            ),
+            "MATCH_SUMMARY_STATS_NOT_SUPPORTED",
+            409
+        )
+
+    if any(
+        not hasattr(PlayerMatchStat, field)
+        for field in summary_stat_fields
+    ):
+        return error_response(
+            (
+                "El deporte del club no tiene estadísticas "
+                "resumen válidas configuradas."
+            ),
+            "MATCH_SUMMARY_STATS_NOT_SUPPORTED",
+            409
+        )
+
+    try:
+        validated_stats, error = (
+            sport_adapter.validate_summary_stats(body)
+        )
+    except (
+        NotImplementedError,
+        TypeError,
+        ValueError,
+    ):
+        return error_response(
+            (
+                "El deporte del club no tiene estadísticas "
+                "resumen válidas configuradas."
+            ),
+            "MATCH_SUMMARY_STATS_NOT_SUPPORTED",
+            409
+        )
 
     if error:
         return error_response(
             "Datos inválidos en estadísticas",
             error,
             400
+        )
+
+    if set(validated_stats) != set(summary_stat_fields):
+        return error_response(
+            (
+                "El deporte del club no tiene estadísticas "
+                "resumen válidas configuradas."
+            ),
+            "MATCH_SUMMARY_STATS_NOT_SUPPORTED",
+            409
         )
 
     stat = PlayerMatchStat.query.filter_by(
@@ -2119,35 +2180,8 @@ def save_match_stats(match_player_id):
         stat = PlayerMatchStat(match_player_id=row.id)
         db.session.add(stat)
 
-    stat.attacks_total = validated_stats.get("attacks_total")
-    stat.attacks_positive = validated_stats.get("attacks_positive")
-    stat.attacks_neutral = validated_stats.get("attacks_neutral")
-    stat.attacks_errors = validated_stats.get("attacks_errors")
-
-    stat.receptions_total = validated_stats.get("receptions_total")
-    stat.receptions_positive = validated_stats.get("receptions_positive")
-    stat.receptions_neutral = validated_stats.get("receptions_neutral")
-    stat.receptions_negative = validated_stats.get("receptions_negative")
-
-    stat.defenses_total = validated_stats.get("defenses_total")
-    stat.defenses_positive = validated_stats.get("defenses_positive")
-    stat.defenses_neutral = validated_stats.get("defenses_neutral")
-    stat.defenses_negative = validated_stats.get("defenses_negative")
-
-    stat.sets_total = validated_stats.get("sets_total")
-    stat.sets_positive = validated_stats.get("sets_positive")
-    stat.sets_neutral = validated_stats.get("sets_neutral")
-    stat.sets_errors = validated_stats.get("sets_errors")
-
-    stat.serves_total = validated_stats.get("serves_total")
-    stat.serves_in = validated_stats.get("serves_in")
-    stat.serves_aces = validated_stats.get("serves_aces")
-    stat.serves_errors = validated_stats.get("serves_errors")
-
-    stat.blocks_total = validated_stats.get("blocks_total")
-    stat.blocks_points = validated_stats.get("blocks_points")
-    stat.blocks_neutral = validated_stats.get("blocks_neutral")
-    stat.blocks_errors = validated_stats.get("blocks_errors")
+    for field in summary_stat_fields:
+        setattr(stat, field, validated_stats[field])
 
 
     row.match.match_step = max(row.match.match_step, 4)

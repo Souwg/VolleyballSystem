@@ -3,6 +3,7 @@ from src.api.sports.base import (
     SportAdapter,
     SportCapabilities,
     SportEventDefinition,
+    SummaryStatGroupDefinition,
     ValidatedMatchResult,
 )
 
@@ -88,6 +89,64 @@ VOLLEYBALL_EVENTS = (
 )
 
 
+VOLLEYBALL_SUMMARY_STAT_GROUPS = (
+    SummaryStatGroupDefinition(
+        total_field="attacks_total",
+        component_fields=(
+            "attacks_positive",
+            "attacks_neutral",
+            "attacks_errors",
+        ),
+        error_code="INVALID_ATTACK_STATS",
+    ),
+    SummaryStatGroupDefinition(
+        total_field="receptions_total",
+        component_fields=(
+            "receptions_positive",
+            "receptions_neutral",
+            "receptions_negative",
+        ),
+        error_code="INVALID_RECEPTION_STATS",
+    ),
+    SummaryStatGroupDefinition(
+        total_field="defenses_total",
+        component_fields=(
+            "defenses_positive",
+            "defenses_neutral",
+            "defenses_negative",
+        ),
+        error_code="INVALID_DEFENSE_STATS",
+    ),
+    SummaryStatGroupDefinition(
+        total_field="sets_total",
+        component_fields=(
+            "sets_positive",
+            "sets_neutral",
+            "sets_errors",
+        ),
+        error_code="INVALID_SET_STATS",
+    ),
+    SummaryStatGroupDefinition(
+        total_field="serves_total",
+        component_fields=(
+            "serves_in",
+            "serves_aces",
+            "serves_errors",
+        ),
+        error_code="INVALID_SERVE_STATS",
+    ),
+    SummaryStatGroupDefinition(
+        total_field="blocks_total",
+        component_fields=(
+            "blocks_points",
+            "blocks_neutral",
+            "blocks_errors",
+        ),
+        error_code="INVALID_BLOCK_STATS",
+    ),
+)
+
+
 class VolleyballAdapter(SportAdapter):
     def __init__(self):
         super().__init__(
@@ -96,6 +155,7 @@ class VolleyballAdapter(SportAdapter):
             capabilities=VOLLEYBALL_CAPABILITIES,
             positions=VOLLEYBALL_POSITIONS,
             events=VOLLEYBALL_EVENTS,
+            summary_stat_groups=VOLLEYBALL_SUMMARY_STAT_GROUPS,
         )
 
     def validate_match_result(self, home_value, opponent_value):
