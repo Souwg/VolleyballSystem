@@ -147,6 +147,20 @@ VOLLEYBALL_SUMMARY_STAT_GROUPS = (
 )
 
 
+VOLLEYBALL_PERFORMANCE_METRIC_FIELDS = (
+    "actions_total",
+    "points_total",
+    "errors_total",
+    "attack_efficiency",
+    "attack_positive_rate",
+    "reception_positive_rate",
+    "defense_positive_rate",
+    "set_positive_rate",
+    "serve_ace_rate",
+    "block_point_rate",
+)
+
+
 class VolleyballAdapter(SportAdapter):
     def __init__(self):
         super().__init__(
@@ -157,6 +171,90 @@ class VolleyballAdapter(SportAdapter):
             events=VOLLEYBALL_EVENTS,
             summary_stat_groups=VOLLEYBALL_SUMMARY_STAT_GROUPS,
         )
+
+    def get_performance_stat_fields(self):
+        return self.get_summary_stat_fields()
+
+    def get_performance_metric_fields(self):
+        return VOLLEYBALL_PERFORMANCE_METRIC_FIELDS
+
+    def calculate_performance_metrics(self, stats):
+        if not isinstance(stats, dict):
+            raise TypeError
+
+        stat_fields = self.get_performance_stat_fields()
+
+        if any(field not in stats for field in stat_fields):
+            raise ValueError
+
+        def percentage(value, total):
+            if total <= 0:
+                return 0
+
+            return round((value / total) * 100)
+
+        points_total = (
+            stats["attacks_positive"]
+            + stats["serves_aces"]
+            + stats["blocks_points"]
+        )
+
+        errors_total = (
+            stats["attacks_errors"]
+            + stats["sets_errors"]
+            + stats["serves_errors"]
+            + stats["blocks_errors"]
+        )
+
+        actions_total = sum(
+            stats[group.total_field]
+            for group in self._get_valid_summary_stat_groups()
+        )
+
+        attack_efficiency = 0
+
+        if stats["attacks_total"] > 0:
+            attack_efficiency = round(
+                (
+                    (
+                        stats["attacks_positive"]
+                        - stats["attacks_errors"]
+                    )
+                    / stats["attacks_total"]
+                )
+                * 100
+            )
+
+        return {
+            "actions_total": actions_total,
+            "points_total": points_total,
+            "errors_total": errors_total,
+            "attack_efficiency": attack_efficiency,
+            "attack_positive_rate": percentage(
+                stats["attacks_positive"],
+                stats["attacks_total"],
+            ),
+            "reception_positive_rate": percentage(
+                stats["receptions_positive"],
+                stats["receptions_total"],
+            ),
+            "defense_positive_rate": percentage(
+                stats["defenses_positive"],
+                stats["defenses_total"],
+            ),
+            "set_positive_rate": percentage(
+                stats["sets_positive"],
+                stats["sets_total"],
+            ),
+            "serve_ace_rate": percentage(
+                stats["serves_aces"],
+                stats["serves_total"],
+            ),
+            "block_point_rate": percentage(
+                stats["blocks_points"],
+                stats["blocks_total"],
+            ),
+        }
 
     def validate_match_result(self, home_value, opponent_value):
         def parse_integer_set(value):

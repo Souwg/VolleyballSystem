@@ -200,3 +200,12 @@ class SportAdapter:
                 return None, group.error_code
 
         return stats, None
+
+    def get_performance_stat_fields(self):
+        raise NotImplementedError
+
+    def get_performance_metric_fields(self):
+        raise NotImplementedError
+
+    def calculate_performance_metrics(self, stats):
+        raise NotImplementedError

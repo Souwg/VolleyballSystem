@@ -2,11 +2,85 @@ from flask import jsonify
 from flask_jwt_extended import jwt_required
 
 from src.api.api_blueprint import api
-from src.api.models import MatchPlayer, MatchSession, Player, Team
+from src.api.models import (
+    MatchPlayer,
+    MatchSession,
+    Player,
+    PlayerMatchStat,
+    Team,
+)
+from src.api.sports import (
+    InvalidClubSportError,
+    SportAdapterNotFoundError,
+    get_club_sport_adapter,
+)
 from src.api.utils import error_response, get_current_user
 
 
 PLAYABLE_MATCH_STATUSES = ["present", "late"]
+
+
+def performance_not_supported_error():
+    return error_response(
+        (
+            "El deporte del club no tiene métricas de rendimiento "
+            "válidas configuradas."
+        ),
+        "PLAYER_PERFORMANCE_NOT_SUPPORTED",
+        409
+    )
+
+
+def get_performance_contract(adapter):
+    if not adapter.capabilities.supports_player_stats:
+        raise NotImplementedError
+
+    stat_fields = adapter.get_performance_stat_fields()
+    metric_fields = adapter.get_performance_metric_fields()
+
+    for fields in (stat_fields, metric_fields):
+        if (
+            not isinstance(fields, tuple)
+            or not fields
+            or any(
+                not isinstance(field, str) or not field.strip()
+                for field in fields
+            )
+            or len(set(fields)) != len(fields)
+        ):
+            raise ValueError
+
+    if (
+        "points_total" not in metric_fields
+        or "errors_total" not in metric_fields
+        or any(
+            not hasattr(PlayerMatchStat, field)
+            for field in stat_fields
+        )
+    ):
+        raise ValueError
+
+    return stat_fields, metric_fields
+
+
+def calculate_performance_metrics(
+    adapter,
+    stats,
+    metric_fields,
+):
+    metrics = adapter.calculate_performance_metrics(stats)
+
+    if (
+        not isinstance(metrics, dict)
+        or set(metrics) != set(metric_fields)
+        or any(
+            not isinstance(value, int) or isinstance(value, bool)
+            for value in metrics.values()
+        )
+    ):
+        raise ValueError
+
+    return metrics
 
 
 @api.route("/players/<string:player_id>/performance", methods=["GET"])
@@ -29,6 +103,28 @@ def get_player_performance(player_id):
             "FORBIDDEN",
             403
         )
+
+    try:
+        sport_adapter = get_club_sport_adapter(player.club)
+        stat_fields, metric_fields = get_performance_contract(
+            sport_adapter
+        )
+        calculate_performance_metrics(
+            sport_adapter,
+            {field: 0 for field in stat_fields},
+            metric_fields,
+        )
+    except (
+        InvalidClubSportError,
+        SportAdapterNotFoundError,
+        ArithmeticError,
+        AttributeError,
+        LookupError,
+        NotImplementedError,
+        TypeError,
+        ValueError,
+    ):
+        return performance_not_supported_error()
 
     # Solo partidos en los que realmente pudo participar y jugó.
     match_rows = (
@@ -57,35 +153,8 @@ def get_player_performance(player_id):
     )
 
     totals = {
-        "attacks_total": 0,
-        "attacks_positive": 0,
-        "attacks_neutral": 0,
-        "attacks_errors": 0,
-
-        "receptions_total": 0,
-        "receptions_positive": 0,
-        "receptions_neutral": 0,
-        "receptions_negative": 0,
-
-        "defenses_total": 0,
-        "defenses_positive": 0,
-        "defenses_neutral": 0,
-        "defenses_negative": 0,
-
-        "sets_total": 0,
-        "sets_positive": 0,
-        "sets_neutral": 0,
-        "sets_errors": 0,
-
-        "serves_total": 0,
-        "serves_in": 0,
-        "serves_aces": 0,
-        "serves_errors": 0,
-
-        "blocks_total": 0,
-        "blocks_points": 0,
-        "blocks_neutral": 0,
-        "blocks_errors": 0,
+        field: 0
+        for field in stat_fields
     }
 
     matches = []
@@ -95,12 +164,6 @@ def get_player_performance(player_id):
 
     def safe_value(value):
         return int(value or 0)
-
-    def percentage(value, total):
-        if total <= 0:
-            return 0
-
-        return round((value / total) * 100)
 
     for row in match_rows:
         match = row.match
@@ -117,18 +180,21 @@ def get_player_performance(player_id):
 
                 match_stats[key] = value
 
-        points_total = (
-            match_stats["attacks_positive"]
-            + match_stats["serves_aces"]
-            + match_stats["blocks_points"]
-        )
-
-        errors_total = (
-            match_stats["attacks_errors"]
-            + match_stats["sets_errors"]
-            + match_stats["serves_errors"]
-            + match_stats["blocks_errors"]
-        )
+        try:
+            match_metrics = calculate_performance_metrics(
+                sport_adapter,
+                match_stats,
+                metric_fields,
+            )
+        except (
+            ArithmeticError,
+            AttributeError,
+            LookupError,
+            NotImplementedError,
+            TypeError,
+            ValueError,
+        ):
+            return performance_not_supported_error()
 
         serialized_match = {
             "match_player_id": row.id,
@@ -153,8 +219,8 @@ def get_player_performance(player_id):
                 row.position
                 or player.main_position
             ),
-            "points_total": points_total,
-            "errors_total": errors_total,
+            "points_total": match_metrics["points_total"],
+            "errors_total": match_metrics["errors_total"],
             "stats": match_stats
         }
 
@@ -173,41 +239,21 @@ def get_player_performance(player_id):
 
     matches_played = len(official_matches)
 
-    points_total = (
-        totals["attacks_positive"]
-        + totals["serves_aces"]
-        + totals["blocks_points"]
-    )
-
-    errors_total = (
-        totals["attacks_errors"]
-        + totals["sets_errors"]
-        + totals["serves_errors"]
-        + totals["blocks_errors"]
-    )
-
-    actions_total = (
-        totals["attacks_total"]
-        + totals["receptions_total"]
-        + totals["defenses_total"]
-        + totals["sets_total"]
-        + totals["serves_total"]
-        + totals["blocks_total"]
-    )
-
-    attack_efficiency = 0
-
-    if totals["attacks_total"] > 0:
-        attack_efficiency = round(
-            (
-                (
-                    totals["attacks_positive"]
-                    - totals["attacks_errors"]
-                )
-                / totals["attacks_total"]
-            )
-            * 100
+    try:
+        summary_metrics = calculate_performance_metrics(
+            sport_adapter,
+            totals,
+            metric_fields,
         )
+    except (
+        ArithmeticError,
+        AttributeError,
+        LookupError,
+        NotImplementedError,
+        TypeError,
+        ValueError,
+    ):
+        return performance_not_supported_error()
 
     return jsonify({
         "player": {
@@ -219,41 +265,7 @@ def get_player_performance(player_id):
         "summary": {
             "matches_played": matches_played,
             "matches_with_stats": matches_with_stats,
-            "actions_total": actions_total,
-            "points_total": points_total,
-            "errors_total": errors_total,
-
-            "attack_efficiency": attack_efficiency,
-
-            "attack_positive_rate": percentage(
-                totals["attacks_positive"],
-                totals["attacks_total"]
-            ),
-
-            "reception_positive_rate": percentage(
-                totals["receptions_positive"],
-                totals["receptions_total"]
-            ),
-
-            "defense_positive_rate": percentage(
-                totals["defenses_positive"],
-                totals["defenses_total"]
-            ),
-
-            "set_positive_rate": percentage(
-                totals["sets_positive"],
-                totals["sets_total"]
-            ),
-
-            "serve_ace_rate": percentage(
-                totals["serves_aces"],
-                totals["serves_total"]
-            ),
-
-            "block_point_rate": percentage(
-                totals["blocks_points"],
-                totals["blocks_total"]
-            )
+            **summary_metrics,
         },
         "totals": totals,
         # Se conserva `matches` para mantener compatible el contrato previo.
