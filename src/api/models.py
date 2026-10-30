@@ -258,6 +258,11 @@ class Club(db.Model):
         "AdministrativeArea",
         back_populates="clubs"
     )
+    seasons = db.relationship(
+        "Season",
+        back_populates="club",
+        lazy=True
+    )
     
 
     def __repr__(self):
@@ -315,6 +320,98 @@ class Club(db.Model):
             "created_at": self.created_at.isoformat()
         }
 
+
+class Season(db.Model):
+    __tablename__ = "seasons"
+
+    __table_args__ = (
+        db.UniqueConstraint(
+            "id",
+            "club_id",
+            name="uq_seasons_id_club_id"
+        ),
+        db.CheckConstraint(
+            "status IN ('planned', 'active', 'closed')",
+            name="ck_seasons_status"
+        ),
+        db.CheckConstraint(
+            "end_date IS NULL OR end_date >= start_date",
+            name="ck_seasons_date_range"
+        ),
+        db.Index(
+            "uq_seasons_active_per_club",
+            "club_id",
+            unique=True,
+            postgresql_where=db.text("status = 'active'"),
+            sqlite_where=db.text("status = 'active'")
+        ),
+    )
+
+    id = db.Column(
+        db.String(36),
+        primary_key=True,
+        default=lambda: str(uuid.uuid4())
+    )
+    club_id = db.Column(
+        db.String(36),
+        db.ForeignKey("clubs.id"),
+        nullable=False
+    )
+    name = db.Column(db.String(120), nullable=False)
+    start_date = db.Column(db.Date, nullable=False)
+    end_date = db.Column(db.Date, nullable=True)
+    status = db.Column(
+        db.String(20),
+        nullable=False,
+        default="active",
+        server_default="active"
+    )
+    created_by = db.Column(
+        db.String(36),
+        db.ForeignKey("users.id"),
+        nullable=True
+    )
+    created_at = db.Column(
+        db.DateTime,
+        nullable=False,
+        default=datetime.utcnow
+    )
+
+    club = db.relationship(
+        "Club",
+        back_populates="seasons"
+    )
+    creator = db.relationship(
+        "User",
+        foreign_keys=[created_by],
+        backref=db.backref("seasons_created", lazy=True)
+    )
+
+    def serialize(self):
+        return {
+            "id": self.id,
+            "club_id": self.club_id,
+            "name": self.name,
+            "start_date": (
+                self.start_date.isoformat()
+                if self.start_date
+                else None
+            ),
+            "end_date": (
+                self.end_date.isoformat()
+                if self.end_date
+                else None
+            ),
+            "status": self.status,
+            "created_by": self.created_by,
+            "created_at": (
+                self.created_at.isoformat()
+                if self.created_at
+                else None
+            )
+        }
+
+
 class Category(db.Model):
     __tablename__ = "categories"
 
@@ -368,6 +465,11 @@ class Team(db.Model):
             "club_id",
             name="unique_team_gender_per_category"
         ),
+        db.ForeignKeyConstraint(
+            ["season_id", "club_id"],
+            ["seasons.id", "seasons.club_id"],
+            name="fk_teams_season_club"
+        ),
     )
 
     id = db.Column(db.String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
@@ -387,6 +489,11 @@ class Team(db.Model):
         nullable=False
     )
 
+    season_id = db.Column(
+        db.String(36),
+        nullable=False
+    )
+
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
 
     category = db.relationship(
@@ -396,7 +503,20 @@ class Team(db.Model):
 
     club = db.relationship(
         "Club",
-        backref=db.backref("teams", lazy=True)
+        backref=db.backref("teams", lazy=True),
+        foreign_keys=[club_id],
+        overlaps="season,teams"
+    )
+
+    season = db.relationship(
+        "Season",
+        backref=db.backref(
+            "teams",
+            lazy=True,
+            overlaps="club,teams"
+        ),
+        foreign_keys=[season_id, club_id],
+        overlaps="club,teams"
     )
 
     def __repr__(self):
@@ -410,6 +530,7 @@ class Team(db.Model):
             "category_id": self.category_id,
             "category": self.category.serialize() if self.category else None,
             "club_id": self.club_id,
+            "season_id": self.season_id,
             "created_at": self.created_at.isoformat()
         }
 
@@ -543,6 +664,11 @@ class Tournament(db.Model):
             "start_date",
             name="unique_tournament_per_club"
         ),
+        db.ForeignKeyConstraint(
+            ["season_id", "club_id"],
+            ["seasons.id", "seasons.club_id"],
+            name="fk_tournaments_season_club"
+        ),
     )
 
     id = db.Column(
@@ -554,6 +680,11 @@ class Tournament(db.Model):
     club_id = db.Column(
         db.String(36),
         db.ForeignKey("clubs.id"),
+        nullable=False
+    )
+
+    season_id = db.Column(
+        db.String(36),
         nullable=False
     )
 
@@ -605,7 +736,20 @@ class Tournament(db.Model):
         backref=db.backref(
             "tournaments",
             lazy=True
-        )
+        ),
+        foreign_keys=[club_id],
+        overlaps="season,tournaments"
+    )
+
+    season = db.relationship(
+        "Season",
+        backref=db.backref(
+            "tournaments",
+            lazy=True,
+            overlaps="club,tournaments"
+        ),
+        foreign_keys=[season_id, club_id],
+        overlaps="club,tournaments"
     )
 
     creator = db.relationship(
@@ -621,6 +765,7 @@ class Tournament(db.Model):
         return {
             "id": self.id,
             "club_id": self.club_id,
+            "season_id": self.season_id,
             "name": self.name,
             "organizer_name": self.organizer_name,
             "start_date": (

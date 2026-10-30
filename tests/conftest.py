@@ -24,6 +24,7 @@ from src.api.models import (
     MatchPlayer,
     MatchSession,
     Player,
+    Season,
     Sport,
     Team,
     TeamPlayer,
@@ -130,6 +131,20 @@ def world(app):
     )
     club_a, owner_a = _new_club(sport, "A")
     club_b, owner_b = _new_club(sport, "B")
+    season_a = Season(
+        name="Temporada inicial",
+        start_date=date(2026, 1, 1),
+        status="active",
+        club=club_a,
+        created_by=owner_a.id,
+    )
+    season_b = Season(
+        name="Temporada inicial",
+        start_date=date(2026, 1, 1),
+        status="active",
+        club=club_b,
+        created_by=owner_b.id,
+    )
     coach_a = _new_user("coach", club_a, "A")
     coach_b = _new_user("coach", club_b, "B")
     staff_a = _new_user("staff", club_a, "A")
@@ -137,8 +152,20 @@ def world(app):
 
     category_a = Category(name="Adulto A", club=club_a)
     category_b = Category(name="Adulto B", club=club_b)
-    team_a = Team(name="Team A", gender="female", category=category_a, club=club_a)
-    team_b = Team(name="Team B", gender="female", category=category_b, club=club_b)
+    team_a = Team(
+        name="Team A",
+        gender="female",
+        category=category_a,
+        club=club_a,
+        season=season_a,
+    )
+    team_b = Team(
+        name="Team B",
+        gender="female",
+        category=category_b,
+        club=club_b,
+        season=season_b,
+    )
 
     players_a = []
     players_b = []
@@ -190,6 +217,8 @@ def world(app):
         system_admin,
         category_a,
         category_b,
+        season_a,
+        season_b,
         team_a,
         team_b,
         *players_a,
@@ -210,6 +239,8 @@ def world(app):
         system_admin=system_admin,
         category_a=category_a,
         category_b=category_b,
+        season_a=season_a,
+        season_b=season_b,
         team_a=team_a,
         team_b=team_b,
         players_a=players_a,

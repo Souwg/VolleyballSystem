@@ -21,6 +21,7 @@ from src.api.models import (
     Sport,
     User,
 )
+from src.api.season_service import build_initial_season
 from src.api.time_utils import (
     get_suggested_timezone,
     normalize_iana_timezone,
@@ -373,6 +374,12 @@ def create_client():
         db.session.flush()
 
         new_user.club_id = club.id
+        db.session.add(
+            build_initial_season(
+                club,
+                created_by=new_user.id
+            )
+        )
 
         db.session.commit()
 

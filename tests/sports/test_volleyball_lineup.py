@@ -110,6 +110,7 @@ def test_player_from_another_team_is_rejected(
         gender="female",
         category=world.category_a,
         club=world.club_a,
+        season=world.season_a,
     )
     other_membership = TeamPlayer(
         team=other_team,

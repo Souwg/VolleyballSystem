@@ -21,6 +21,7 @@ from src.api.payment_charge_helpers import (
     parse_money,
     split_money_exactly,
 )
+from src.api.season_service import get_active_season_for_club
 from src.api.utils import error_response, get_current_user
 
 
@@ -134,8 +135,18 @@ def create_tournament():
             409
         )
 
+    season = get_active_season_for_club(user.club_id)
+
+    if not season:
+        return error_response(
+            "El club no tiene una temporada activa configurada",
+            "ACTIVE_SEASON_REQUIRED",
+            409
+        )
+
     tournament = Tournament(
         club_id=user.club_id,
+        season_id=season.id,
         name=name,
         organizer_name=organizer_name or None,
         start_date=parsed_start_date,

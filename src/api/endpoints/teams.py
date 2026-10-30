@@ -14,6 +14,7 @@ from src.api.models import (
     TournamentTeam,
     TrainingSession,
 )
+from src.api.season_service import get_active_season_for_club
 from src.api.utils import error_response, get_current_user
 
 
@@ -91,11 +92,21 @@ def create_team(category_id):
             409
         )
 
+    season = get_active_season_for_club(user.club_id)
+
+    if not season:
+        return error_response(
+            "El club no tiene una temporada activa configurada",
+            "ACTIVE_SEASON_REQUIRED",
+            409
+        )
+
     team = Team(
         name=name,
         gender=gender,
         category_id=category.id,
-        club_id=user.club_id
+        club_id=user.club_id,
+        season_id=season.id
     )
 
     db.session.add(team)
