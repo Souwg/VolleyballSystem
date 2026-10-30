@@ -105,7 +105,8 @@ def get_categories():
         teams = Team.query.filter_by(
             category_id=category.id,
             club_id=user.club_id,
-            season_id=active_season_id
+            season_id=active_season_id,
+            status="active"
         ).all()
 
         team_ids = [team.id for team in teams]
@@ -171,7 +172,8 @@ def get_category_detail(category_id):
     teams = Team.query.filter_by(
         category_id=category.id,
         club_id=user.club_id,
-        season_id=active_season_id
+        season_id=active_season_id,
+        status="active"
     ).order_by(Team.name).all()
 
     serialized_teams = []
@@ -313,7 +315,8 @@ def get_category_teams(category_id):
     teams = Team.query.filter_by(
         category_id=category.id,
         club_id=user.club_id,
-        season_id=active_season_id
+        season_id=active_season_id,
+        status="active"
     ).order_by(Team.name).all()
 
     serialized_teams = []

@@ -5,7 +5,10 @@ from flask_jwt_extended import jwt_required
 
 from src.api.api_blueprint import api
 from src.api.models import db, Team, TrainingAuditEvent, TrainingSession
-from src.api.season_service import get_active_season_for_club
+from src.api.season_service import (
+    get_active_season_for_club,
+    get_team_operation_error,
+)
 from src.api.training_audit_service import (
     TRAINING_AUDIT_ACTIONS,
     add_training_audit_event,
@@ -337,6 +340,11 @@ def create_training():
             "FORBIDDEN",
             403
         )
+
+    team_error = get_team_operation_error(team)
+
+    if team_error:
+        return error_response(*team_error)
 
     training = TrainingSession(
         team_id=team.id,
@@ -916,7 +924,8 @@ def get_all_trainings():
 
     trainings = TrainingSession.query.join(Team).filter(
         Team.club_id == user.club_id,
-        Team.season_id == season.id
+        Team.season_id == season.id,
+        Team.status == "active"
     ).order_by(TrainingSession.date.desc()).all()
 
     return jsonify({

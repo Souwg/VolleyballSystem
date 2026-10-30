@@ -473,6 +473,7 @@ def _get_sports_sections(club_id, season_id, today):
     trainings_today_count = TrainingSession.query.join(Team).filter(
         Team.club_id == club_id,
         Team.season_id == season_id,
+        Team.status == "active",
         TrainingSession.status == "scheduled",
         TrainingSession.date == today,
     ).count()
@@ -489,6 +490,7 @@ def _get_sports_sections(club_id, season_id, today):
     ).join(Team, Team.id == TrainingSession.team_id).filter(
         Team.club_id == club_id,
         Team.season_id == season_id,
+        Team.status == "active",
         TrainingSession.status == "scheduled",
         TrainingSession.date >= today,
     ).order_by(
@@ -531,6 +533,7 @@ def _get_sports_sections(club_id, season_id, today):
     ).filter(
         Team.club_id == club_id,
         Team.season_id == season_id,
+        Team.status == "active",
         MatchSession.is_completed.is_(False),
         MatchSession.date >= today,
     ).order_by(
@@ -553,6 +556,7 @@ def _get_sports_sections(club_id, season_id, today):
     ).filter(
         Team.club_id == club_id,
         Team.season_id == season_id,
+        Team.status == "active",
         MatchSession.is_completed.is_(False),
         open_match_filter,
     ).order_by(
@@ -563,6 +567,7 @@ def _get_sports_sections(club_id, season_id, today):
     open_matches_count = MatchSession.query.join(Team).filter(
         Team.club_id == club_id,
         Team.season_id == season_id,
+        Team.status == "active",
         MatchSession.is_completed.is_(False),
         open_match_filter,
     ).count()
@@ -576,6 +581,7 @@ def _get_sports_sections(club_id, season_id, today):
     ).filter(
         Team.club_id == club_id,
         Team.season_id == season_id,
+        Team.status == "active",
         MatchSession.is_completed.is_(False),
         MatchSession.capture_mode == "live",
         open_match_filter,
@@ -587,6 +593,7 @@ def _get_sports_sections(club_id, season_id, today):
     matches_today_count = MatchSession.query.join(Team).filter(
         Team.club_id == club_id,
         Team.season_id == season_id,
+        Team.status == "active",
         MatchSession.is_completed.is_(False),
         MatchSession.date == today,
     ).count()
@@ -627,6 +634,7 @@ def _get_sports_sections(club_id, season_id, today):
     ).filter(
         Team.club_id == club_id,
         Team.season_id == season_id,
+        Team.status == "active",
         TrainingSession.status != "cancelled",
         TrainingSession.date <= today,
         func.coalesce(roster_counts.c.roster_count, 0) > 0,
@@ -687,6 +695,7 @@ def _get_sports_structure(club_id, season_id):
             db.session.query(Team.id).filter(
                 Team.club_id == club_id,
                 Team.season_id == season_id,
+                Team.status == "active",
             )
         ),
     ))
@@ -717,6 +726,7 @@ def _get_sports_structure(club_id, season_id):
     ).filter(
         Team.club_id == club_id,
         Team.season_id == season_id,
+        Team.status == "active",
         ~active_player_membership_exists,
     )
 
@@ -974,7 +984,10 @@ def _weekly_counts(model, club_id, week_start, season_id=None):
     )
 
     if model is Team and season_id is not None:
-        query = query.filter(Team.season_id == season_id)
+        query = query.filter(
+            Team.season_id == season_id,
+            Team.status == "active",
+        )
 
     row = query.one()
     return [int(value or 0) for value in row]
@@ -989,6 +1002,7 @@ def _get_legacy_contract(club, season_id, as_of, role, today):
     total_teams = Team.query.filter_by(
         club_id=club.id,
         season_id=season_id,
+        status="active",
     ).count()
     player_counts = db.session.query(
         func.count(Player.id),
@@ -1004,6 +1018,7 @@ def _get_legacy_contract(club, season_id, as_of, role, today):
     teams_this_week = Team.query.filter(
         Team.club_id == club.id,
         Team.season_id == season_id,
+        Team.status == "active",
         Team.created_at >= week_start,
         Team.created_at <= as_of,
     ).count()
@@ -1019,6 +1034,7 @@ def _get_legacy_contract(club, season_id, as_of, role, today):
     ).join(Team, Team.id == MatchSession.team_id).filter(
         Team.club_id == club.id,
         Team.season_id == season_id,
+        Team.status == "active",
         MatchSession.is_completed.is_(False),
         MatchSession.date >= today,
     ).order_by(
@@ -1033,6 +1049,7 @@ def _get_legacy_contract(club, season_id, as_of, role, today):
         ).join(Team, Team.id == MatchSession.team_id).filter(
             Team.club_id == club.id,
             Team.season_id == season_id,
+            Team.status == "active",
             MatchSession.is_completed.is_(False),
             MatchSession.date < today,
         ).order_by(

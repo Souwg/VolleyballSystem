@@ -29,7 +29,10 @@ from src.api.sports import (
     SportAdapterNotFoundError,
     get_club_sport_adapter,
 )
-from src.api.season_service import get_active_season_for_club
+from src.api.season_service import (
+    get_active_season_for_club,
+    get_team_operation_error,
+)
 from src.api.utils import error_response, get_current_user
 
 VALID_MATCH_STATUSES = ["present", "late", "absent", "injured"]
@@ -558,6 +561,11 @@ def create_match():
             "FORBIDDEN",
             403
         )
+
+    team_error = get_team_operation_error(team)
+
+    if team_error:
+        return error_response(*team_error)
 
     tournament_team = None
 
@@ -1393,7 +1401,8 @@ def get_club_matches():
 
     matches = MatchSession.query.join(Team).filter(
         Team.club_id == user.club_id,
-        Team.season_id == season.id
+        Team.season_id == season.id,
+        Team.status == "active"
     ).order_by(
         MatchSession.date.desc()
     ).all()

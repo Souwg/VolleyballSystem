@@ -22,6 +22,7 @@ from src.api.models import (
 )
 from src.api.upload_utils import allowed_image_file
 from src.api.onboarding_service import is_club_onboarding_complete
+from src.api.season_service import get_team_operation_error
 from src.api.sports import get_club_sport_adapter
 from src.api.utils import error_response, get_current_user
 
@@ -223,6 +224,11 @@ def create_player():
                 "FORBIDDEN",
                 403
             )
+
+        team_error = get_team_operation_error(team)
+
+        if team_error:
+            return error_response(*team_error)
 
         if team.gender != "mixed" and team.gender != sex:
             return error_response(
@@ -582,6 +588,11 @@ def add_existing_player_to_team(team_id):
             "FORBIDDEN",
             403
         )
+
+    team_error = get_team_operation_error(team)
+
+    if team_error:
+        return error_response(*team_error)
 
     setup_error = ensure_player_creation_allowed_during_setup(user)
 

@@ -14,7 +14,10 @@ from src.api.models import (
     TournamentTeam,
     TrainingSession,
 )
-from src.api.season_service import get_active_season_for_club
+from src.api.season_service import (
+    get_active_season_for_club,
+    get_season_operation_error,
+)
 from src.api.utils import error_response, get_current_user
 
 
@@ -149,7 +152,8 @@ def get_teams():
 
     teams = Team.query.filter_by(
         club_id=user.club_id,
-        season_id=season.id
+        season_id=season.id,
+        status="active"
     )\
         .order_by(Team.name)\
         .all()
@@ -304,6 +308,71 @@ def update_team(team_id):
 
     return jsonify({
         "message": "Equipo actualizado correctamente",
+        "team": team.serialize()
+    }), 200
+
+
+@api.route("/teams/<string:team_id>/archive", methods=["PUT"])
+@jwt_required()
+def archive_team(team_id):
+    user = get_current_user()
+
+    if user.role != "club_owner":
+        return error_response(
+            "Solo el dueño del club puede archivar equipos",
+            "FORBIDDEN",
+            403
+        )
+
+    team = Team.query.get(team_id)
+
+    if not team or team.club_id != user.club_id:
+        return error_response(
+            "Equipo no encontrado",
+            "TEAM_NOT_FOUND",
+            404
+        )
+
+    team.status = "archived"
+    db.session.commit()
+
+    return jsonify({
+        "message": "Equipo archivado correctamente",
+        "team": team.serialize()
+    }), 200
+
+
+@api.route("/teams/<string:team_id>/reactivate", methods=["PUT"])
+@jwt_required()
+def reactivate_team(team_id):
+    user = get_current_user()
+
+    if user.role != "club_owner":
+        return error_response(
+            "Solo el dueño del club puede reactivar equipos",
+            "FORBIDDEN",
+            403
+        )
+
+    team = Team.query.get(team_id)
+
+    if not team or team.club_id != user.club_id:
+        return error_response(
+            "Equipo no encontrado",
+            "TEAM_NOT_FOUND",
+            404
+        )
+
+    season_error = get_season_operation_error(team.season)
+
+    if season_error:
+        return error_response(*season_error)
+
+    team.status = "active"
+    db.session.commit()
+
+    return jsonify({
+        "message": "Equipo reactivado correctamente",
         "team": team.serialize()
     }), 200
 

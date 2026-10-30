@@ -1,6 +1,10 @@
 export const errorMessages = {
   ACTIVE_SEASON_REQUIRED:
     "El club no tiene una temporada activa configurada.",
+  SEASON_CLOSED:
+    "La temporada está cerrada y no admite nuevas operaciones deportivas.",
+  TEAM_ARCHIVED:
+    "El equipo está archivado y no admite nuevas operaciones deportivas.",
   NETWORK_ERROR: "Error de conexión. Intenta nuevamente.",
   SESSION_EXPIRED: "Tu sesión expiró. Inicia sesión nuevamente.",
 

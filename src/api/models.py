@@ -470,6 +470,10 @@ class Team(db.Model):
             ["seasons.id", "seasons.club_id"],
             name="fk_teams_season_club"
         ),
+        db.CheckConstraint(
+            "status IN ('active', 'archived')",
+            name="ck_teams_status"
+        ),
     )
 
     id = db.Column(db.String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
@@ -492,6 +496,13 @@ class Team(db.Model):
     season_id = db.Column(
         db.String(36),
         nullable=False
+    )
+
+    status = db.Column(
+        db.String(20),
+        nullable=False,
+        default="active",
+        server_default="active"
     )
 
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
@@ -531,6 +542,7 @@ class Team(db.Model):
             "category": self.category.serialize() if self.category else None,
             "club_id": self.club_id,
             "season_id": self.season_id,
+            "status": self.status,
             "created_at": self.created_at.isoformat()
         }
 

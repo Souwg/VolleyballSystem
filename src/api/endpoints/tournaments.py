@@ -21,7 +21,11 @@ from src.api.payment_charge_helpers import (
     parse_money,
     split_money_exactly,
 )
-from src.api.season_service import get_active_season_for_club
+from src.api.season_service import (
+    get_active_season_for_club,
+    get_season_operation_error,
+    get_team_operation_error,
+)
 from src.api.utils import error_response, get_current_user
 
 
@@ -581,6 +585,11 @@ def add_team_to_tournament(tournament_id):
             403
         )
 
+    season_error = get_season_operation_error(tournament.season)
+
+    if season_error:
+        return error_response(*season_error)
+
     if tournament.status != "active":
         return error_response(
             "Solo puedes inscribir equipos en torneos activos",
@@ -615,6 +624,11 @@ def add_team_to_tournament(tournament_id):
             "FORBIDDEN",
             403
         )
+
+    team_error = get_team_operation_error(team)
+
+    if team_error:
+        return error_response(*team_error)
 
     existing_entry = TournamentTeam.query.filter_by(
         tournament_id=tournament.id,
@@ -823,6 +837,18 @@ def update_tournament_team_players(tournament_team_id):
             "FORBIDDEN",
             403
         )
+
+    season_error = get_season_operation_error(
+        tournament_team.tournament.season
+    )
+
+    if season_error:
+        return error_response(*season_error)
+
+    team_error = get_team_operation_error(tournament_team.team)
+
+    if team_error:
+        return error_response(*team_error)
 
     if tournament_team.tournament.status != "active":
         return error_response(

@@ -1,4 +1,5 @@
 from src.api.models import Category, Team, TeamPlayer
+from src.api.season_service import get_active_season_for_club
 
 
 def get_club_onboarding_progress(club):
@@ -18,8 +19,13 @@ def get_club_onboarding_progress(club):
             "status": "pending"
         }
 
+    active_season = get_active_season_for_club(club.id)
+    active_season_id = active_season.id if active_season else None
+
     teams_count = Team.query.filter_by(
-        club_id=club.id
+        club_id=club.id,
+        season_id=active_season_id,
+        status="active"
     ).count()
 
     if teams_count == 0:
@@ -30,6 +36,8 @@ def get_club_onboarding_progress(club):
 
     players_count = TeamPlayer.query.join(Team).filter(
         Team.club_id == club.id,
+        Team.season_id == active_season_id,
+        Team.status == "active",
         TeamPlayer.left_at.is_(None)
     ).count()
 
