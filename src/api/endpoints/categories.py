@@ -114,7 +114,8 @@ def get_categories():
 
         if team_ids:
             total_players = TeamPlayer.query.filter(
-                TeamPlayer.team_id.in_(team_ids)
+                TeamPlayer.team_id.in_(team_ids),
+                TeamPlayer.left_at.is_(None)
             ).count()
 
         result.append({
@@ -176,7 +177,10 @@ def get_category_detail(category_id):
     serialized_teams = []
 
     for team in teams:
-        total_players = TeamPlayer.query.filter_by(team_id=team.id).count()
+        total_players = TeamPlayer.query.filter_by(
+            team_id=team.id,
+            left_at=None
+        ).count()
 
         serialized_teams.append({
             **team.serialize(),
@@ -315,7 +319,10 @@ def get_category_teams(category_id):
     serialized_teams = []
 
     for team in teams:
-        total_players = TeamPlayer.query.filter_by(team_id=team.id).count()
+        total_players = TeamPlayer.query.filter_by(
+            team_id=team.id,
+            left_at=None
+        ).count()
 
         serialized_teams.append({
             **team.serialize(),

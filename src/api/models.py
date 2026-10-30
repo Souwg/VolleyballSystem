@@ -597,15 +597,21 @@ class TeamPlayer(db.Model):
     __tablename__ = "team_players"
 
     __table_args__ = (
-        db.UniqueConstraint(
+        db.Index(
+            "uq_team_players_open_player",
             "team_id",
             "player_id",
-            name="unique_player_per_team"
+            unique=True,
+            postgresql_where=db.text("left_at IS NULL"),
+            sqlite_where=db.text("left_at IS NULL")
         ),
-        db.UniqueConstraint(
+        db.Index(
+            "uq_team_players_open_number",
             "team_id",
             "player_number",
-            name="unique_number_per_team"
+            unique=True,
+            postgresql_where=db.text("left_at IS NULL"),
+            sqlite_where=db.text("left_at IS NULL")
         ),
     )
 
@@ -632,6 +638,12 @@ class TeamPlayer(db.Model):
     )
 
     created_at = db.Column(db.DateTime(), default=datetime.utcnow)
+    joined_at = db.Column(
+        db.DateTime(),
+        nullable=False,
+        default=datetime.utcnow
+    )
+    left_at = db.Column(db.DateTime(), nullable=True)
 
     team = db.relationship(
         "Team",
@@ -651,6 +663,8 @@ class TeamPlayer(db.Model):
             "player_number": self.player_number,
             "status": self.status,
             "created_at": self.created_at.isoformat(),
+            "joined_at": self.joined_at.isoformat(),
+            "left_at": self.left_at.isoformat() if self.left_at else None,
             "player": self.player.serialize() if self.player else None
         }
     

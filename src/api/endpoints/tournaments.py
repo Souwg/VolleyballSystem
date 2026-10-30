@@ -744,7 +744,8 @@ def get_tournament_team_players(tournament_team_id):
         )
 
     team_memberships = TeamPlayer.query.filter_by(
-        team_id=tournament_team.team_id
+        team_id=tournament_team.team_id,
+        left_at=None
     ).order_by(TeamPlayer.player_number.asc()).all()
 
     registered_rows = TournamentPlayer.query.filter_by(
@@ -856,6 +857,7 @@ def update_tournament_team_players(tournament_team_id):
 
     valid_memberships = TeamPlayer.query.filter(
         TeamPlayer.team_id == tournament_team.team_id,
+        TeamPlayer.left_at.is_(None),
         TeamPlayer.player_id.in_(normalized_player_ids)
     ).all() if normalized_player_ids else []
 
@@ -1058,7 +1060,8 @@ def preview_tournament_registration_charges(tournament_team_id):
 
         team_membership = TeamPlayer.query.filter_by(
             team_id=tournament_team.team_id,
-            player_id=registration.player_id
+            player_id=registration.player_id,
+            left_at=None
         ).first()
 
         players_preview.append({

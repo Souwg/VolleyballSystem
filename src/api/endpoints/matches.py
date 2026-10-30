@@ -265,6 +265,7 @@ def sync_match_roster_if_open(match):
         .filter(
             TeamPlayer.team_id == match.team_id,
             TeamPlayer.status == "active",
+            TeamPlayer.left_at.is_(None),
             Player.is_active.is_(True)
         )
     )
@@ -644,6 +645,7 @@ def create_match():
         .filter(
             TeamPlayer.team_id == team.id,
             TeamPlayer.status == "active",
+            TeamPlayer.left_at.is_(None),
             Player.is_active.is_(True)
         )
     )

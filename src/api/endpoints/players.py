@@ -71,8 +71,9 @@ def remove_player_from_team(team_id, player_id):
 
     membership = TeamPlayer.query.filter_by(
         team_id=team.id,
-        player_id=player_id
-    ).first()
+        player_id=player_id,
+        left_at=None
+    ).with_for_update().first()
 
     if not membership:
         return error_response(
@@ -81,7 +82,7 @@ def remove_player_from_team(team_id, player_id):
             404
         )
 
-    db.session.delete(membership)
+    membership.left_at = datetime.utcnow()
     db.session.commit()
 
     return jsonify({
@@ -232,7 +233,8 @@ def create_player():
 
         existing_membership = TeamPlayer.query.filter_by(
             team_id=team.id,
-            player_number=player_number
+            player_number=player_number,
+            left_at=None
         ).first()
 
         if existing_membership:
@@ -462,7 +464,7 @@ def get_team_players(team_id):
             403
         )
 
-    memberships = TeamPlayer.query.filter_by(team_id=team.id)\
+    memberships = TeamPlayer.query.filter_by(team_id=team.id, left_at=None)\
         .order_by(TeamPlayer.player_number)\
         .all()
 
@@ -514,7 +516,19 @@ def get_players():
     serialized_players = []
 
     for player in players:
-        membership = player.team_memberships[0] if player.team_memberships else None
+        open_memberships = sorted(
+            (
+                membership
+                for membership in player.team_memberships
+                if membership.left_at is None
+            ),
+            key=lambda membership: (
+                membership.joined_at,
+                membership.created_at or membership.joined_at,
+                membership.id
+            )
+        )
+        membership = open_memberships[0] if open_memberships else None
 
         serialized_players.append({
             **player.serialize(),
@@ -531,7 +545,7 @@ def get_players():
                     "player_number": m.player_number,
                     "status": m.status
                 }
-                for m in player.team_memberships
+                for m in open_memberships
             ]
         })
 
@@ -634,7 +648,8 @@ def add_existing_player_to_team(team_id):
 
     existing = TeamPlayer.query.filter_by(
         team_id=team.id,
-        player_id=player.id
+        player_id=player.id,
+        left_at=None
     ).first()
 
     if existing:
@@ -646,7 +661,8 @@ def add_existing_player_to_team(team_id):
 
     duplicated_number = TeamPlayer.query.filter_by(
         team_id=team.id,
-        player_number=player_number
+        player_number=player_number,
+        left_at=None
     ).first()
 
     if duplicated_number:
@@ -747,7 +763,8 @@ def update_player(player_id):
 
     # ✅ validar cambio global de sexo contra TODAS sus categorías
     memberships = TeamPlayer.query.filter_by(
-        player_id=player.id
+        player_id=player.id,
+        left_at=None
     ).all()
 
     for membership in memberships:
@@ -793,7 +810,8 @@ def update_player(player_id):
     if team_id and player_number is not None:
         membership = TeamPlayer.query.filter_by(
             player_id=player.id,
-            team_id=team_id
+            team_id=team_id,
+            left_at=None
         ).first()
 
         if not membership:
@@ -822,7 +840,8 @@ def update_player(player_id):
         duplicated_number = TeamPlayer.query.filter(
             TeamPlayer.team_id == team_id,
             TeamPlayer.player_number == player_number,
-            TeamPlayer.player_id != player.id
+            TeamPlayer.player_id != player.id,
+            TeamPlayer.left_at.is_(None)
         ).first()
 
         if duplicated_number:
@@ -895,7 +914,8 @@ def update_player_status(player_id):
 
     membership = TeamPlayer.query.filter_by(
         player_id=player.id,
-        team_id=team_id
+        team_id=team_id,
+        left_at=None
     ).first()
 
     if not membership:

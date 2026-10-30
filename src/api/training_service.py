@@ -20,6 +20,7 @@ def sync_training_roster(training):
         .join(Player, Player.id == TeamPlayer.player_id)
         .filter(
             TeamPlayer.team_id == training.team_id,
+            TeamPlayer.left_at.is_(None),
             Player.club_id == training.team.club_id,
             Player.is_active.is_(True)
         )

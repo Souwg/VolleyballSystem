@@ -195,7 +195,10 @@ def get_team_detail(team_id):
             403
         )
 
-    total_players = TeamPlayer.query.filter_by(team_id=team.id).count()
+    total_players = TeamPlayer.query.filter_by(
+        team_id=team.id,
+        left_at=None
+    ).count()
 
     return jsonify({
         "team": team.serialize(),
@@ -283,6 +286,7 @@ def update_team(team_id):
     if gender != team.gender and gender != "mixed":
         incompatible_player = TeamPlayer.query.join(Player).filter(
             TeamPlayer.team_id == team.id,
+            TeamPlayer.left_at.is_(None),
             Player.sex != gender
         ).first()
 

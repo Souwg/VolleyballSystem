@@ -29,7 +29,8 @@ def get_club_onboarding_progress(club):
         }
 
     players_count = TeamPlayer.query.join(Team).filter(
-        Team.club_id == club.id
+        Team.club_id == club.id,
+        TeamPlayer.left_at.is_(None)
     ).count()
 
     if players_count == 0:

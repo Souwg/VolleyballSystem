@@ -682,6 +682,7 @@ def _get_sports_structure(club_id, season_id):
     active_membership_exists = exists().where(and_(
         TeamPlayer.player_id == Player.id,
         TeamPlayer.status == "active",
+        TeamPlayer.left_at.is_(None),
         TeamPlayer.team_id.in_(
             db.session.query(Team.id).filter(
                 Team.club_id == club_id,
@@ -703,6 +704,7 @@ def _get_sports_structure(club_id, season_id):
     active_player_membership_exists = exists().where(and_(
         TeamPlayer.team_id == Team.id,
         TeamPlayer.status == "active",
+        TeamPlayer.left_at.is_(None),
         TeamPlayer.player_id == Player.id,
         Player.club_id == club_id,
         Player.is_active.is_(True),
