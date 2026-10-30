@@ -138,7 +138,19 @@ def get_teams():
             403
         )
 
-    teams = Team.query.filter_by(club_id=user.club_id)\
+    season = get_active_season_for_club(user.club_id)
+
+    if not season:
+        return error_response(
+            "El club no tiene una temporada activa",
+            "ACTIVE_SEASON_REQUIRED",
+            409
+        )
+
+    teams = Team.query.filter_by(
+        club_id=user.club_id,
+        season_id=season.id
+    )\
         .order_by(Team.name)\
         .all()
 

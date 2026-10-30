@@ -29,6 +29,7 @@ from src.api.sports import (
     SportAdapterNotFoundError,
     get_club_sport_adapter,
 )
+from src.api.season_service import get_active_season_for_club
 from src.api.utils import error_response, get_current_user
 
 VALID_MATCH_STATUSES = ["present", "late", "absent", "injured"]
@@ -1379,8 +1380,18 @@ def get_club_matches():
             400
         )
 
+    season = get_active_season_for_club(user.club_id)
+
+    if not season:
+        return error_response(
+            "El club no tiene una temporada activa",
+            "ACTIVE_SEASON_REQUIRED",
+            409
+        )
+
     matches = MatchSession.query.join(Team).filter(
-        Team.club_id == user.club_id
+        Team.club_id == user.club_id,
+        Team.season_id == season.id
     ).order_by(
         MatchSession.date.desc()
     ).all()

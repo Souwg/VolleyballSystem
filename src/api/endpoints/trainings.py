@@ -5,6 +5,7 @@ from flask_jwt_extended import jwt_required
 
 from src.api.api_blueprint import api
 from src.api.models import db, Team, TrainingAuditEvent, TrainingSession
+from src.api.season_service import get_active_season_for_club
 from src.api.training_audit_service import (
     TRAINING_AUDIT_ACTIONS,
     add_training_audit_event,
@@ -904,8 +905,18 @@ def get_all_trainings():
             403
         )
 
+    season = get_active_season_for_club(user.club_id)
+
+    if not season:
+        return error_response(
+            "El club no tiene una temporada activa",
+            "ACTIVE_SEASON_REQUIRED",
+            409
+        )
+
     trainings = TrainingSession.query.join(Team).filter(
-        Team.club_id == user.club_id
+        Team.club_id == user.club_id,
+        Team.season_id == season.id
     ).order_by(TrainingSession.date.desc()).all()
 
     return jsonify({

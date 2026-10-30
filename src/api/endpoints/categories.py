@@ -4,6 +4,7 @@ from sqlalchemy import func
 
 from src.api.api_blueprint import api
 from src.api.models import db, Category, Team, TeamPlayer
+from src.api.season_service import get_active_season_for_club
 from src.api.utils import error_response, get_current_user
 
 
@@ -95,13 +96,16 @@ def get_categories():
     categories = Category.query.filter_by(
         club_id=user.club_id
     ).order_by(Category.name).all()
+    active_season = get_active_season_for_club(user.club_id)
+    active_season_id = active_season.id if active_season else None
 
     result = []
 
     for category in categories:
         teams = Team.query.filter_by(
             category_id=category.id,
-            club_id=user.club_id
+            club_id=user.club_id,
+            season_id=active_season_id
         ).all()
 
         team_ids = [team.id for team in teams]
@@ -160,9 +164,13 @@ def get_category_detail(category_id):
             403
         )
 
+    active_season = get_active_season_for_club(user.club_id)
+    active_season_id = active_season.id if active_season else None
+
     teams = Team.query.filter_by(
         category_id=category.id,
-        club_id=user.club_id
+        club_id=user.club_id,
+        season_id=active_season_id
     ).order_by(Team.name).all()
 
     serialized_teams = []
@@ -295,9 +303,13 @@ def get_category_teams(category_id):
             403
         )
 
+    active_season = get_active_season_for_club(user.club_id)
+    active_season_id = active_season.id if active_season else None
+
     teams = Team.query.filter_by(
         category_id=category.id,
-        club_id=user.club_id
+        club_id=user.club_id,
+        season_id=active_season_id
     ).order_by(Team.name).all()
 
     serialized_teams = []

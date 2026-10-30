@@ -15,6 +15,7 @@ from src.api.models import (
     Club,
     RefreshToken,
 )
+from src.api.season_service import get_active_season_for_club
 from src.api.upload_utils import allowed_image_file
 from src.api.utils import error_response, generate_temp_password, get_current_user
 
@@ -614,4 +615,24 @@ def club_dashboard():
             404
         )
 
-    return jsonify(build_club_dashboard(user, club)), 200
+    active_season = None
+
+    if user.role in ["club_owner", "coach"]:
+        active_season = get_active_season_for_club(club.id)
+
+        if not active_season:
+            return error_response(
+                "El club no tiene una temporada activa",
+                "ACTIVE_SEASON_REQUIRED",
+                409
+            )
+
+    return jsonify(build_club_dashboard(
+        user,
+        club,
+        active_season_id=(
+            active_season.id
+            if active_season
+            else None
+        ),
+    )), 200
