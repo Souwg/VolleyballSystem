@@ -11,6 +11,7 @@ from src.api.models import (
     Player,
     Season,
     Team,
+    TeamCoachAssignment,
     TeamPlayer,
     TournamentTeam,
     TrainingSession,
@@ -471,6 +472,7 @@ def delete_team(team_id):
     if (
         MatchSession.query.filter_by(team_id=team.id).first() is not None
         or TournamentTeam.query.filter_by(team_id=team.id).first() is not None
+        or TeamCoachAssignment.query.filter_by(team_id=team.id).first() is not None
     ):
         return error_response(
             "No puedes eliminar este equipo porque tiene historial registrado",

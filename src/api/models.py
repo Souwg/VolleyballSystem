@@ -9,6 +9,14 @@ db = SQLAlchemy()
 class User(db.Model):
     __tablename__ = "users"
 
+    __table_args__ = (
+        db.UniqueConstraint(
+            "id",
+            "club_id",
+            name="uq_users_id_club_id"
+        ),
+    )
+
     id = db.Column(db.String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
     full_name = db.Column(db.String(120), nullable=False)
     email = db.Column(db.String(120), unique=True, nullable=False)
@@ -208,6 +216,10 @@ class Club(db.Model):
             "LENGTH(currency_code) = 3 AND currency_code = UPPER(currency_code)",
             name="ck_clubs_currency_code_format"
         ),
+        db.CheckConstraint(
+            "coach_access_mode IN ('club_wide', 'team_assigned')",
+            name="ck_clubs_coach_access_mode"
+        ),
     )
 
     id = db.Column(db.String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
@@ -243,6 +255,12 @@ class Club(db.Model):
         nullable=False,
         default="active",
         server_default="active"
+    )
+    coach_access_mode = db.Column(
+        db.String(20),
+        nullable=False,
+        default="club_wide",
+        server_default="club_wide"
     )
     created_at = db.Column(db.DateTime(), default=datetime.utcnow)
 
@@ -317,6 +335,7 @@ class Club(db.Model):
             "city": self.city,
             "timezone": self.timezone,
             "access_status": self.access_status,
+            "coach_access_mode": self.coach_access_mode,
             "created_at": self.created_at.isoformat()
         }
 
@@ -465,6 +484,11 @@ class Team(db.Model):
             "club_id",
             "season_id",
             name="unique_team_gender_per_category"
+        ),
+        db.UniqueConstraint(
+            "id",
+            "club_id",
+            name="uq_teams_id_club_id"
         ),
         db.ForeignKeyConstraint(
             ["season_id", "club_id"],
@@ -681,6 +705,89 @@ class TeamPlayer(db.Model):
             "player": self.player.serialize() if self.player else None
         }
     
+class TeamCoachAssignment(db.Model):
+    __tablename__ = "team_coach_assignments"
+
+    __table_args__ = (
+        db.ForeignKeyConstraint(
+            ["team_id", "club_id"],
+            ["teams.id", "teams.club_id"],
+            name="fk_team_coach_assignments_team_club"
+        ),
+        db.ForeignKeyConstraint(
+            ["user_id", "club_id"],
+            ["users.id", "users.club_id"],
+            name="fk_team_coach_assignments_user_club"
+        ),
+        db.Index(
+            "uq_team_coach_assignments_open",
+            "team_id",
+            "user_id",
+            unique=True,
+            postgresql_where=db.text("removed_at IS NULL"),
+            sqlite_where=db.text("removed_at IS NULL")
+        ),
+        db.Index(
+            "ix_team_coach_assignments_user_id",
+            "user_id"
+        ),
+    )
+
+    id = db.Column(db.String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
+
+    club_id = db.Column(
+        db.String(36),
+        db.ForeignKey("clubs.id"),
+        nullable=False
+    )
+
+    team_id = db.Column(
+        db.String(36),
+        nullable=False
+    )
+
+    user_id = db.Column(
+        db.String(36),
+        nullable=False
+    )
+
+    assigned_at = db.Column(
+        db.DateTime(),
+        nullable=False,
+        default=datetime.utcnow
+    )
+
+    assigned_by = db.Column(
+        db.String(36),
+        db.ForeignKey("users.id"),
+        nullable=True
+    )
+
+    removed_at = db.Column(db.DateTime(), nullable=True)
+
+    user = db.relationship(
+        "User",
+        primaryjoin="TeamCoachAssignment.user_id == User.id",
+        foreign_keys=[user_id],
+        viewonly=True
+    )
+
+    def serialize(self):
+        return {
+            "id": self.id,
+            "club_id": self.club_id,
+            "team_id": self.team_id,
+            "user_id": self.user_id,
+            "assigned_at": self.assigned_at.isoformat(),
+            "assigned_by": self.assigned_by,
+            "removed_at": (
+                self.removed_at.isoformat()
+                if self.removed_at
+                else None
+            ),
+        }
+
+
 class Tournament(db.Model):
     __tablename__ = "tournaments"
 
