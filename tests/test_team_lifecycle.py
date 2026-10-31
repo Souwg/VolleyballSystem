@@ -417,7 +417,7 @@ def test_closed_season_historical_team_remains_readable(
     assert response.status_code == 200
 
 
-def test_planned_season_team_is_readable_but_not_operational(
+def test_planned_season_team_is_readable_and_accepts_owner_roster_preparation(
     client, world, auth_headers
 ):
     planned = Season(
@@ -449,8 +449,8 @@ def test_planned_season_team_is_readable_but_not_operational(
     )
 
     assert detail.status_code == 200
-    assert membership.status_code == 409
-    assert membership.get_json()["code"] == "ACTIVE_SEASON_REQUIRED"
+    assert membership.status_code == 201
+    assert membership.get_json()["player"]["team_id"] == future_team.id
 
 
 def test_dashboard_and_onboarding_ignore_archived_team(

@@ -22,13 +22,24 @@ from src.api.models import (
 )
 from src.api.upload_utils import allowed_image_file
 from src.api.onboarding_service import is_club_onboarding_complete
-from src.api.season_service import get_team_operation_error
+from src.api.season_service import get_team_membership_operation_error
 from src.api.sports import get_club_sport_adapter
 from src.api.utils import error_response, get_current_user
 
 
 MAX_PLAYER_IMAGE_SIZE = 8 * 1024 * 1024
 MAX_PLAYER_IMAGE_SIZE_MB = MAX_PLAYER_IMAGE_SIZE // (1024 * 1024)
+
+
+def ensure_planned_roster_owner(user, team):
+    if team.season and team.season.status == "planned" and user.role != "club_owner":
+        return error_response(
+            "Solo el dueño del club puede preparar el roster de otra temporada",
+            "FORBIDDEN",
+            403,
+        )
+
+    return None
 
 
 def ensure_player_creation_allowed_during_setup(user):
@@ -69,6 +80,14 @@ def remove_player_from_team(team_id, player_id):
 
     if not team or team.club_id != user.club_id:
         return error_response("Equipo no encontrado", "TEAM_NOT_FOUND", 404)
+
+    team_error = get_team_membership_operation_error(team)
+    if team_error:
+        return error_response(*team_error)
+
+    role_error = ensure_planned_roster_owner(user, team)
+    if role_error:
+        return role_error
 
     membership = TeamPlayer.query.filter_by(
         team_id=team.id,
@@ -225,10 +244,14 @@ def create_player():
                 403
             )
 
-        team_error = get_team_operation_error(team)
+        team_error = get_team_membership_operation_error(team)
 
         if team_error:
             return error_response(*team_error)
+
+        role_error = ensure_planned_roster_owner(user, team)
+        if role_error:
+            return role_error
 
         if team.gender != "mixed" and team.gender != sex:
             return error_response(
@@ -589,10 +612,14 @@ def add_existing_player_to_team(team_id):
             403
         )
 
-    team_error = get_team_operation_error(team)
+    team_error = get_team_membership_operation_error(team)
 
     if team_error:
         return error_response(*team_error)
+
+    role_error = ensure_planned_roster_owner(user, team)
+    if role_error:
+        return role_error
 
     setup_error = ensure_player_creation_allowed_during_setup(user)
 
@@ -819,6 +846,19 @@ def update_player(player_id):
 
     # ✅ actualizar número SOLO en membership específica
     if team_id and player_number is not None:
+        team = db.session.get(Team, team_id)
+
+        if not team or team.club_id != user.club_id:
+            return error_response("Equipo no encontrado", "TEAM_NOT_FOUND", 404)
+
+        team_error = get_team_membership_operation_error(team)
+        if team_error:
+            return error_response(*team_error)
+
+        role_error = ensure_planned_roster_owner(user, team)
+        if role_error:
+            return role_error
+
         membership = TeamPlayer.query.filter_by(
             player_id=player.id,
             team_id=team_id,
@@ -944,6 +984,14 @@ def update_player_status(player_id):
             "FORBIDDEN",
             403
         )
+
+    team_error = get_team_membership_operation_error(team)
+    if team_error:
+        return error_response(*team_error)
+
+    role_error = ensure_planned_roster_owner(user, team)
+    if role_error:
+        return role_error
 
     membership.status = status
     db.session.commit()

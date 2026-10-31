@@ -20,3 +20,4 @@ from src.api.endpoints import player_performance as _player_performance
 from src.api.endpoints import payments as _payments
 from src.api.endpoints import tournaments as _tournaments
 from src.api.endpoints import matches as _matches
+from src.api.endpoints import seasons as _seasons

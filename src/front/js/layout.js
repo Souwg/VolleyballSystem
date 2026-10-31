@@ -45,6 +45,7 @@ import { ClubUsers } from "./pages/club/clubUsers";
 import { ClubSetupPending } from "./pages/club/clubSetupPending";
 import { Payments } from "./pages/payments/payments";
 import { TournamentCharges } from "./pages/payments/tournamentCharges";
+import { Seasons } from "./pages/seasons/seasons";
 import injectContext from "./store/appContext";
 
 const Layout = () => {
@@ -158,6 +159,7 @@ const Layout = () => {
                 <Route path="/dashboard" element={<Dashboard />} />
                 <Route path="/club/profile" element={<ClubProfile />} />
                 <Route path="/club/users" element={<ClubUsers />} />
+                <Route path="/seasons" element={<Seasons />} />
                 <Route path="/payments" element={<Payments />} />
                 <Route
                   path="/payments/tournament-charges"

@@ -9,6 +9,7 @@ from src.api.models import (
     Category,
     MatchSession,
     Player,
+    Season,
     Team,
     TeamPlayer,
     TournamentTeam,
@@ -16,7 +17,8 @@ from src.api.models import (
 )
 from src.api.season_service import (
     get_active_season_for_club,
-    get_season_operation_error,
+    get_season_structure_operation_error,
+    get_team_membership_operation_error,
 )
 from src.api.utils import error_response, get_current_user
 
@@ -61,6 +63,7 @@ def create_team(category_id):
 
     name = body.get("name")
     gender = body.get("gender")
+    season_id = body.get("season_id")
 
     if name:
         name = " ".join(name.strip().split())
@@ -81,8 +84,35 @@ def create_team(category_id):
             400
         )
 
+    if season_id:
+        season = db.session.get(Season, season_id)
+
+        if not season or season.club_id != user.club_id:
+            return error_response(
+                "Temporada no encontrada",
+                "SEASON_NOT_FOUND",
+                404
+            )
+
+        if season.status != "planned":
+            return error_response(
+                "La temporada indicada debe estar planificada",
+                "SEASON_NOT_PLANNED",
+                409
+            )
+    else:
+        season = get_active_season_for_club(user.club_id)
+
+        if not season:
+            return error_response(
+                "El club no tiene una temporada activa configurada",
+                "ACTIVE_SEASON_REQUIRED",
+                409
+            )
+
     existing_team = Team.query.filter(
         Team.club_id == user.club_id,
+        Team.season_id == season.id,
         Team.category_id == category.id,
         Team.gender == gender,
         func.lower(Team.name) == name.lower()
@@ -92,15 +122,6 @@ def create_team(category_id):
         return error_response(
             "Ya existe este equipo en esa categoría y rama",
             "TEAM_ALREADY_EXISTS",
-            409
-        )
-
-    season = get_active_season_for_club(user.club_id)
-
-    if not season:
-        return error_response(
-            "El club no tiene una temporada activa configurada",
-            "ACTIVE_SEASON_REQUIRED",
             409
         )
 
@@ -248,6 +269,10 @@ def update_team(team_id):
             403
         )
 
+    season_error = get_season_structure_operation_error(team.season)
+    if season_error:
+        return error_response(*season_error)
+
     body = request.get_json() or {}
 
     name = body.get("name")
@@ -274,6 +299,7 @@ def update_team(team_id):
 
     existing_team = Team.query.filter(
         Team.club_id == user.club_id,
+        Team.season_id == team.season_id,
         Team.category_id == team.category_id,
         Team.gender == gender,
         func.lower(Team.name) == name.lower(),
@@ -333,6 +359,10 @@ def archive_team(team_id):
             404
         )
 
+    season_error = get_season_structure_operation_error(team.season)
+    if season_error:
+        return error_response(*season_error)
+
     team.status = "archived"
     db.session.commit()
 
@@ -363,7 +393,7 @@ def reactivate_team(team_id):
             404
         )
 
-    season_error = get_season_operation_error(team.season)
+    season_error = get_season_structure_operation_error(team.season)
 
     if season_error:
         return error_response(*season_error)
@@ -412,6 +442,10 @@ def delete_team(team_id):
             "FORBIDDEN",
             403
         )
+
+    season_error = get_season_structure_operation_error(team.season)
+    if season_error:
+        return error_response(*season_error)
 
     players_count = TeamPlayer.query.filter_by(team_id=team.id).count()
 

@@ -1,4 +1,21 @@
 export const errorMessages = {
+  SEASON_NOT_FOUND: "Temporada no encontrada.",
+  SEASON_NAME_REQUIRED: "Ingresa el nombre de la temporada.",
+  INVALID_SEASON_DATE_RANGE:
+    "La fecha final no puede ser anterior a la fecha inicial.",
+  SEASON_NOT_PLANNED: "La temporada destino debe estar planificada.",
+  SEASON_HAS_OPEN_ACTIVITIES:
+    "Completa o cancela las actividades abiertas antes de cambiar de temporada.",
+  SEASON_TRANSITION_CONFLICT:
+    "No se pudo completar la transición. Actualiza la página e intenta nuevamente.",
+  SEASON_TEAM_REQUIRED:
+    "Prepara al menos un equipo antes de activar la temporada.",
+  TEAM_ALREADY_COPIED:
+    "Uno de los equipos seleccionados ya existe en la temporada destino.",
+  TEAM_SELECTION_REQUIRED: "Selecciona al menos un equipo.",
+  PLAYER_SELECTION_REQUIRED: "Selecciona al menos una jugadora.",
+  ROSTER_COPY_CONFLICT:
+    "El roster destino cambió. Actualiza la página e intenta nuevamente.",
   ACTIVE_SEASON_REQUIRED:
     "El club no tiene una temporada activa configurada.",
   SEASON_CLOSED:

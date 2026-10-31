@@ -23,6 +23,7 @@ const coachNavItems = defaultNavItems.filter(
 
 const ownerNavItems = [
   ...defaultNavItems,
+  { name: "Temporadas", path: "/seasons" },
   { name: "Usuarios", path: "/club/users" },
 ];
 
@@ -58,6 +59,7 @@ export const AppShell = () => {
 
   const isDetailPage =
     location.pathname === "/club/profile" ||
+    location.pathname === "/seasons" ||
     isClubUsersPath(location.pathname) ||
     /^\/categories\/[^/]+$/.test(location.pathname) ||
     /^\/tournaments\/[^/]+$/.test(location.pathname) ||

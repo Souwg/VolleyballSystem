@@ -1,6 +1,6 @@
 from datetime import datetime
 
-from src.api.models import Season
+from src.api.models import MatchSession, Season, Team, Tournament, TrainingSession
 
 
 INITIAL_SEASON_NAME = "Temporada inicial"
@@ -43,6 +43,59 @@ def get_team_operation_error(team):
         )
 
     return get_season_operation_error(team.season)
+
+
+def get_team_membership_operation_error(team):
+    if team.status == "archived":
+        return (
+            "El equipo está archivado y no admite cambios en su roster",
+            "TEAM_ARCHIVED",
+            409,
+        )
+
+    return get_season_structure_operation_error(team.season)
+
+
+def get_season_structure_operation_error(season):
+    if season and season.status in ["active", "planned"]:
+        return None
+
+    return get_season_operation_error(season)
+
+
+def get_season_open_activities(season):
+    team_ids = [
+        row[0]
+        for row in Team.query.with_entities(Team.id).filter_by(
+            club_id=season.club_id,
+            season_id=season.id,
+        ).all()
+    ]
+
+    scheduled_trainings = 0
+    open_matches = 0
+
+    if team_ids:
+        scheduled_trainings = TrainingSession.query.filter(
+            TrainingSession.team_id.in_(team_ids),
+            TrainingSession.status == "scheduled",
+        ).count()
+        open_matches = MatchSession.query.filter(
+            MatchSession.team_id.in_(team_ids),
+            MatchSession.is_completed.is_(False),
+        ).count()
+
+    active_tournaments = Tournament.query.filter_by(
+        club_id=season.club_id,
+        season_id=season.id,
+        status="active",
+    ).count()
+
+    return {
+        "scheduled_trainings": scheduled_trainings,
+        "open_matches": open_matches,
+        "active_tournaments": active_tournaments,
+    }
 
 
 def build_initial_season(club, created_by=None):

@@ -463,6 +463,7 @@ class Team(db.Model):
             "gender",
             "category_id",
             "club_id",
+            "season_id",
             name="unique_team_gender_per_category"
         ),
         db.ForeignKeyConstraint(
