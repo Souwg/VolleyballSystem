@@ -257,6 +257,10 @@ def sync_match_roster_if_open(match):
     if match.is_completed:
         return 0
 
+    # Un equipo no operativo conserva su snapshot tal como quedó.
+    if get_team_operation_error(match.team):
+        return 0
+
     # =========================
     # 1. Determinar elegibles
     # =========================
@@ -764,6 +768,11 @@ def save_match_roster(match_id):
             403
         )
 
+    team_error = get_team_operation_error(match.team)
+
+    if team_error:
+        return error_response(*team_error)
+
     body = request.get_json() or {}
     players = body.get("players")
 
@@ -1217,6 +1226,11 @@ def update_match_status(match_id):
     if match.team.club_id != user.club_id:
         return error_response("No tienes acceso", "FORBIDDEN", 403)
 
+    team_error = get_team_operation_error(match.team)
+
+    if team_error:
+        return error_response(*team_error)
+
     sport_adapter = get_club_sport_adapter(match.team.club)
 
     body = request.get_json() or {}
@@ -1492,6 +1506,11 @@ def update_match_capture_mode(match_id):
             403
         )
 
+    team_error = get_team_operation_error(match.team)
+
+    if team_error:
+        return error_response(*team_error)
+
     body = request.get_json() or {}
     capture_mode = body.get("capture_mode")
 
@@ -1619,6 +1638,11 @@ def save_starting_lineup(match_id):
             "FORBIDDEN",
             403
         )
+
+    team_error = get_team_operation_error(match.team)
+
+    if team_error:
+        return error_response(*team_error)
 
     if match.is_completed:
         return error_response(
@@ -1759,6 +1783,11 @@ def create_match_substitution(match_id):
             "FORBIDDEN",
             403
         )
+
+    team_error = get_team_operation_error(match.team)
+
+    if team_error:
+        return error_response(*team_error)
 
     if match.is_completed:
         return error_response(
@@ -1920,6 +1949,11 @@ def update_match_participation(match_id):
             "FORBIDDEN",
             403
         )
+
+    team_error = get_team_operation_error(match.team)
+
+    if team_error:
+        return error_response(*team_error)
 
     if match.capture_mode == "live":
         return error_response(
@@ -2100,6 +2134,11 @@ def save_match_stats(match_player_id):
             "FORBIDDEN",
             403
         )
+
+    team_error = get_team_operation_error(row.match.team)
+
+    if team_error:
+        return error_response(*team_error)
 
     if row.match.is_completed:
         return error_response(
@@ -2321,6 +2360,11 @@ def update_match_result(match_id):
     if match.team.club_id != user.club_id:
         return error_response("No tienes acceso", "FORBIDDEN", 403)
 
+    team_error = get_team_operation_error(match.team)
+
+    if team_error:
+        return error_response(*team_error)
+
     if match.is_completed:
         return error_response(
             "El partido ya fue finalizado y su resultado no puede modificarse.",
@@ -2389,6 +2433,11 @@ def finalize_match(match_id):
             "FORBIDDEN",
             403
         )
+
+    team_error = get_team_operation_error(match.team)
+
+    if team_error:
+        return error_response(*team_error)
 
     validated_result, validation_error = _validate_match_result(
         match,
@@ -2480,6 +2529,11 @@ def create_match_event():
             "FORBIDDEN",
             403
         )
+
+    team_error = get_team_operation_error(match.team)
+
+    if team_error:
+        return error_response(*team_error)
 
     if match.is_completed:
         return error_response(
@@ -2625,6 +2679,11 @@ def delete_match_event(event_id):
             "FORBIDDEN",
             403
         )
+
+    team_error = get_team_operation_error(match.team)
+
+    if team_error:
+        return error_response(*team_error)
 
     if match.is_completed:
         return error_response(

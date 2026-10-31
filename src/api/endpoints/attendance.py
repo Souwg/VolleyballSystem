@@ -11,6 +11,7 @@ from src.api.models import (
     TrainingPlayer,
     TrainingSession,
 )
+from src.api.season_service import get_team_operation_error
 from src.api.training_audit_service import (
     TRAINING_AUDIT_ACTIONS,
     add_training_audit_event,
@@ -55,6 +56,11 @@ def save_attendance(training_id):
             "FORBIDDEN",
             403
         )
+
+    team_error = get_team_operation_error(team)
+
+    if team_error:
+        return error_response(*team_error)
 
     if training.status == "cancelled":
         return error_response(
@@ -197,6 +203,9 @@ def correct_training_attendance(training_id):
             404
         )
 
+    # Excepción deliberada al guard de get_team_operation_error: la corrección
+    # exige motivo y queda auditada, por lo que sigue disponible con el equipo
+    # archivado o la temporada cerrada. Las mutaciones normales no pasan por aquí.
     if training.status != "completed":
         return error_response(
             "La asistencia histórica solo puede corregirse en un entrenamiento completado.",

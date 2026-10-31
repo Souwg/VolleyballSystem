@@ -167,6 +167,11 @@ def _transition_training_status(training_id, target_status):
             403
         )
 
+    team_error = get_team_operation_error(team)
+
+    if team_error:
+        return error_response(*team_error)
+
     if training.status == target_status:
         return jsonify({
             "message": "El entrenamiento ya tenía este estado",
@@ -441,6 +446,11 @@ def sync_training_session_roster(training_id):
             403
         )
 
+    team_error = get_team_operation_error(team)
+
+    if team_error:
+        return error_response(*team_error)
+
     try:
         sync_result = sync_training_roster(training)
     except TrainingRosterFrozenError:
@@ -557,6 +567,11 @@ def update_training(training_id):
             403
         )
 
+    team_error = get_team_operation_error(team)
+
+    if team_error:
+        return error_response(*team_error)
+
     if training.status != "scheduled":
         return error_response(
             "Este entrenamiento está cerrado y solo admite correcciones históricas.",
@@ -619,6 +634,9 @@ def correct_training_metadata(training_id):
             404
         )
 
+    # Excepción deliberada al guard de get_team_operation_error: la corrección
+    # exige motivo y queda auditada, por lo que sigue disponible con el equipo
+    # archivado o la temporada cerrada. Las mutaciones normales no pasan por aquí.
     if training.status not in ["completed", "cancelled"]:
         return error_response(
             "Este entrenamiento no requiere una corrección histórica.",
