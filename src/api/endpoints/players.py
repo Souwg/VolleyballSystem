@@ -23,6 +23,7 @@ from src.api.models import (
 from src.api.upload_utils import allowed_image_file
 from src.api.onboarding_service import is_club_onboarding_complete
 from src.api.season_service import (
+    get_active_season_for_club,
     get_team_membership_operation_error,
     resolve_season_for_read,
 )
@@ -541,14 +542,20 @@ def get_players():
             403
         )
 
-    season, season_error, _ = resolve_season_for_read(
-        user.club_id,
-        request.args.get("season_id"),
-        default_to_active=False,
-    )
+    requested_season_id = request.args.get("season_id")
+    explicit_season = requested_season_id is not None
 
-    if season_error:
-        return error_response(*season_error)
+    if explicit_season:
+        season, season_error, _ = resolve_season_for_read(
+            user.club_id,
+            requested_season_id,
+            default_to_active=False,
+        )
+
+        if season_error:
+            return error_response(*season_error)
+    else:
+        season = get_active_season_for_club(user.club_id)
 
     players = Player.query.filter_by(
         club_id=user.club_id
@@ -561,12 +568,14 @@ def get_players():
             (
                 membership
                 for membership in player.team_memberships
-                if (
-                    membership.team.club_id == user.club_id
-                    and (
-                        membership.team.season_id == season.id
-                        if season
-                        else membership.left_at is None
+                if membership.team.club_id == user.club_id
+                and season
+                and membership.team.season_id == season.id
+                and (
+                    explicit_season
+                    or (
+                        membership.left_at is None
+                        and membership.team.status == "active"
                     )
                 )
             ),

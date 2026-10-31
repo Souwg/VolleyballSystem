@@ -765,6 +765,11 @@ def reactivate_training(training_id):
             409
         )
 
+    team_error = get_team_operation_error(training.team)
+
+    if team_error:
+        return error_response(*team_error)
+
     body = request.get_json(silent=True) or {}
 
     if not isinstance(body, dict):

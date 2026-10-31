@@ -309,7 +309,7 @@ def test_categories_are_global_but_nested_teams_use_active_season(
     assert _ids(teams_response.get_json()["teams"]) == {world.team_a.id}
 
 
-def test_player_remains_global_with_historical_membership(
+def test_player_remains_global_without_treating_historical_team_as_current(
     client,
     world,
     auth_headers,
@@ -327,10 +327,8 @@ def test_player_remains_global_with_historical_membership(
         for row in response.get_json()["players"]
         if row["id"] == scenario.historical_player.id
     )
-    assert scenario.closed_team.id in {
-        team["id"]
-        for team in player["teams"]
-    }
+    assert player["team_id"] is None
+    assert player["teams"] == []
 
 
 def test_global_categories_and_players_do_not_require_active_season(
