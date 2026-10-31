@@ -22,7 +22,10 @@ from src.api.models import (
 )
 from src.api.upload_utils import allowed_image_file
 from src.api.onboarding_service import is_club_onboarding_complete
-from src.api.season_service import get_team_membership_operation_error
+from src.api.season_service import (
+    get_team_membership_operation_error,
+    resolve_season_for_read,
+)
 from src.api.sports import get_club_sport_adapter
 from src.api.utils import error_response, get_current_user
 
@@ -538,6 +541,15 @@ def get_players():
             403
         )
 
+    season, season_error, _ = resolve_season_for_read(
+        user.club_id,
+        request.args.get("season_id"),
+        default_to_active=False,
+    )
+
+    if season_error:
+        return error_response(*season_error)
+
     players = Player.query.filter_by(
         club_id=user.club_id
     ).order_by(Player.created_at.desc()).all()
@@ -545,11 +557,18 @@ def get_players():
     serialized_players = []
 
     for player in players:
-        open_memberships = sorted(
+        memberships = sorted(
             (
                 membership
                 for membership in player.team_memberships
-                if membership.left_at is None
+                if (
+                    membership.team.club_id == user.club_id
+                    and (
+                        membership.team.season_id == season.id
+                        if season
+                        else membership.left_at is None
+                    )
+                )
             ),
             key=lambda membership: (
                 membership.joined_at,
@@ -557,7 +576,7 @@ def get_players():
                 membership.id
             )
         )
-        membership = open_memberships[0] if open_memberships else None
+        membership = memberships[0] if memberships else None
 
         serialized_players.append({
             **player.serialize(),
@@ -572,13 +591,19 @@ def get_players():
                     "category_id": m.team.category_id,
                     "category_name": m.team.category.name if m.team.category else None,
                     "player_number": m.player_number,
-                    "status": m.status
+                    "status": m.status,
+                    "membership_id": m.id,
+                    "joined_at": m.joined_at.isoformat(),
+                    "left_at": m.left_at.isoformat() if m.left_at else None,
+                    "season_id": m.team.season_id,
+                    "team_status": m.team.status,
                 }
-                for m in open_memberships
+                for m in memberships
             ]
         })
 
     return jsonify({
+        "season": season.serialize() if season else None,
         "total_players": len(serialized_players),
         "players": serialized_players
     }), 200

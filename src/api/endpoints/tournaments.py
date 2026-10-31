@@ -25,6 +25,7 @@ from src.api.season_service import (
     get_active_season_for_club,
     get_season_operation_error,
     get_team_operation_error,
+    resolve_season_for_read,
 )
 from src.api.utils import error_response, get_current_user
 
@@ -189,14 +190,13 @@ def get_tournaments():
 
     status = request.args.get("status")
 
-    season = get_active_season_for_club(user.club_id)
+    season, season_error, _ = resolve_season_for_read(
+        user.club_id,
+        request.args.get("season_id"),
+    )
 
-    if not season:
-        return error_response(
-            "El club no tiene una temporada activa",
-            "ACTIVE_SEASON_REQUIRED",
-            409
-        )
+    if season_error:
+        return error_response(*season_error)
 
     query = Tournament.query.filter_by(
         club_id=user.club_id,
@@ -232,6 +232,7 @@ def get_tournaments():
         })
 
     return jsonify({
+        "season": season.serialize(),
         "total_tournaments": len(result),
         "tournaments": result
     }), 200

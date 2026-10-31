@@ -10,6 +10,10 @@ import { errorMessages } from "../../utils/errorMessages";
 import { formatMoney } from "../../utils/money";
 import { useToast } from "../../../../context/toastContext";
 import { Pencil } from "lucide-react";
+import {
+  SeasonSelector,
+  useSeasonSelection,
+} from "../../component/seasonSelector";
 
 const POSITION_LABELS = {
   setter: "Armador",
@@ -120,6 +124,13 @@ export const PlayerDetail = () => {
     representative_phone: "",
   });
   const [activeTab, setActiveTab] = useState("profile");
+  const {
+    loadingSeasons,
+    seasonId,
+    seasons,
+    selectedSeason,
+    selectSeason,
+  } = useSeasonSelection({ defaultToActive: false });
   const canManagePayments = ["club_owner", "staff"].includes(
     store.user?.role,
   );
@@ -147,7 +158,9 @@ export const PlayerDetail = () => {
       await Promise.all([
         canViewSports ? null : actions.getPlayers(),
         canViewSports ? actions.getPlayerAttendance(player_id) : null,
-        canViewPerformance ? actions.getPlayerPerformance(player_id) : null,
+        canViewPerformance
+          ? actions.getPlayerPerformance(player_id, { seasonId })
+          : null,
         canManagePayments ? actions.getPlayerPayments(player_id) : null,
       ]);
 
@@ -201,7 +214,7 @@ export const PlayerDetail = () => {
 
   useEffect(() => {
     loadPlayerData();
-  }, [player_id]);
+  }, [player_id, seasonId]);
 
   const handleRepresentativeChange = (event) => {
     const { name, value } = event.target;
@@ -674,6 +687,41 @@ export const PlayerDetail = () => {
       {canViewPerformance && activeTab === "performance" && (
         <>
           {/* ===== RENDIMIENTO EN PARTIDOS ===== */}
+
+          <SeasonSelector
+            includeAll
+            loading={loadingSeasons}
+            onChange={selectSeason}
+            seasons={seasons}
+            selectedSeason={selectedSeason}
+          />
+
+          {performance?.memberships?.length > 0 && selectedSeason && (
+            <Card className="player-info-card">
+              <div className="player-section-header">
+                <div>
+                  <span className="player-card-label">Trayectoria</span>
+                  <h3>Equipos en {selectedSeason.name}</h3>
+                </div>
+              </div>
+              <div className="player-teams-list">
+                {performance.memberships.map((membership) => (
+                  <div key={membership.id} className="player-team-row">
+                    <div className="player-team-row-info">
+                      <strong>{membership.team.name}</strong>
+                      <span>
+                        #{membership.player_number}
+                        {membership.left_at ? " · Membresía finalizada" : ""}
+                        {membership.team.status === "archived"
+                          ? " · Equipo archivado"
+                          : ""}
+                      </span>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </Card>
+          )}
 
           <Card className="player-summary-card">
             <div className="player-section-header">

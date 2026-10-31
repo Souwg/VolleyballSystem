@@ -244,9 +244,14 @@ const getState = ({ getStore, getActions, setStore }) => {
         }
       },
 
-      getCategories: async () => {
+      getCategories: async (filters = {}) => {
         try {
-          const resp = await authFetch("/api/categories");
+          const params = new URLSearchParams();
+          if (filters.seasonId) params.append("season_id", filters.seasonId);
+          const query = params.toString();
+          const resp = await authFetch(
+            query ? `/api/categories?${query}` : "/api/categories",
+          );
 
           const result = await parseResponse(resp);
 
@@ -262,9 +267,14 @@ const getState = ({ getStore, getActions, setStore }) => {
         }
       },
 
-      getCategoryDetail: async (categoryId) => {
+      getCategoryDetail: async (categoryId, filters = {}) => {
         try {
-          const resp = await authFetch(`/api/categories/${categoryId}`);
+          const params = new URLSearchParams();
+          if (filters.seasonId) params.append("season_id", filters.seasonId);
+          const query = params.toString();
+          const resp = await authFetch(
+            `/api/categories/${categoryId}${query ? `?${query}` : ""}`,
+          );
 
           const result = await parseResponse(resp);
 
@@ -376,9 +386,14 @@ const getState = ({ getStore, getActions, setStore }) => {
         }
       },
 
-      getTeams: async () => {
+      getTeams: async (filters = {}) => {
         try {
-          const resp = await authFetch("/api/teams");
+          const params = new URLSearchParams();
+          if (filters.seasonId) params.append("season_id", filters.seasonId);
+          const query = params.toString();
+          const resp = await authFetch(
+            query ? `/api/teams?${query}` : "/api/teams",
+          );
 
           const result = await parseResponse(resp);
 
@@ -1214,9 +1229,14 @@ const getState = ({ getStore, getActions, setStore }) => {
         }
       },
 
-      getPlayerPerformance: async (playerId) => {
+      getPlayerPerformance: async (playerId, filters = {}) => {
         try {
-          const resp = await authFetch(`/api/players/${playerId}/performance`);
+          const params = new URLSearchParams();
+          if (filters.seasonId) params.append("season_id", filters.seasonId);
+          const query = params.toString();
+          const resp = await authFetch(
+            `/api/players/${playerId}/performance${query ? `?${query}` : ""}`,
+          );
 
           const result = await parseResponse(resp);
 
@@ -1228,9 +1248,14 @@ const getState = ({ getStore, getActions, setStore }) => {
         }
       },
 
-      getAllTrainings: async () => {
+      getAllTrainings: async (filters = {}) => {
         try {
-          const resp = await authFetch("/api/trainings");
+          const params = new URLSearchParams();
+          if (filters.seasonId) params.append("season_id", filters.seasonId);
+          const query = params.toString();
+          const resp = await authFetch(
+            query ? `/api/trainings?${query}` : "/api/trainings",
+          );
 
           const result = await parseResponse(resp);
 
@@ -1251,6 +1276,10 @@ const getState = ({ getStore, getActions, setStore }) => {
 
           if (filters.status) {
             params.append("status", filters.status);
+          }
+
+          if (filters.seasonId) {
+            params.append("season_id", filters.seasonId);
           }
 
           const queryString = params.toString();
@@ -1565,9 +1594,14 @@ const getState = ({ getStore, getActions, setStore }) => {
           registrationChargesPreview: null,
         });
       },
-      getClubMatches: async () => {
+      getClubMatches: async (filters = {}) => {
         try {
-          const resp = await authFetch("/api/matches");
+          const params = new URLSearchParams();
+          if (filters.seasonId) params.append("season_id", filters.seasonId);
+          const query = params.toString();
+          const resp = await authFetch(
+            query ? `/api/matches?${query}` : "/api/matches",
+          );
 
           const result = await parseResponse(resp);
 

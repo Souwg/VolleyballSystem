@@ -8,6 +8,10 @@ import { Button } from "../../component/ui/button";
 import { Card } from "../../component/ui/card";
 import { validateCategory } from "../../utils/validators";
 import { errorMessages } from "../../utils/errorMessages";
+import {
+  SeasonSelector,
+  useSeasonSelection,
+} from "../../component/seasonSelector";
 import { Layers, Pencil } from "lucide-react";
 import "../../../styles/teams.css";
 
@@ -24,6 +28,14 @@ export const Categories = () => {
   const [editCategoryName, setEditCategoryName] = useState("");
   const [editCategoryDescription, setEditCategoryDescription] = useState("");
   const [loadingEdit, setLoadingEdit] = useState(false);
+  const {
+    loadingSeasons,
+    seasonId,
+    seasons,
+    selectedSeason,
+    selectSeason,
+  } = useSeasonSelection();
+  const readOnlySeason = selectedSeason?.status !== "active";
 
   useEffect(() => {
     const loadCategories = async () => {
@@ -33,12 +45,19 @@ export const Categories = () => {
       }
 
       setLoadingCategories(true);
-      await actions.getCategories();
+      await actions.getCategories({ seasonId });
       setLoadingCategories(false);
     };
 
     loadCategories();
-  }, [store.token]);
+  }, [store.token, seasonId]);
+
+  useEffect(() => {
+    if (readOnlySeason) {
+      setShowForm(false);
+      setEditingCategoryId(null);
+    }
+  }, [readOnlySeason]);
 
   const handleCreateCategory = async (e) => {
     e.preventDefault();
@@ -151,10 +170,17 @@ export const Categories = () => {
         subtitle="Organiza el club por edades, niveles, géneros o grupos de entrenamiento."
         actions={
           !showForm &&
+          !readOnlySeason &&
           !editingCategoryId && (
             <Button onClick={openCreateForm}>+ Crear categoría</Button>
           )
         }
+      />
+      <SeasonSelector
+        loading={loadingSeasons}
+        onChange={selectSeason}
+        seasons={seasons}
+        selectedSeason={selectedSeason}
       />
       {showForm && (
         <Card>
@@ -299,22 +325,30 @@ export const Categories = () => {
               <Card
                 key={category.id}
                 className="team-card card-interactive category-card"
-                onClick={() => navigate(`/categories/${category.id}`)}
+                onClick={() =>
+                  navigate(
+                    `/categories/${category.id}${
+                      seasonId ? `?season=${seasonId}` : ""
+                    }`,
+                  )
+                }
               >
                 <div className="category-card-header">
                   <h3 className="team-card-title">{category.name}</h3>
 
-                  <button
-                    type="button"
-                    className="category-edit-button"
-                    aria-label={`Editar categoría ${category.name}`}
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      openEditCategory(category);
-                    }}
-                  >
-                    <Pencil size={16} />
-                  </button>
+                  {!readOnlySeason && (
+                    <button
+                      type="button"
+                      className="category-edit-button"
+                      aria-label={`Editar categoría ${category.name}`}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        openEditCategory(category);
+                      }}
+                    >
+                      <Pencil size={16} />
+                    </button>
+                  )}
                 </div>
 
                 <p className="team-meta">

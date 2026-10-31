@@ -1,4 +1,4 @@
-from flask import jsonify
+from flask import jsonify, request
 from flask_jwt_extended import jwt_required
 
 from src.api.api_blueprint import api
@@ -8,12 +8,14 @@ from src.api.models import (
     Player,
     PlayerMatchStat,
     Team,
+    TeamPlayer,
 )
 from src.api.sports import (
     InvalidClubSportError,
     SportAdapterNotFoundError,
     get_club_sport_adapter,
 )
+from src.api.season_service import resolve_season_for_read
 from src.api.utils import error_response, get_current_user
 
 
@@ -104,6 +106,15 @@ def get_player_performance(player_id):
             403
         )
 
+    season, season_error, _ = resolve_season_for_read(
+        user.club_id,
+        request.args.get("season_id"),
+        default_to_active=False,
+    )
+
+    if season_error:
+        return error_response(*season_error)
+
     try:
         sport_adapter = get_club_sport_adapter(player.club)
         stat_fields, metric_fields = get_performance_contract(
@@ -127,7 +138,7 @@ def get_player_performance(player_id):
         return performance_not_supported_error()
 
     # Solo partidos en los que realmente pudo participar y jugó.
-    match_rows = (
+    match_query = (
         MatchPlayer.query
         .join(
             MatchSession,
@@ -145,7 +156,13 @@ def get_player_performance(player_id):
             ),
             Team.club_id == user.club_id
         )
-        .order_by(
+    )
+
+    if season:
+        match_query = match_query.filter(Team.season_id == season.id)
+
+    match_rows = (
+        match_query.order_by(
             MatchSession.date.desc(),
             MatchPlayer.created_at.desc()
         )
@@ -255,6 +272,20 @@ def get_player_performance(player_id):
     ):
         return performance_not_supported_error()
 
+    membership_query = TeamPlayer.query.join(Team).filter(
+        TeamPlayer.player_id == player.id,
+        Team.club_id == user.club_id,
+    )
+
+    if season:
+        membership_query = membership_query.filter(
+            Team.season_id == season.id
+        )
+
+    memberships = membership_query.order_by(
+        TeamPlayer.joined_at.desc()
+    ).all()
+
     return jsonify({
         "player": {
             "id": player.id,
@@ -268,6 +299,15 @@ def get_player_performance(player_id):
             **summary_metrics,
         },
         "totals": totals,
+        "season": season.serialize() if season else None,
+        "memberships": [
+            {
+                **membership.serialize(),
+                "team": membership.team.serialize(),
+                "season": membership.team.season.serialize(),
+            }
+            for membership in memberships
+        ],
         # Se conserva `matches` para mantener compatible el contrato previo.
         "matches": matches,
         "official_matches": official_matches,

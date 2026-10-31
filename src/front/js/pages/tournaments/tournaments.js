@@ -9,6 +9,10 @@ import { Card } from "../../component/ui/card";
 import { validateTournament } from "../../utils/validators";
 import { errorMessages } from "../../utils/errorMessages";
 import { Trophy, CalendarDays, Users } from "lucide-react";
+import {
+  SeasonSelector,
+  useSeasonSelection,
+} from "../../component/seasonSelector";
 
 import "../../../styles/tournaments.css";
 
@@ -62,6 +66,14 @@ export const Tournaments = () => {
   const [startDate, setStartDate] = useState("");
   const [endDate, setEndDate] = useState("");
   const [defaultRefereeFee, setDefaultRefereeFee] = useState("");
+  const {
+    loadingSeasons,
+    seasonId,
+    seasons,
+    selectedSeason,
+    selectSeason,
+  } = useSeasonSelection();
+  const readOnlySeason = selectedSeason?.status !== "active";
 
   useEffect(() => {
     const loadTournaments = async () => {
@@ -71,12 +83,16 @@ export const Tournaments = () => {
       }
 
       setLoadingTournaments(true);
-      await actions.getTournaments();
+      await actions.getTournaments({ seasonId });
       setLoadingTournaments(false);
     };
 
     loadTournaments();
-  }, [store.token]);
+  }, [store.token, seasonId]);
+
+  useEffect(() => {
+    if (readOnlySeason) setShowForm(false);
+  }, [readOnlySeason]);
 
   const resetForm = () => {
     setName("");
@@ -166,8 +182,17 @@ export const Tournaments = () => {
         title="Torneos"
         subtitle="Organiza las competencias del club, los equipos inscritos y los cargos asociados."
         actions={
-          !showForm && <Button onClick={openCreateForm}>+ Crear torneo</Button>
+          !showForm &&
+          !readOnlySeason && (
+            <Button onClick={openCreateForm}>+ Crear torneo</Button>
+          )
         }
+      />
+      <SeasonSelector
+        loading={loadingSeasons}
+        onChange={selectSeason}
+        seasons={seasons}
+        selectedSeason={selectedSeason}
       />
 
       {showForm && (
@@ -329,11 +354,12 @@ export const Tournaments = () => {
             <div className="empty-state">
               <Trophy size={30} />
 
-              <h4>Aún no tienes torneos</h4>
+              <h4>No hay datos en esta temporada</h4>
 
               <p>
-                Registra una competencia para asociar equipos, deportistas,
-                partidos y pagos.
+                {readOnlySeason
+                  ? "No hay torneos registrados en la temporada seleccionada."
+                  : "Registra una competencia para asociar equipos, deportistas, partidos y pagos."}
               </p>
             </div>
           </Card>

@@ -16,6 +16,42 @@ def get_active_season_for_club(club_id):
     ).first()
 
 
+def resolve_season_for_read(
+    club_id,
+    season_id=None,
+    default_to_active=True,
+):
+    """Resolve the active or explicitly requested read-only Season context."""
+    if season_id is not None:
+        season = Season.query.filter_by(
+            id=str(season_id).strip(),
+            club_id=club_id,
+        ).first()
+
+        if not season:
+            return None, (
+                "Temporada no encontrada",
+                "SEASON_NOT_FOUND",
+                404,
+            ), True
+
+        return season, None, True
+
+    if not default_to_active:
+        return None, None, False
+
+    season = get_active_season_for_club(club_id)
+
+    if not season:
+        return None, (
+            "El club no tiene una temporada activa",
+            "ACTIVE_SEASON_REQUIRED",
+            409,
+        ), False
+
+    return season, None, False
+
+
 def get_season_operation_error(season):
     if season and season.status == "active":
         return None

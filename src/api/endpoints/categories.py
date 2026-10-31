@@ -4,7 +4,10 @@ from sqlalchemy import func
 
 from src.api.api_blueprint import api
 from src.api.models import db, Category, Team, TeamPlayer
-from src.api.season_service import get_active_season_for_club
+from src.api.season_service import (
+    get_active_season_for_club,
+    resolve_season_for_read,
+)
 from src.api.utils import error_response, get_current_user
 
 
@@ -96,28 +99,51 @@ def get_categories():
     categories = Category.query.filter_by(
         club_id=user.club_id
     ).order_by(Category.name).all()
-    active_season = get_active_season_for_club(user.club_id)
-    active_season_id = active_season.id if active_season else None
+    requested_season_id = request.args.get("season_id")
+    explicit_season = requested_season_id is not None
+
+    if explicit_season:
+        season, season_error, _ = resolve_season_for_read(
+            user.club_id,
+            requested_season_id,
+        )
+
+        if season_error:
+            return error_response(*season_error)
+    else:
+        season = get_active_season_for_club(user.club_id)
+
+    season_id = season.id if season else None
 
     result = []
 
     for category in categories:
-        teams = Team.query.filter_by(
+        teams_query = Team.query.filter_by(
             category_id=category.id,
             club_id=user.club_id,
-            season_id=active_season_id,
-            status="active"
-        ).all()
+            season_id=season_id,
+        )
+
+        if not explicit_season:
+            teams_query = teams_query.filter_by(status="active")
+
+        teams = teams_query.all()
 
         team_ids = [team.id for team in teams]
 
         total_players = 0
 
         if team_ids:
-            total_players = TeamPlayer.query.filter(
+            memberships = TeamPlayer.query.filter(
                 TeamPlayer.team_id.in_(team_ids),
-                TeamPlayer.left_at.is_(None)
-            ).count()
+            )
+
+            if not explicit_season:
+                memberships = memberships.filter(
+                    TeamPlayer.left_at.is_(None)
+                )
+
+            total_players = memberships.count()
 
         result.append({
             **category.serialize(),
@@ -126,6 +152,7 @@ def get_categories():
         })
 
     return jsonify({
+        "season": season.serialize() if season else None,
         "categories": result
     }), 200
 
@@ -166,23 +193,42 @@ def get_category_detail(category_id):
             403
         )
 
-    active_season = get_active_season_for_club(user.club_id)
-    active_season_id = active_season.id if active_season else None
+    requested_season_id = request.args.get("season_id")
+    explicit_season = requested_season_id is not None
 
-    teams = Team.query.filter_by(
+    if explicit_season:
+        season, season_error, _ = resolve_season_for_read(
+            user.club_id,
+            requested_season_id,
+        )
+
+        if season_error:
+            return error_response(*season_error)
+    else:
+        season = get_active_season_for_club(user.club_id)
+
+    season_id = season.id if season else None
+
+    teams_query = Team.query.filter_by(
         category_id=category.id,
         club_id=user.club_id,
-        season_id=active_season_id,
-        status="active"
-    ).order_by(Team.name).all()
+        season_id=season_id,
+    )
+
+    if not explicit_season:
+        teams_query = teams_query.filter_by(status="active")
+
+    teams = teams_query.order_by(Team.name).all()
 
     serialized_teams = []
 
     for team in teams:
-        total_players = TeamPlayer.query.filter_by(
-            team_id=team.id,
-            left_at=None
-        ).count()
+        membership_query = TeamPlayer.query.filter_by(team_id=team.id)
+
+        if not explicit_season:
+            membership_query = membership_query.filter_by(left_at=None)
+
+        total_players = membership_query.count()
 
         serialized_teams.append({
             **team.serialize(),
@@ -191,6 +237,7 @@ def get_category_detail(category_id):
 
     return jsonify({
         "category": category.serialize(),
+        "season": season.serialize() if season else None,
         "total_teams": len(serialized_teams),
         "teams": serialized_teams
     }), 200
@@ -309,23 +356,42 @@ def get_category_teams(category_id):
             403
         )
 
-    active_season = get_active_season_for_club(user.club_id)
-    active_season_id = active_season.id if active_season else None
+    requested_season_id = request.args.get("season_id")
+    explicit_season = requested_season_id is not None
 
-    teams = Team.query.filter_by(
+    if explicit_season:
+        season, season_error, _ = resolve_season_for_read(
+            user.club_id,
+            requested_season_id,
+        )
+
+        if season_error:
+            return error_response(*season_error)
+    else:
+        season = get_active_season_for_club(user.club_id)
+
+    season_id = season.id if season else None
+
+    teams_query = Team.query.filter_by(
         category_id=category.id,
         club_id=user.club_id,
-        season_id=active_season_id,
-        status="active"
-    ).order_by(Team.name).all()
+        season_id=season_id,
+    )
+
+    if not explicit_season:
+        teams_query = teams_query.filter_by(status="active")
+
+    teams = teams_query.order_by(Team.name).all()
 
     serialized_teams = []
 
     for team in teams:
-        total_players = TeamPlayer.query.filter_by(
-            team_id=team.id,
-            left_at=None
-        ).count()
+        membership_query = TeamPlayer.query.filter_by(team_id=team.id)
+
+        if not explicit_season:
+            membership_query = membership_query.filter_by(left_at=None)
+
+        total_players = membership_query.count()
 
         serialized_teams.append({
             **team.serialize(),
@@ -334,6 +400,7 @@ def get_category_teams(category_id):
 
     return jsonify({
         "category": category.serialize(),
+        "season": season.serialize() if season else None,
         "teams": serialized_teams
     }), 200
 

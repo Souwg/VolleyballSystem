@@ -8,6 +8,7 @@ from src.api.models import db, Team, TrainingAuditEvent, TrainingSession
 from src.api.season_service import (
     get_active_season_for_club,
     get_team_operation_error,
+    resolve_season_for_read,
 )
 from src.api.training_audit_service import (
     TRAINING_AUDIT_ACTIONS,
@@ -913,22 +914,26 @@ def get_all_trainings():
             403
         )
 
-    season = get_active_season_for_club(user.club_id)
+    season, season_error, explicit_season = resolve_season_for_read(
+        user.club_id,
+        request.args.get("season_id"),
+    )
 
-    if not season:
-        return error_response(
-            "El club no tiene una temporada activa",
-            "ACTIVE_SEASON_REQUIRED",
-            409
-        )
+    if season_error:
+        return error_response(*season_error)
 
-    trainings = TrainingSession.query.join(Team).filter(
+    query = TrainingSession.query.join(Team).filter(
         Team.club_id == user.club_id,
         Team.season_id == season.id,
-        Team.status == "active"
-    ).order_by(TrainingSession.date.desc()).all()
+    )
+
+    if not explicit_season:
+        query = query.filter(Team.status == "active")
+
+    trainings = query.order_by(TrainingSession.date.desc()).all()
 
     return jsonify({
+        "season": season.serialize(),
         "total_trainings": len(trainings),
         "trainings": [
         {

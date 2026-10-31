@@ -7,6 +7,10 @@ import { Card } from "../../component/ui/card";
 import { Button } from "../../component/ui/button";
 import { CalendarCheck } from "lucide-react";
 import { getTrainingStatus } from "../../utils/trainingStatus";
+import {
+  SeasonSelector,
+  useSeasonSelection,
+} from "../../component/seasonSelector";
 
 import "../../../styles/trainings.css";
 
@@ -38,10 +42,18 @@ export const Trainings = () => {
   const { store, actions } = useContext(Context);
   const navigate = useNavigate();
   const [loading, setLoading] = useState(true);
+  const {
+    loadingSeasons,
+    seasonId,
+    seasons,
+    selectedSeason,
+    selectSeason,
+  } = useSeasonSelection();
+  const readOnlySeason = selectedSeason?.status !== "active";
 
   const loadTrainings = async () => {
     setLoading(true);
-    await actions.getAllTrainings();
+    await actions.getAllTrainings({ seasonId });
     setLoading(false);
   };
 
@@ -55,7 +67,7 @@ export const Trainings = () => {
 
   useEffect(() => {
     loadTrainings();
-  }, []);
+  }, [seasonId]);
 
   if (loading) {
     return <p>Cargando entrenamientos...</p>;
@@ -69,17 +81,27 @@ export const Trainings = () => {
         title="Entrenamientos"
         subtitle="Consulta y registra las sesiones de entrenamiento de tus equipos."
         actions={
-          <Button onClick={handleCreateTraining}>+ Crear entrenamiento</Button>
+          !readOnlySeason && (
+            <Button onClick={handleCreateTraining}>+ Crear entrenamiento</Button>
+          )
         }
+      />
+      <SeasonSelector
+        loading={loadingSeasons}
+        onChange={selectSeason}
+        seasons={seasons}
+        selectedSeason={selectedSeason}
       />
 
       {store.trainings.length === 0 ? (
         <Card>
           <div className="empty-state">
             <CalendarCheck size={30} />
-            <h4>No hay entrenamientos aún</h4>
+            <h4>No hay datos en esta temporada</h4>
             <p>
-              Crea tu primer entrenamiento para empezar a registrar asistencia.
+              {readOnlySeason
+                ? "No hay entrenamientos registrados en la temporada seleccionada."
+                : "Crea tu primer entrenamiento para empezar a registrar asistencia."}
             </p>
           </div>
         </Card>

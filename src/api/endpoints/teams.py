@@ -19,6 +19,7 @@ from src.api.season_service import (
     get_active_season_for_club,
     get_season_structure_operation_error,
     get_team_membership_operation_error,
+    resolve_season_for_read,
 )
 from src.api.utils import error_response, get_current_user
 
@@ -162,24 +163,26 @@ def get_teams():
             403
         )
 
-    season = get_active_season_for_club(user.club_id)
+    season, season_error, explicit_season = resolve_season_for_read(
+        user.club_id,
+        request.args.get("season_id"),
+    )
 
-    if not season:
-        return error_response(
-            "El club no tiene una temporada activa",
-            "ACTIVE_SEASON_REQUIRED",
-            409
-        )
+    if season_error:
+        return error_response(*season_error)
 
-    teams = Team.query.filter_by(
+    query = Team.query.filter_by(
         club_id=user.club_id,
         season_id=season.id,
-        status="active"
-    )\
-        .order_by(Team.name)\
-        .all()
+    )
+
+    if not explicit_season:
+        query = query.filter_by(status="active")
+
+    teams = query.order_by(Team.name).all()
 
     return jsonify({
+        "season": season.serialize(),
         "teams": [t.serialize() for t in teams]
     }), 200
 

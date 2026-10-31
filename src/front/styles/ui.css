@@ -31,6 +31,25 @@
   color: var(--color-muted);
   margin-bottom: 6px;
 }
+
+.season-filter {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+  margin: 0 0 18px;
+}
+
+.season-filter label {
+  color: var(--color-muted);
+  font-size: var(--font-size-sm);
+  font-weight: var(--font-weight-bold);
+}
+
+.season-filter .select {
+  width: auto;
+  min-width: min(100%, 240px);
+}
 /* ===== EMPTY STATE ===== */
 
 .empty-state {

@@ -10,6 +10,10 @@ import { Card } from "../../component/ui/card";
 import { validateTeam } from "../../utils/validators";
 import { errorMessages } from "../../utils/errorMessages";
 import { Pencil } from "lucide-react";
+import {
+  SeasonSelector,
+  useSeasonSelection,
+} from "../../component/seasonSelector";
 
 import "../../../styles/teams.css";
 
@@ -32,12 +36,20 @@ export const CategoryDetail = () => {
   const [editTeamName, setEditTeamName] = useState("");
   const [editTeamGender, setEditTeamGender] = useState("");
   const [loadingEditTeam, setLoadingEditTeam] = useState(false);
+  const {
+    loadingSeasons,
+    seasonId,
+    seasons,
+    selectedSeason,
+    selectSeason,
+  } = useSeasonSelection();
+  const readOnlySeason = selectedSeason?.status !== "active";
 
   const loadCategoryDetail = async () => {
     setLoadingCategory(true);
 
     try {
-      const result = await actions.getCategoryDetail(category_id);
+      const result = await actions.getCategoryDetail(category_id, { seasonId });
 
       if (result.ok) {
         setCategory(result.data.category);
@@ -53,7 +65,14 @@ export const CategoryDetail = () => {
   };
   useEffect(() => {
     loadCategoryDetail();
-  }, [category_id]);
+  }, [category_id, seasonId]);
+
+  useEffect(() => {
+    if (readOnlySeason) {
+      setShowForm(false);
+      setEditingTeamId(null);
+    }
+  }, [readOnlySeason]);
 
   const handleCreateTeam = async (e) => {
     e.preventDefault();
@@ -170,9 +189,12 @@ export const CategoryDetail = () => {
         subtitle={`${teams.length} ${
           teams.length === 1 ? "equipo" : "equipos"
         } dentro de esta categoría`}
-        onBack={() => navigate("/categories")}
+        onBack={() =>
+          navigate(`/categories${seasonId ? `?season=${seasonId}` : ""}`)
+        }
         actions={
           !showForm &&
+          !readOnlySeason &&
           !editingTeamId && (
             <Button
               onClick={() => {
@@ -185,6 +207,12 @@ export const CategoryDetail = () => {
             </Button>
           )
         }
+      />
+      <SeasonSelector
+        loading={loadingSeasons}
+        onChange={selectSeason}
+        seasons={seasons}
+        selectedSeason={selectedSeason}
       />
       <div className="team-detail-page">
         {showForm && (
@@ -370,17 +398,19 @@ export const CategoryDetail = () => {
                   <div className="category-card-header">
                     <h3 className="team-card-title">{team.name}</h3>
 
-                    <button
-                      type="button"
-                      className="category-edit-button"
-                      aria-label={`Editar equipo ${team.name}`}
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        openEditTeam(team);
-                      }}
-                    >
-                      <Pencil size={16} />
-                    </button>
+                    {!readOnlySeason && (
+                      <button
+                        type="button"
+                        className="category-edit-button"
+                        aria-label={`Editar equipo ${team.name}`}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          openEditTeam(team);
+                        }}
+                      >
+                        <Pencil size={16} />
+                      </button>
+                    )}
                   </div>
 
                   <p className="team-meta">
@@ -390,6 +420,7 @@ export const CategoryDetail = () => {
                       ? "Masculino"
                       : "Mixto"}{" "}
                     · {team.total_players || 0} deportistas
+                    {team.status === "archived" ? " · Archivado" : ""}
                   </p>
                 </Card>
               ))}

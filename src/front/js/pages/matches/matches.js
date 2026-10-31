@@ -6,22 +6,34 @@ import { PageHeader } from "../../component/ui/pageHeader";
 import { Card } from "../../component/ui/card";
 import "../../../styles/match.css";
 import { Trophy } from "lucide-react";
+import {
+  SeasonSelector,
+  useSeasonSelection,
+} from "../../component/seasonSelector";
 
 export const Matches = () => {
   const { store, actions } = useContext(Context);
   const navigate = useNavigate();
 
   const [loading, setLoading] = useState(true);
+  const {
+    loadingSeasons,
+    seasonId,
+    seasons,
+    selectedSeason,
+    selectSeason,
+  } = useSeasonSelection();
+  const readOnlySeason = selectedSeason?.status !== "active";
 
   useEffect(() => {
     loadMatches();
-  }, []);
+  }, [seasonId]);
 
   const loadMatches = async () => {
     setLoading(true);
 
     try {
-      await actions.getClubMatches();
+      await actions.getClubMatches({ seasonId });
     } finally {
       setLoading(false);
     }
@@ -88,16 +100,24 @@ export const Matches = () => {
         title="Partidos del club"
         subtitle="Consulta todos los partidos registrados en los equipos del club."
       />
+      <SeasonSelector
+        loading={loadingSeasons}
+        onChange={selectSeason}
+        seasons={seasons}
+        selectedSeason={selectedSeason}
+      />
 
       {matches.length === 0 ? (
         <Card>
           <div className="empty-state">
             <Trophy size={30} />
 
-            <h4>Aún no tienes partidos</h4>
+            <h4>No hay datos en esta temporada</h4>
 
             <p>
-              Los partidos aparecerán aquí cuando los crees desde un equipo.
+              {readOnlySeason
+                ? "No hay partidos registrados en la temporada seleccionada."
+                : "Los partidos aparecerán aquí cuando los crees desde un equipo."}
             </p>
           </div>
         </Card>

@@ -32,6 +32,7 @@ from src.api.sports import (
 from src.api.season_service import (
     get_active_season_for_club,
     get_team_operation_error,
+    resolve_season_for_read,
 )
 from src.api.utils import error_response, get_current_user
 
@@ -1390,20 +1391,23 @@ def get_club_matches():
             400
         )
 
-    season = get_active_season_for_club(user.club_id)
+    season, season_error, explicit_season = resolve_season_for_read(
+        user.club_id,
+        request.args.get("season_id"),
+    )
 
-    if not season:
-        return error_response(
-            "El club no tiene una temporada activa",
-            "ACTIVE_SEASON_REQUIRED",
-            409
-        )
+    if season_error:
+        return error_response(*season_error)
 
-    matches = MatchSession.query.join(Team).filter(
+    query = MatchSession.query.join(Team).filter(
         Team.club_id == user.club_id,
         Team.season_id == season.id,
-        Team.status == "active"
-    ).order_by(
+    )
+
+    if not explicit_season:
+        query = query.filter(Team.status == "active")
+
+    matches = query.order_by(
         MatchSession.date.desc()
     ).all()
 
@@ -1422,6 +1426,7 @@ def get_club_matches():
         })
 
     return jsonify({
+        "season": season.serialize(),
         "matches": result
     }), 200
 
