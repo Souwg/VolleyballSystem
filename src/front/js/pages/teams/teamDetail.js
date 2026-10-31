@@ -18,7 +18,7 @@ import "../../../styles/playerShared.css";
 import "../../../styles/teamDetails.css";
 
 export const TeamDetail = () => {
-  const { actions } = useContext(Context);
+  const { store, actions } = useContext(Context);
   const { showToast } = useToast();
   const { team_id } = useParams();
   const navigate = useNavigate();
@@ -34,6 +34,7 @@ export const TeamDetail = () => {
 
   const [errors, setErrors] = useState({});
   const [loadingSubmit, setLoadingSubmit] = useState(false);
+  const [updatingStatusPlayerId, setUpdatingStatusPlayerId] = useState(null);
   const [showForm, setShowForm] = useState(false);
   const [showAddOptions, setShowAddOptions] = useState(false);
   const [selectedExistingPlayer, setSelectedExistingPlayer] = useState(null);
@@ -247,6 +248,34 @@ export const TeamDetail = () => {
     });
   };
 
+  const handlePlayerStatusChange = async (event, player) => {
+    event.stopPropagation();
+
+    const status = event.target.value;
+    if (status === player.status || updatingStatusPlayerId) return;
+
+    setUpdatingStatusPlayerId(player.id);
+    const result = await actions.updatePlayerStatus(player.id, team_id, status);
+
+    if (!result.ok) {
+      showToast(
+        errorMessages[result.code] || "No se pudo actualizar la disponibilidad",
+        "error",
+      );
+      setUpdatingStatusPlayerId(null);
+      return;
+    }
+
+    setPlayers((currentPlayers) =>
+      currentPlayers.map((currentPlayer) =>
+        currentPlayer.id === player.id
+          ? { ...currentPlayer, status }
+          : currentPlayer,
+      ),
+    );
+    setUpdatingStatusPlayerId(null);
+  };
+
   const handleLoadExistingPlayers = async () => {
     const result = await actions.getPlayers();
 
@@ -288,6 +317,11 @@ export const TeamDetail = () => {
 
   const playerCountLabel =
     players.length === 1 ? "1 deportista" : `${players.length} deportistas`;
+  const canUpdatePlayerStatus =
+    team.status === "active" &&
+    ((store.user?.role === "club_owner" &&
+      ["active", "planned"].includes(team.season_status)) ||
+      (store.user?.role === "coach" && team.season_status === "active"));
 
   return (
     <div className="team-detail-page">
@@ -852,21 +886,37 @@ export const TeamDetail = () => {
                         </div>
 
                         <div className="player-card-side">
-                          <span
-                            className={`status-badge ${
-                              player.status === "active"
-                                ? "status-success"
+                          {canUpdatePlayerStatus ? (
+                            <Select
+                              aria-label={`Disponibilidad de ${player.first_name} en el equipo`}
+                              disabled={updatingStatusPlayerId === player.id}
+                              onClick={(event) => event.stopPropagation()}
+                              onChange={(event) =>
+                                handlePlayerStatusChange(event, player)
+                              }
+                              value={player.status}
+                            >
+                              <option value="active">Activa</option>
+                              <option value="injured">Lesionada</option>
+                              <option value="inactive">Inactiva</option>
+                            </Select>
+                          ) : (
+                            <span
+                              className={`status-badge ${
+                                player.status === "active"
+                                  ? "status-success"
+                                  : player.status === "injured"
+                                  ? "status-warning"
+                                  : "status-muted"
+                              }`}
+                            >
+                              {player.status === "active"
+                                ? "Activa"
                                 : player.status === "injured"
-                                ? "status-warning"
-                                : "status-muted"
-                            }`}
-                          >
-                            {player.status === "active"
-                              ? "Activo"
-                              : player.status === "injured"
-                              ? "Lesionado"
-                              : "Inactivo"}
-                          </span>
+                                ? "Lesionada"
+                                : "Inactiva"}
+                            </span>
+                          )}
 
                           <span className="player-card-arrow">→</span>
                         </div>

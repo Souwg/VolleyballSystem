@@ -28,6 +28,10 @@ from src.api.season_service import (
     resolve_season_for_read,
 )
 from src.api.sports import get_club_sport_adapter
+from src.api.team_player_status import (
+    TEAM_PLAYER_STATUS_ACTIVE,
+    VALID_TEAM_PLAYER_STATUSES,
+)
 from src.api.utils import error_response, get_current_user
 
 
@@ -183,9 +187,7 @@ def create_player():
             400
         )
 
-    allowed_status = ["active", "injured", "inactive"]
-
-    if status not in allowed_status:
+    if status not in VALID_TEAM_PLAYER_STATUSES:
         return error_response(
             "Estado del jugador inválido",
             "INVALID_PLAYER_STATUS",
@@ -516,8 +518,11 @@ def get_team_players(team_id):
         for m in memberships
     ]
 
+    team_data = team.serialize()
+    team_data["season_status"] = team.season.status if team.season else None
+
     return jsonify({
-        "team": team.serialize(),
+        "team": team_data,
         "total_players": len(players),
         "players": players
     }), 200
@@ -748,7 +753,7 @@ def add_existing_player_to_team(team_id):
         team_id=team.id,
         player_id=player.id,
         player_number=player_number,
-        status="active"
+        status=TEAM_PLAYER_STATUS_ACTIVE
     )
 
     db.session.add(membership)
@@ -988,9 +993,7 @@ def update_player_status(player_id):
             400
         )
 
-    allowed_status = ["active", "injured", "inactive"]
-
-    if status not in allowed_status:
+    if status not in VALID_TEAM_PLAYER_STATUSES:
         return error_response(
             "Estado del jugador inválido",
             "INVALID_PLAYER_STATUS",

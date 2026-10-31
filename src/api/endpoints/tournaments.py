@@ -9,6 +9,7 @@ from src.api.api_blueprint import api
 from src.api.models import (
     db,
     MatchSession,
+    Player,
     PlayerPayment,
     Team,
     TeamPlayer,
@@ -27,6 +28,7 @@ from src.api.season_service import (
     get_team_operation_error,
     resolve_season_for_read,
 )
+from src.api.team_player_status import TEAM_PLAYER_STATUS_ACTIVE
 from src.api.utils import error_response, get_current_user
 
 
@@ -783,6 +785,7 @@ def get_tournament_team_players(tournament_team_id):
             "player_id": membership.player_id,
             "player_number": membership.player_number,
             "team_status": membership.status,
+            "membership_open": True,
             "is_registered": (
                 registration is not None
                 and registration.status == "active"
@@ -793,6 +796,45 @@ def get_tournament_team_players(tournament_team_id):
                 else None
             ),
             "player": membership.player.serialize()
+        })
+
+    # Una inscripción existente sigue en el roster aunque su membership se
+    # haya cerrado: si no se enviara, guardar la plantilla la retiraría.
+    closed_registered_ids = set(registered_map) - {
+        membership.player_id
+        for membership in team_memberships
+    }
+
+    latest_closed_memberships = {}
+
+    if closed_registered_ids:
+        closed_memberships = TeamPlayer.query.filter(
+            TeamPlayer.team_id == tournament_team.team_id,
+            TeamPlayer.left_at.isnot(None),
+            TeamPlayer.player_id.in_(closed_registered_ids)
+        ).order_by(TeamPlayer.left_at.asc()).all()
+
+        latest_closed_memberships = {
+            membership.player_id: membership
+            for membership in closed_memberships
+        }
+
+    for player_id in sorted(closed_registered_ids):
+        registration = registered_map[player_id]
+        membership = latest_closed_memberships.get(player_id)
+
+        players.append({
+            "player_id": player_id,
+            "player_number": (
+                membership.player_number
+                if membership
+                else None
+            ),
+            "team_status": None,
+            "membership_open": False,
+            "is_registered": registration.status == "active",
+            "registration_status": registration.status,
+            "player": registration.player.serialize()
         })
 
     return jsonify({
@@ -893,17 +935,6 @@ def update_tournament_team_players(tournament_team_id):
         for membership in valid_memberships
     }
 
-    invalid_player_ids = set(
-        normalized_player_ids
-    ) - valid_player_ids
-
-    if invalid_player_ids:
-        return error_response(
-            "Una o más jugadoras no pertenecen al equipo",
-            "PLAYER_NOT_IN_TEAM",
-            400
-        )
-
     existing_rows = TournamentPlayer.query.filter_by(
         tournament_team_id=tournament_team.id
     ).all()
@@ -913,7 +944,58 @@ def update_tournament_team_players(tournament_team_id):
         for row in existing_rows
     }
 
+    invalid_player_ids = (
+        set(normalized_player_ids)
+        - valid_player_ids
+        - set(existing_map)
+    )
+
+    if invalid_player_ids:
+        return error_response(
+            "Una o más jugadoras no pertenecen al equipo",
+            "PLAYER_NOT_IN_TEAM",
+            400
+        )
+
     selected_ids = set(normalized_player_ids)
+
+    player_ids_requiring_availability = {
+        player_id
+        for player_id in selected_ids
+        if (
+            player_id not in existing_map
+            or existing_map[player_id].status != "active"
+        )
+    }
+
+    if player_ids_requiring_availability:
+        available_player_ids = {
+            player_id
+            for (player_id,) in (
+                db.session.query(TeamPlayer.player_id)
+                .join(Player, Player.id == TeamPlayer.player_id)
+                .filter(
+                    TeamPlayer.team_id == tournament_team.team_id,
+                    TeamPlayer.left_at.is_(None),
+                    TeamPlayer.status == TEAM_PLAYER_STATUS_ACTIVE,
+                    Player.is_active.is_(True),
+                    TeamPlayer.player_id.in_(
+                        player_ids_requiring_availability
+                    ),
+                )
+                .all()
+            )
+        }
+
+        if available_player_ids != player_ids_requiring_availability:
+            return error_response(
+                (
+                    "Una o más jugadoras no están disponibles para una "
+                    "nueva inscripción en el torneo"
+                ),
+                "PLAYER_NOT_AVAILABLE_FOR_TOURNAMENT",
+                409,
+            )
 
     removed_player_ids = {
         player_id

@@ -687,9 +687,8 @@ def _get_sports_sections(club_id, season_id, today):
 
 
 def _get_sports_structure(club_id, season_id):
-    active_membership_exists = exists().where(and_(
+    open_membership_exists = exists().where(and_(
         TeamPlayer.player_id == Player.id,
-        TeamPlayer.status == "active",
         TeamPlayer.left_at.is_(None),
         TeamPlayer.team_id.in_(
             db.session.query(Team.id).filter(
@@ -707,16 +706,12 @@ def _get_sports_structure(club_id, season_id):
     ).filter(
         Player.club_id == club_id,
         Player.is_active.is_(True),
-        ~active_membership_exists,
+        ~open_membership_exists,
     )
 
-    active_player_membership_exists = exists().where(and_(
+    open_team_membership_exists = exists().where(and_(
         TeamPlayer.team_id == Team.id,
-        TeamPlayer.status == "active",
         TeamPlayer.left_at.is_(None),
-        TeamPlayer.player_id == Player.id,
-        Player.club_id == club_id,
-        Player.is_active.is_(True),
     ))
 
     teams_query = db.session.query(
@@ -727,7 +722,7 @@ def _get_sports_structure(club_id, season_id):
         Team.club_id == club_id,
         Team.season_id == season_id,
         Team.status == "active",
-        ~active_player_membership_exists,
+        ~open_team_membership_exists,
     )
 
     tournament_rows = db.session.query(

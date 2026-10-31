@@ -490,8 +490,12 @@ def get_player_attendance(player_id):
             404
         )
 
-    memberships = TeamPlayer.query.filter_by(
-        player_id=player.id
+    memberships = TeamPlayer.query.join(Team).filter(
+        TeamPlayer.player_id == player.id,
+        Team.club_id == user.club_id,
+    ).order_by(
+        TeamPlayer.joined_at.desc(),
+        TeamPlayer.id.desc(),
     ).all()
 
     if player.club_id != user.club_id:
@@ -502,15 +506,58 @@ def get_player_attendance(player_id):
         )
 
 
-    for membership in memberships:
-        team = Team.query.get(membership.team_id)
+    def serialize_membership(membership):
+        return {
+            "id": membership.team.id,
+            "name": membership.team.name,
+            "gender": membership.team.gender,
+            "category_id": membership.team.category_id,
+            "category_name": (
+                membership.team.category.name
+                if membership.team.category
+                else None
+            ),
+            "player_number": membership.player_number,
+            "status": membership.status,
+            "membership_id": membership.id,
+            "joined_at": membership.joined_at.isoformat(),
+            "left_at": (
+                membership.left_at.isoformat()
+                if membership.left_at
+                else None
+            ),
+            "season_id": membership.team.season_id,
+            "season_name": (
+                membership.team.season.name
+                if membership.team.season
+                else None
+            ),
+            "season_status": (
+                membership.team.season.status
+                if membership.team.season
+                else None
+            ),
+            "team_status": membership.team.status,
+        }
 
-        if not team or team.club_id != user.club_id:
-            return error_response(
-                "No tienes acceso",
-                "FORBIDDEN",
-                403
-            )
+    # Cerrar una temporada o archivar un equipo no cierra la membership:
+    # left_at sigue en NULL, pero ese equipo ya no es un equipo actual.
+    def is_current_membership(membership):
+        return (
+            membership.left_at is None
+            and membership.team.status == "active"
+            and membership.team.season is not None
+            and membership.team.season.status in ["active", "planned"]
+        )
+
+    current_memberships = [
+        membership for membership in memberships
+        if is_current_membership(membership)
+    ]
+    historical_memberships = [
+        membership for membership in memberships
+        if not is_current_membership(membership)
+    ]
 
     attendance_records = Attendance.query.join(TrainingSession).join(Team).filter(
         Attendance.player_id == player.id,
@@ -548,17 +595,13 @@ def get_player_attendance(player_id):
         "player": {
             **player.serialize(),
             "teams": [
-                {
-                    "id": m.team.id,
-                    "name": m.team.name,
-                    "gender": m.team.gender,
-                    "category_id": m.team.category_id,
-                    "category_name": m.team.category.name if m.team.category else None,
-                    "player_number": m.player_number,
-                    "status": m.status
-                }
-                for m in memberships
-            ]
+                serialize_membership(membership)
+                for membership in current_memberships
+            ],
+            "historical_teams": [
+                serialize_membership(membership)
+                for membership in historical_memberships
+            ],
         },
         "summary": {
             "present": present,

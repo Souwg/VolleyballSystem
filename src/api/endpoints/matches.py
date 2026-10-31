@@ -34,6 +34,7 @@ from src.api.season_service import (
     get_team_operation_error,
     resolve_season_for_read,
 )
+from src.api.team_player_status import TEAM_PLAYER_STATUS_ACTIVE
 from src.api.utils import error_response, get_current_user
 
 VALID_MATCH_STATUSES = ["present", "late", "absent", "injured"]
@@ -268,7 +269,7 @@ def sync_match_roster_if_open(match):
         )
         .filter(
             TeamPlayer.team_id == match.team_id,
-            TeamPlayer.status == "active",
+            TeamPlayer.status == TEAM_PLAYER_STATUS_ACTIVE,
             TeamPlayer.left_at.is_(None),
             Player.is_active.is_(True)
         )
@@ -653,7 +654,7 @@ def create_match():
         )
         .filter(
             TeamPlayer.team_id == team.id,
-            TeamPlayer.status == "active",
+            TeamPlayer.status == TEAM_PLAYER_STATUS_ACTIVE,
             TeamPlayer.left_at.is_(None),
             Player.is_active.is_(True)
         )

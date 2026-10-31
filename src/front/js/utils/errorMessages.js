@@ -126,6 +126,8 @@ export const errorMessages = {
     "El sexo del deportista no coincide con la rama del equipo.",
   PLAYER_NOT_FOUND: "Deportista no encontrado",
   INVALID_PLAYER_STATUS: "Estado del deportista inválido",
+  PLAYER_NOT_AVAILABLE_FOR_TOURNAMENT:
+    "Una o más jugadoras no están disponibles para una nueva inscripción en el torneo.",
   INVALID_PLAYER_ACTIVE_STATUS: "Estado inválido",
   PLAYER_HAS_HISTORY:
     "No se puede eliminar esta jugadora porque posee historial registrado. Puedes desactivarla en su lugar.",

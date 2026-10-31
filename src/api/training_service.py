@@ -5,6 +5,7 @@ from src.api.models import (
     TeamPlayer,
     TrainingPlayer,
 )
+from src.api.team_player_status import TRAINING_ELIGIBLE_TEAM_PLAYER_STATUSES
 
 
 class TrainingRosterFrozenError(Exception):
@@ -21,6 +22,7 @@ def sync_training_roster(training):
         .filter(
             TeamPlayer.team_id == training.team_id,
             TeamPlayer.left_at.is_(None),
+            TeamPlayer.status.in_(TRAINING_ELIGIBLE_TEAM_PLAYER_STATUSES),
             Player.club_id == training.team.club_id,
             Player.is_active.is_(True)
         )

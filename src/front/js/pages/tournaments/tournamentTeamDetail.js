@@ -177,8 +177,17 @@ export const TournamentTeamDetail = () => {
           row.team_status === "active" && row.player?.is_active !== false,
       )
       .map((row) => row.player_id);
+    const unavailableRegisteredIds = players
+      .filter(
+        (row) =>
+          selectedPlayerIds.includes(row.player_id) &&
+          (row.team_status !== "active" || row.player?.is_active === false),
+      )
+      .map((row) => row.player_id);
 
-    setSelectedPlayerIds(selectableIds);
+    setSelectedPlayerIds([
+      ...new Set([...selectableIds, ...unavailableRegisteredIds]),
+    ]);
     setSelectionChanged(true);
     setPreview(null);
   };
@@ -433,8 +442,9 @@ export const TournamentTeamDetail = () => {
 
                 const isUnavailable =
                   !canEditPlayers ||
-                  row.team_status !== "active" ||
-                  row.player?.is_active === false;
+                  (!isSelected &&
+                    (row.team_status !== "active" ||
+                      row.player?.is_active === false));
 
                 return (
                   <button
@@ -459,6 +469,9 @@ export const TournamentTeamDetail = () => {
                         #{row.player_number}
                         {row.player?.main_position
                           ? ` · ${row.player.main_position}`
+                          : ""}
+                        {row.membership_open === false
+                          ? " · Ya no pertenece al equipo"
                           : ""}
                       </span>
                     </div>
@@ -490,6 +503,12 @@ export const TournamentTeamDetail = () => {
 
           {errors.PLAYER_NOT_IN_TEAM && (
             <p className="form-error">{errorMessages.PLAYER_NOT_IN_TEAM}</p>
+          )}
+
+          {errors.PLAYER_NOT_AVAILABLE_FOR_TOURNAMENT && (
+            <p className="form-error">
+              {errorMessages.PLAYER_NOT_AVAILABLE_FOR_TOURNAMENT}
+            </p>
           )}
 
           {selectionChanged && !errors.TOURNAMENT_PLAYERS_FINANCIALLY_LOCKED && (

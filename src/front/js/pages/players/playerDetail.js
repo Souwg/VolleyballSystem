@@ -308,6 +308,10 @@ export const PlayerDetail = () => {
         setPlayer((current) => ({
           ...current,
           teams: (current.teams || []).filter((item) => item.id !== team.id),
+          historical_teams: [
+            { ...team, left_at: new Date().toISOString() },
+            ...(current.historical_teams || []),
+          ],
         }));
       }
     } finally {
@@ -617,6 +621,9 @@ export const PlayerDetail = () => {
                       <strong>{team.category_name || "Sin categoría"}</strong>
                       <span>
                         {team.name} · Número #{team.player_number}
+                        {team.season_status === "planned"
+                          ? ` · Temporada planificada: ${team.season_name}`
+                          : ""}
                       </span>
                     </div>
 
@@ -631,10 +638,10 @@ export const PlayerDetail = () => {
                         }`}
                       >
                         {team.status === "active"
-                          ? "Activo"
+                          ? "Activa"
                           : team.status === "injured"
-                          ? "Lesionado"
-                          : "Inactivo"}
+                          ? "Lesionada"
+                          : "Inactiva"}
                       </span>
 
                       {canEditPlayer && (
@@ -657,6 +664,35 @@ export const PlayerDetail = () => {
               <p className="player-empty-text">Sin equipo asignado</p>
             )}
           </Card>
+
+          {player.historical_teams?.length > 0 && (
+            <Card className="player-teams-card">
+              <div className="player-section-header">
+                <div>
+                  <span className="player-card-label">Historial</span>
+                  <h3>Equipos anteriores</h3>
+                </div>
+
+                <span className="player-teams-count">
+                  {player.historical_teams.length}
+                </span>
+              </div>
+
+              <div className="player-teams-list">
+                {player.historical_teams.map((team) => (
+                  <div key={team.membership_id} className="player-team-row">
+                    <div className="player-team-row-info">
+                      <strong>{team.category_name || "Sin categoría"}</strong>
+                      <span>
+                        {team.name} · Número #{team.player_number}
+                        {team.season_name ? ` · ${team.season_name}` : ""}
+                      </span>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </Card>
+          )}
 
           {canDeletePlayer && (
             <Card className="player-delete-card">
