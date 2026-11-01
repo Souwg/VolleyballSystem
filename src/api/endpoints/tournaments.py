@@ -6,6 +6,10 @@ from flask_jwt_extended import jwt_required
 from sqlalchemy import func
 
 from src.api.api_blueprint import api
+from src.api.coach_access import (
+    get_club_sports_entity_error,
+    get_team_assignment_error,
+)
 from src.api.models import (
     db,
     MatchSession,
@@ -56,6 +60,11 @@ def create_tournament():
             "CLUB_REQUIRED",
             400
         )
+
+    entity_error = get_club_sports_entity_error(user)
+
+    if entity_error:
+        return error_response(*entity_error)
 
     body = request.get_json() or {}
 
@@ -318,6 +327,11 @@ def update_tournament(tournament_id):
             403
         )
 
+    entity_error = get_club_sports_entity_error(user)
+
+    if entity_error:
+        return error_response(*entity_error)
+
     if tournament.status != "active":
         return error_response(
             "Solo puedes editar torneos activos",
@@ -476,6 +490,11 @@ def transition_tournament_status(tournament_id, target_status):
             403
         )
 
+    entity_error = get_club_sports_entity_error(user)
+
+    if entity_error:
+        return error_response(*entity_error)
+
     if tournament.status == target_status:
         return jsonify({
             "message": (
@@ -627,6 +646,11 @@ def add_team_to_tournament(tournament_id):
             "FORBIDDEN",
             403
         )
+
+    assignment_error = get_team_assignment_error(user, team)
+
+    if assignment_error:
+        return error_response(*assignment_error)
 
     team_error = get_team_operation_error(team)
 
@@ -880,6 +904,11 @@ def update_tournament_team_players(tournament_team_id):
             "FORBIDDEN",
             403
         )
+
+    assignment_error = get_team_assignment_error(user, tournament_team.team)
+
+    if assignment_error:
+        return error_response(*assignment_error)
 
     season_error = get_season_operation_error(
         tournament_team.tournament.season

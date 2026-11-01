@@ -5,6 +5,7 @@ from flask import jsonify, request
 from flask_jwt_extended import jwt_required
 
 from src.api.api_blueprint import api
+from src.api.coach_access import can_manage_team, get_team_assignment_error
 from src.api.models import (
     db,
     MatchEvent,
@@ -568,6 +569,11 @@ def create_match():
             403
         )
 
+    assignment_error = get_team_assignment_error(user, team)
+
+    if assignment_error:
+        return error_response(*assignment_error)
+
     team_error = get_team_operation_error(team)
 
     if team_error:
@@ -767,6 +773,11 @@ def save_match_roster(match_id):
             "FORBIDDEN",
             403
         )
+
+    assignment_error = get_team_assignment_error(user, match.team)
+
+    if assignment_error:
+        return error_response(*assignment_error)
 
     team_error = get_team_operation_error(match.team)
 
@@ -1226,6 +1237,11 @@ def update_match_status(match_id):
     if match.team.club_id != user.club_id:
         return error_response("No tienes acceso", "FORBIDDEN", 403)
 
+    assignment_error = get_team_assignment_error(user, match.team)
+
+    if assignment_error:
+        return error_response(*assignment_error)
+
     team_error = get_team_operation_error(match.team)
 
     if team_error:
@@ -1506,6 +1522,11 @@ def update_match_capture_mode(match_id):
             403
         )
 
+    assignment_error = get_team_assignment_error(user, match.team)
+
+    if assignment_error:
+        return error_response(*assignment_error)
+
     team_error = get_team_operation_error(match.team)
 
     if team_error:
@@ -1580,7 +1601,12 @@ def get_match_roster(match_id):
             403
         )
 
-    synced_count = sync_match_roster_if_open(match)
+    # Quien no puede operar el equipo solo lee: su GET no debe escribir snapshots.
+    synced_count = (
+        sync_match_roster_if_open(match)
+        if can_manage_team(user, match.team)
+        else 0
+    )
 
     roster = MatchPlayer.query.filter_by(
         match_id=match.id
@@ -1638,6 +1664,11 @@ def save_starting_lineup(match_id):
             "FORBIDDEN",
             403
         )
+
+    assignment_error = get_team_assignment_error(user, match.team)
+
+    if assignment_error:
+        return error_response(*assignment_error)
 
     team_error = get_team_operation_error(match.team)
 
@@ -1783,6 +1814,11 @@ def create_match_substitution(match_id):
             "FORBIDDEN",
             403
         )
+
+    assignment_error = get_team_assignment_error(user, match.team)
+
+    if assignment_error:
+        return error_response(*assignment_error)
 
     team_error = get_team_operation_error(match.team)
 
@@ -1949,6 +1985,11 @@ def update_match_participation(match_id):
             "FORBIDDEN",
             403
         )
+
+    assignment_error = get_team_assignment_error(user, match.team)
+
+    if assignment_error:
+        return error_response(*assignment_error)
 
     team_error = get_team_operation_error(match.team)
 
@@ -2134,6 +2175,11 @@ def save_match_stats(match_player_id):
             "FORBIDDEN",
             403
         )
+
+    assignment_error = get_team_assignment_error(user, row.match.team)
+
+    if assignment_error:
+        return error_response(*assignment_error)
 
     team_error = get_team_operation_error(row.match.team)
 
@@ -2360,6 +2406,11 @@ def update_match_result(match_id):
     if match.team.club_id != user.club_id:
         return error_response("No tienes acceso", "FORBIDDEN", 403)
 
+    assignment_error = get_team_assignment_error(user, match.team)
+
+    if assignment_error:
+        return error_response(*assignment_error)
+
     team_error = get_team_operation_error(match.team)
 
     if team_error:
@@ -2433,6 +2484,11 @@ def finalize_match(match_id):
             "FORBIDDEN",
             403
         )
+
+    assignment_error = get_team_assignment_error(user, match.team)
+
+    if assignment_error:
+        return error_response(*assignment_error)
 
     team_error = get_team_operation_error(match.team)
 
@@ -2529,6 +2585,11 @@ def create_match_event():
             "FORBIDDEN",
             403
         )
+
+    assignment_error = get_team_assignment_error(user, match.team)
+
+    if assignment_error:
+        return error_response(*assignment_error)
 
     team_error = get_team_operation_error(match.team)
 
@@ -2679,6 +2740,11 @@ def delete_match_event(event_id):
             "FORBIDDEN",
             403
         )
+
+    assignment_error = get_team_assignment_error(user, match.team)
+
+    if assignment_error:
+        return error_response(*assignment_error)
 
     team_error = get_team_operation_error(match.team)
 

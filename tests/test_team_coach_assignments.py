@@ -1052,7 +1052,7 @@ def test_club_wide_coach_keeps_operating_unassigned_team(
     assert TrainingSession.query.filter_by(team_id=world.team_a.id).count() == 1
 
 
-def test_team_assigned_mode_is_not_enforced_on_sports_endpoints_yet(
+def test_team_assigned_mode_is_enforced_on_sports_endpoints(
     client, world, auth_headers
 ):
     _scope_club(world)
@@ -1070,4 +1070,5 @@ def test_team_assigned_mode_is_not_enforced_on_sports_endpoints_yet(
         },
     )
 
-    assert response.status_code == 201
+    assert response.status_code == 403
+    assert response.get_json()["code"] == "TEAM_NOT_ASSIGNED"

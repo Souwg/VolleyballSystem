@@ -8,6 +8,10 @@ from sqlalchemy.exc import IntegrityError
 from werkzeug.utils import secure_filename
 
 from src.api.api_blueprint import api
+from src.api.coach_access import (
+    get_player_profile_error,
+    get_team_assignment_error,
+)
 from src.api.models import (
     db,
     Attendance,
@@ -88,6 +92,11 @@ def remove_player_from_team(team_id, player_id):
 
     if not team or team.club_id != user.club_id:
         return error_response("Equipo no encontrado", "TEAM_NOT_FOUND", 404)
+
+    assignment_error = get_team_assignment_error(user, team)
+
+    if assignment_error:
+        return error_response(*assignment_error)
 
     team_error = get_team_membership_operation_error(team)
     if team_error:
@@ -250,6 +259,11 @@ def create_player():
                 403
             )
 
+        assignment_error = get_team_assignment_error(user, team)
+
+        if assignment_error:
+            return error_response(*assignment_error)
+
         team_error = get_team_membership_operation_error(team)
 
         if team_error:
@@ -351,6 +365,11 @@ def upload_player_image(player_id):
             "FORBIDDEN",
             403
         )
+
+    profile_error = get_player_profile_error(user, player)
+
+    if profile_error:
+        return error_response(*profile_error)
 
     if "image" not in request.files:
         return error_response(
@@ -651,6 +670,11 @@ def add_existing_player_to_team(team_id):
             403
         )
 
+    assignment_error = get_team_assignment_error(user, team)
+
+    if assignment_error:
+        return error_response(*assignment_error)
+
     team_error = get_team_membership_operation_error(team)
 
     if team_error:
@@ -793,6 +817,11 @@ def update_player(player_id):
             404
         )
 
+    profile_error = get_player_profile_error(user, player)
+
+    if profile_error:
+        return error_response(*profile_error)
+
     body = request.get_json() or {}
 
     first_name = body.get("first_name")
@@ -814,6 +843,16 @@ def update_player(player_id):
         )
 
     player_number = body.get("player_number")
+
+    # Un número cambia la membership de ese equipo concreto, no el perfil global.
+    if team_id and player_number is not None:
+        number_team = db.session.get(Team, team_id)
+
+        if number_team and number_team.club_id == user.club_id:
+            assignment_error = get_team_assignment_error(user, number_team)
+
+            if assignment_error:
+                return error_response(*assignment_error)
 
     if not first_name:
         return error_response(
@@ -1021,6 +1060,11 @@ def update_player_status(player_id):
             "FORBIDDEN",
             403
         )
+
+    assignment_error = get_team_assignment_error(user, team)
+
+    if assignment_error:
+        return error_response(*assignment_error)
 
     team_error = get_team_membership_operation_error(team)
     if team_error:

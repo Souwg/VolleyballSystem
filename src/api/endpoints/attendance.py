@@ -2,6 +2,7 @@ from flask import jsonify, request
 from flask_jwt_extended import jwt_required
 
 from src.api.api_blueprint import api
+from src.api.coach_access import get_team_assignment_error
 from src.api.models import (
     db,
     Attendance,
@@ -56,6 +57,11 @@ def save_attendance(training_id):
             "FORBIDDEN",
             403
         )
+
+    assignment_error = get_team_assignment_error(user, team)
+
+    if assignment_error:
+        return error_response(*assignment_error)
 
     team_error = get_team_operation_error(team)
 
@@ -202,6 +208,11 @@ def correct_training_attendance(training_id):
             "TRAINING_NOT_FOUND",
             404
         )
+
+    assignment_error = get_team_assignment_error(user, training.team)
+
+    if assignment_error:
+        return error_response(*assignment_error)
 
     # Excepción deliberada al guard de get_team_operation_error: la corrección
     # exige motivo y queda auditada, por lo que sigue disponible con el equipo
