@@ -3,6 +3,7 @@ from flask_jwt_extended import jwt_required
 from sqlalchemy import func
 
 from src.api.api_blueprint import api
+from src.api.coach_access import get_team_access_resolver
 from src.api.models import db, Category, Team, TeamPlayer
 from src.api.season_service import (
     get_active_season_for_club,
@@ -221,6 +222,7 @@ def get_category_detail(category_id):
     teams = teams_query.order_by(Team.name).all()
 
     serialized_teams = []
+    team_access = get_team_access_resolver(user)
 
     for team in teams:
         membership_query = TeamPlayer.query.filter_by(team_id=team.id)
@@ -232,6 +234,7 @@ def get_category_detail(category_id):
 
         serialized_teams.append({
             **team.serialize(),
+            **team_access(team),
             "total_players": total_players
         })
 
@@ -384,6 +387,7 @@ def get_category_teams(category_id):
     teams = teams_query.order_by(Team.name).all()
 
     serialized_teams = []
+    team_access = get_team_access_resolver(user)
 
     for team in teams:
         membership_query = TeamPlayer.query.filter_by(team_id=team.id)
@@ -395,6 +399,7 @@ def get_category_teams(category_id):
 
         serialized_teams.append({
             **team.serialize(),
+            **team_access(team),
             "total_players": total_players
         })
 

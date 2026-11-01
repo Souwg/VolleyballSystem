@@ -452,7 +452,7 @@ def test_get_roster_does_not_write_on_archived_team(
     assert MatchPlayer.query.filter_by(match_id=match_id).count() == 0
 
 
-def test_get_roster_still_syncs_open_match_on_active_team(
+def test_get_roster_derives_open_match_without_writing_on_active_team(
     client, world, auth_headers
 ):
     match = MatchSession(
@@ -471,9 +471,8 @@ def test_get_roster_still_syncs_open_match_on_active_team(
     )
 
     assert response.status_code == 200
-    assert MatchPlayer.query.filter_by(match_id=match.id).count() == len(
-        world.players_a
-    )
+    assert len(response.get_json()["players"]) == len(world.players_a)
+    assert MatchPlayer.query.filter_by(match_id=match.id).count() == 0
 
 
 def test_performance_history_is_identical_after_archive(

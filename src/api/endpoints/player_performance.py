@@ -2,6 +2,7 @@ from flask import jsonify, request
 from flask_jwt_extended import jwt_required
 
 from src.api.api_blueprint import api
+from src.api.coach_access import serialize_with_player_for_user
 from src.api.models import (
     MatchPlayer,
     MatchSession,
@@ -302,7 +303,7 @@ def get_player_performance(player_id):
         "season": season.serialize() if season else None,
         "memberships": [
             {
-                **membership.serialize(),
+                **serialize_with_player_for_user(membership, user),
                 "team": membership.team.serialize(),
                 "season": membership.team.season.serialize(),
             }

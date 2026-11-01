@@ -5,7 +5,14 @@ from flask import jsonify, request
 from flask_jwt_extended import jwt_required
 
 from src.api.api_blueprint import api
-from src.api.coach_access import can_manage_team, get_team_assignment_error
+from src.api.coach_access import (
+    can_manage_team,
+    get_player_serializer,
+    get_team_access_resolver,
+    get_team_assignment_error,
+    redact_sports_money_for_user,
+    serialize_with_player_for_user,
+)
 from src.api.models import (
     db,
     MatchEvent,
@@ -233,10 +240,19 @@ def capture_mode_write_error(match, required_mode):
 
 
 
-def sync_match_roster_if_open(match):
+def _match_payload(match, user, team_access=None):
+    resolve_access = team_access or get_team_access_resolver(user)
+
+    return {
+        **redact_sports_money_for_user(user, match.serialize()),
+        "can_manage": resolve_access(match.team)["can_manage"],
+    }
+
+
+def _plan_match_roster_sync(match):
     """
-    Reconcilia el snapshot del partido mientras la convocatoria
-    todavía no ha sido guardada.
+    Calcula sin escribir cómo debe quedar el snapshot del partido mientras la
+    convocatoria todavía no ha sido guardada.
 
     Partido normal:
     - Incluye únicamente membresías activas del equipo.
@@ -245,26 +261,23 @@ def sync_match_roster_if_open(match):
     Partido de torneo:
     - Además debe estar inscrita activamente en TournamentPlayer.
 
-    Cuando match_step deja de ser 0, el snapshot queda congelado
-    para conservar el historial.
+    Devuelve None cuando el snapshot está congelado: convocatoria guardada,
+    partido finalizado o equipo no operativo. Ahí manda el historial y nunca
+    se reconstruye con el roster actual.
     """
 
     if not match:
-        return 0
+        return None
 
     if match.match_step != 0:
-        return 0
+        return None
 
     if match.is_completed:
-        return 0
+        return None
 
     # Un equipo no operativo conserva su snapshot tal como quedó.
     if get_team_operation_error(match.team):
-        return 0
-
-    # =========================
-    # 1. Determinar elegibles
-    # =========================
+        return None
 
     eligible_memberships_query = (
         TeamPlayer.query
@@ -299,84 +312,31 @@ def sync_match_roster_if_open(match):
             )
         )
 
-    eligible_memberships = eligible_memberships_query.all()
-
     eligible_by_player_id = {
         membership.player_id: membership
-        for membership in eligible_memberships
+        for membership in eligible_memberships_query.all()
     }
-
-    eligible_player_ids = set(eligible_by_player_id.keys())
-
-    # =========================
-    # 2. Leer snapshot actual
-    # =========================
-
-    existing_rows = MatchPlayer.query.filter_by(
-        match_id=match.id
-    ).all()
 
     existing_by_player_id = {
         row.player_id: row
-        for row in existing_rows
+        for row in MatchPlayer.query.filter_by(match_id=match.id).all()
     }
 
-    existing_player_ids = set(existing_by_player_id.keys())
+    eligible_player_ids = set(eligible_by_player_id)
+    existing_player_ids = set(existing_by_player_id)
 
-    added_count = 0
-    removed_count = 0
-    updated_count = 0
+    to_update = []
 
-    # =========================
-    # 3. Agregar quienes faltan
-    # =========================
-
-    player_ids_to_add = (
-        eligible_player_ids - existing_player_ids
-    )
-
-    for player_id in player_ids_to_add:
-        membership = eligible_by_player_id[player_id]
-
-        snapshot = MatchPlayer(
-            match_id=match.id,
-            player_id=membership.player_id,
-            player_number=membership.player_number,
-            is_called=False,
-            attendance_status=None,
-            did_play=False,
-            is_on_court=False,
-            position=None
-        )
-
-        db.session.add(snapshot)
-        added_count += 1
-
-    # =========================
-    # 4. Actualizar el número
-    # =========================
-
-    player_ids_to_keep = (
-        eligible_player_ids & existing_player_ids
-    )
-
-    for player_id in player_ids_to_keep:
+    for player_id in eligible_player_ids & existing_player_ids:
         row = existing_by_player_id[player_id]
         membership = eligible_by_player_id[player_id]
 
         if row.player_number != membership.player_number:
-            row.player_number = membership.player_number
-            updated_count += 1
+            to_update.append((row, membership.player_number))
 
-    # =========================
-    # 5. Retirar no elegibles
-    # =========================
+    to_remove = []
 
-    player_ids_to_remove = (
-        existing_player_ids - eligible_player_ids
-    )
-
-    for player_id in player_ids_to_remove:
+    for player_id in existing_player_ids - eligible_player_ids:
         row = existing_by_player_id[player_id]
 
         # Protección defensiva:
@@ -391,22 +351,126 @@ def sync_match_roster_if_open(match):
             or row.performance_stats is not None
         )
 
-        if has_history:
-            continue
+        if not has_history:
+            to_remove.append(row)
 
+    return {
+        "to_add": [
+            eligible_by_player_id[player_id]
+            for player_id in eligible_player_ids - existing_player_ids
+        ],
+        "to_update": to_update,
+        "to_remove": to_remove,
+    }
+
+
+def sync_match_roster_if_open(match, commit=True):
+    """
+    Reconcilia el snapshot del partido. Solo debe llamarse desde mutaciones:
+    GET /matches/<id>/roster muestra el mismo resultado sin persistirlo.
+    """
+    plan = _plan_match_roster_sync(match)
+
+    if plan is None:
+        return 0
+
+    for membership in plan["to_add"]:
+        db.session.add(MatchPlayer(
+            match_id=match.id,
+            player_id=membership.player_id,
+            player_number=membership.player_number,
+            is_called=False,
+            attendance_status=None,
+            did_play=False,
+            is_on_court=False,
+            position=None
+        ))
+
+    for row, player_number in plan["to_update"]:
+        row.player_number = player_number
+
+    for row in plan["to_remove"]:
         db.session.delete(row)
-        removed_count += 1
 
     total_changes = (
-        added_count +
-        removed_count +
-        updated_count
+        len(plan["to_add"]) +
+        len(plan["to_update"]) +
+        len(plan["to_remove"])
     )
 
     if total_changes > 0:
-        db.session.commit()
+        if commit:
+            db.session.commit()
+        else:
+            db.session.flush()
 
     return total_changes
+
+
+def _build_match_roster_view(match):
+    """
+    Vista de solo lectura del roster.
+
+    snapshot: exactamente las filas persistidas en MatchPlayer.
+    derived: el snapshot abierto con lo que reconciliaría guardar la
+    convocatoria. Las filas aún no persistidas llevan match_player_id None y
+    solo se pueden convocar por player_id.
+    """
+    rows = MatchPlayer.query.filter_by(
+        match_id=match.id
+    ).order_by(MatchPlayer.player_number).all()
+
+    plan = _plan_match_roster_sync(match)
+    has_changes = plan is not None and any(plan.values())
+    removed_row_ids = (
+        {row.id for row in plan["to_remove"]} if has_changes else set()
+    )
+    updated_numbers = (
+        {row.id: number for row, number in plan["to_update"]}
+        if has_changes
+        else {}
+    )
+
+    players = []
+
+    for row in rows:
+        if not row.player or row.id in removed_row_ids:
+            continue
+
+        players.append({
+            "match_player_id": row.id,
+            "player_id": row.player.id,
+            "first_name": row.player.first_name,
+            "last_name": row.player.last_name,
+            "player_number": updated_numbers.get(row.id, row.player_number),
+            "attendance_status": row.attendance_status,
+            "did_play": row.did_play,
+            "is_called": row.is_called,
+            "is_on_court": row.is_on_court,
+            "main_position": row.player.main_position,
+            "position": row.position,
+        })
+
+    if has_changes:
+        for membership in plan["to_add"]:
+            players.append({
+                "match_player_id": None,
+                "player_id": membership.player_id,
+                "first_name": membership.player.first_name,
+                "last_name": membership.player.last_name,
+                "player_number": membership.player_number,
+                "attendance_status": None,
+                "did_play": False,
+                "is_called": False,
+                "is_on_court": False,
+                "main_position": membership.player.main_position,
+                "position": None,
+            })
+
+        players.sort(key=lambda player: player["player_number"])
+
+    return players, "derived" if has_changes else "snapshot"
+
 
 def recalculate_player_match_stats(match_player_id):
     row = MatchPlayer.query.get(match_player_id)
@@ -705,7 +769,7 @@ def create_match():
 
     return jsonify({
         "message": "Partido creado correctamente",
-        "match": match.serialize()
+        "match": _match_payload(match, user)
     }), 201
 
 @api.route("/teams/<string:team_id>/matches", methods=["GET"])
@@ -740,10 +804,12 @@ def get_team_matches(team_id):
         .order_by(MatchSession.date.desc())\
         .all()
 
+    team_access = get_team_access_resolver(user)
+
     return jsonify({
-        "team": team.serialize(),
+        "team": {**team.serialize(), **team_access(team)},
         "total_matches": len(matches),
-        "matches": [m.serialize() for m in matches]
+        "matches": [_match_payload(m, user, team_access) for m in matches]
     }), 200
 
 @api.route("/matches/<string:match_id>/roster", methods=["POST"])
@@ -831,6 +897,14 @@ def save_match_roster(match_id):
             400
         )
 
+    # El GET muestra el roster derivado sin persistirlo: guardar la convocatoria
+    # es donde el snapshot abierto se reconcilia. El lock serializa dos guardados
+    # simultáneos; el segundo ve match_step ya avanzado y no vuelve a reconciliar.
+    match = MatchSession.query.filter_by(
+        id=match.id
+    ).populate_existing().with_for_update().first()
+    sync_match_roster_if_open(match, commit=False)
+
     rows = MatchPlayer.query.filter_by(match_id=match.id).all()
 
     valid_player_ids = {
@@ -839,6 +913,7 @@ def save_match_roster(match_id):
     }
 
     if not selected_ids.issubset(valid_player_ids):
+        db.session.rollback()
         return error_response(
             "Uno o más participantes no pertenecen a este partido",
             "INVALID_MATCH_ROSTER",
@@ -871,6 +946,7 @@ def save_match_roster(match_id):
 
     for row in removed_rows:
         if match_player_has_sports_history(row):
+            db.session.rollback()
             return error_response(
                 (
                     "Esta jugadora ya tiene historial registrado en el "
@@ -904,6 +980,7 @@ def save_match_roster(match_id):
     )
 
     if locked_referee_charge:
+        db.session.rollback()
         return error_response(
             (
                 "No puedes retirar una jugadora con cargos de arbitraje "
@@ -1044,7 +1121,7 @@ def preview_match_referee_charges(match_id):
     can_generate = not has_paid_charges
 
     return jsonify({
-        "match": match.serialize(),
+        "match": _match_payload(match, user),
         "referee_fee": float(referee_fee),
         "currency_code": match.team.club.currency_code,
         "called_players_count": len(called_players),
@@ -1443,13 +1520,14 @@ def get_club_matches():
     ).all()
 
     result = []
+    team_access = get_team_access_resolver(user)
 
     for match in matches:
         team = match.team
         category = team.category if team else None
 
         result.append({
-            **match.serialize(),
+            **_match_payload(match, user, team_access),
             "team_id": team.id if team else None,
             "team_name": team.name if team else None,
             "category_id": category.id if category else None,
@@ -1490,7 +1568,7 @@ def get_match_detail(match_id):
         )
 
     return jsonify({
-        "match": match.serialize()
+        "match": _match_payload(match, user)
     }), 200
 
 
@@ -1545,7 +1623,7 @@ def update_match_capture_mode(match_id):
     if match.capture_mode == capture_mode:
         return jsonify({
             "message": "Modo de captura actualizado",
-            "match": match.serialize()
+            "match": _match_payload(match, user)
         }), 200
 
     if match.is_completed:
@@ -1570,7 +1648,7 @@ def update_match_capture_mode(match_id):
 
     return jsonify({
         "message": "Modo de captura actualizado",
-        "match": match.serialize()
+        "match": _match_payload(match, user)
     }), 200
 
 @api.route("/matches/<string:match_id>/roster", methods=["GET"])
@@ -1601,40 +1679,13 @@ def get_match_roster(match_id):
             403
         )
 
-    # Quien no puede operar el equipo solo lee: su GET no debe escribir snapshots.
-    synced_count = (
-        sync_match_roster_if_open(match)
-        if can_manage_team(user, match.team)
-        else 0
-    )
-
-    roster = MatchPlayer.query.filter_by(
-        match_id=match.id
-    ).order_by(MatchPlayer.player_number).all()
-
-    players = []
-
-    for row in roster:
-        if not row.player:
-            continue
-
-        players.append({
-            "match_player_id": row.id,
-            "player_id": row.player.id,
-            "first_name": row.player.first_name,
-            "last_name": row.player.last_name,
-            "player_number": row.player_number,
-            "attendance_status": row.attendance_status,
-            "did_play": row.did_play,
-            "is_called": row.is_called,
-            "is_on_court": row.is_on_court,
-            "main_position": row.player.main_position,
-            "position": row.position,
-        })
+    players, roster_source = _build_match_roster_view(match)
 
     return jsonify({
         "players": players,
-        "synced_count": synced_count
+        "roster_source": roster_source,
+        # Compatibilidad: este GET ya no persiste nada.
+        "synced_count": 0
     }), 200
 
 @api.route("/matches/<string:match_id>/starting-lineup", methods=["PUT"])
@@ -1782,9 +1833,17 @@ def save_starting_lineup(match_id):
 
     db.session.commit()
 
+    serialize_player = get_player_serializer(
+        user,
+        [row.player for row in rows]
+    )
+
     return jsonify({
         "message": "Alineación inicial guardada correctamente",
-        "players": [row.serialize() for row in rows]
+        "players": [
+            serialize_with_player_for_user(row, user, serialize_player)
+            for row in rows
+        ]
     }), 200
 
 @api.route("/matches/<string:match_id>/substitutions", methods=["POST"])
@@ -2453,7 +2512,7 @@ def update_match_result(match_id):
 
     return jsonify({
         "message": "Resultado guardado",
-        "match": match.serialize()
+        "match": _match_payload(match, user)
     }), 200
 
 
@@ -2518,7 +2577,7 @@ def finalize_match(match_id):
     if match.is_completed:
         return jsonify({
             "message": "Partido finalizado correctamente",
-            "match": match.serialize()
+            "match": _match_payload(match, user)
         }), 200
 
     match.is_completed = True
@@ -2526,7 +2585,7 @@ def finalize_match(match_id):
 
     return jsonify({
         "message": "Partido finalizado correctamente",
-        "match": match.serialize()
+        "match": _match_payload(match, user)
     }), 200
 
 ############################################ MATCH EVENTS #############################################

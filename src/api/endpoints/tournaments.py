@@ -7,8 +7,13 @@ from sqlalchemy import func
 
 from src.api.api_blueprint import api
 from src.api.coach_access import (
+    can_manage_club_sports_entity,
     get_club_sports_entity_error,
+    get_player_serializer,
+    get_team_access_resolver,
     get_team_assignment_error,
+    redact_sports_money_for_user,
+    serialize_with_player_for_user,
 )
 from src.api.models import (
     db,
@@ -41,6 +46,22 @@ VALID_TOURNAMENT_STATUSES = [
     "completed",
     "cancelled"
 ]
+
+def _tournament_payload(tournament, user):
+    return {
+        **redact_sports_money_for_user(user, tournament.serialize()),
+        "can_manage": can_manage_club_sports_entity(user),
+    }
+
+
+def _tournament_entry_payload(entry, user, team_access=None):
+    resolve_access = team_access or get_team_access_resolver(user)
+
+    return {
+        **redact_sports_money_for_user(user, entry.serialize()),
+        **resolve_access(entry.team),
+    }
+
 
 @api.route("/tournaments", methods=["POST"])
 @jwt_required()
@@ -231,13 +252,14 @@ def get_tournaments():
     ).all()
 
     result = []
+    team_access = get_team_access_resolver(user)
 
     for tournament in tournaments:
         result.append({
-            **tournament.serialize(),
+            **_tournament_payload(tournament, user),
             "total_teams": len(tournament.team_entries),
             "teams": [
-                entry.serialize()
+                _tournament_entry_payload(entry, user, team_access)
                 for entry in tournament.team_entries
             ]
         })
@@ -280,12 +302,14 @@ def get_tournament_detail(tournament_id):
         tournament_id=tournament.id
     ).order_by(TournamentTeam.created_at.asc()).all()
 
+    team_access = get_team_access_resolver(user)
+
     return jsonify({
         "tournament": {
-            **tournament.serialize(),
+            **_tournament_payload(tournament, user),
             "teams": [
                 {
-                    **entry.serialize(),
+                    **_tournament_entry_payload(entry, user, team_access),
                     "total_players": TournamentPlayer.query.filter_by(
                         tournament_team_id=entry.id,
                         status="active"
@@ -689,7 +713,7 @@ def add_team_to_tournament(tournament_id):
 
     return jsonify({
         "message": "Equipo inscrito correctamente",
-        "tournament_team": tournament_team.serialize()
+        "tournament_team": _tournament_entry_payload(tournament_team, user)
     }), 201
 
 @api.route(
@@ -728,6 +752,7 @@ def get_tournament_teams(tournament_id):
     ).order_by(TournamentTeam.created_at.asc()).all()
 
     result = []
+    team_access = get_team_access_resolver(user)
 
     for entry in entries:
         active_players = TournamentPlayer.query.filter_by(
@@ -740,13 +765,13 @@ def get_tournament_teams(tournament_id):
         ).count()
 
         result.append({
-            **entry.serialize(),
+            **_tournament_entry_payload(entry, user, team_access),
             "total_players": active_players,
             "total_matches": matches_count
         })
 
     return jsonify({
-        "tournament": tournament.serialize(),
+        "tournament": _tournament_payload(tournament, user),
         "total_teams": len(result),
         "teams": result
     }), 200
@@ -798,6 +823,14 @@ def get_tournament_team_players(tournament_team_id):
         for row in registered_rows
     }
 
+    serialize_player = get_player_serializer(
+        user,
+        [
+            *(membership.player for membership in team_memberships),
+            *(row.player for row in registered_rows),
+        ]
+    )
+
     players = []
 
     for membership in team_memberships:
@@ -819,7 +852,7 @@ def get_tournament_team_players(tournament_team_id):
                 if registration
                 else None
             ),
-            "player": membership.player.serialize()
+            "player": serialize_player(membership.player)
         })
 
     # Una inscripción existente sigue en el roster aunque su membership se
@@ -858,11 +891,11 @@ def get_tournament_team_players(tournament_team_id):
             "membership_open": False,
             "is_registered": registration.status == "active",
             "registration_status": registration.status,
-            "player": registration.player.serialize()
+            "player": serialize_player(registration.player)
         })
 
     return jsonify({
-        "tournament_team": tournament_team.serialize(),
+        "tournament_team": _tournament_entry_payload(tournament_team, user),
         "total_players": len(players),
         "registered_count": sum(
             1
@@ -1091,11 +1124,16 @@ def update_tournament_team_players(tournament_team_id):
         status="active"
     ).all()
 
+    serialize_player = get_player_serializer(
+        user,
+        [row.player for row in active_registrations]
+    )
+
     return jsonify({
         "message": "Jugadoras inscritas correctamente",
         "total_players": len(active_registrations),
         "players": [
-            row.serialize()
+            serialize_with_player_for_user(row, user, serialize_player)
             for row in active_registrations
         ]
     }), 200
@@ -1504,10 +1542,12 @@ def get_team_tournament_entries(team_id):
         Tournament.start_date.desc()
     ).all()
 
+    team_access = get_team_access_resolver(user)
+
     return jsonify({
-        "team": team.serialize(),
+        "team": {**team.serialize(), **team_access(team)},
         "tournament_entries": [
-            entry.serialize()
+            _tournament_entry_payload(entry, user, team_access)
             for entry in entries
         ]
     }), 200

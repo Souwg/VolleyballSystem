@@ -1153,7 +1153,7 @@ def test_unassigned_coach_get_roster_reads_without_writing(
 
 
 @pytest.mark.parametrize("case", ["assigned", "club_wide", "owner"])
-def test_get_roster_keeps_sync_for_who_can_manage_team(
+def test_get_roster_never_writes_for_who_can_manage_team(
     client, world, auth_headers, case
 ):
     match = _open_match(world)
@@ -1169,9 +1169,10 @@ def test_get_roster_keeps_sync_for_who_can_manage_team(
     response = _get_roster(client, auth_headers, user, match)
 
     assert response.status_code == 200
-    assert MatchPlayer.query.filter_by(match_id=match.id).count() == len(
-        world.players_a
-    )
+    assert response.get_json()["synced_count"] == 0
+    assert len(response.get_json()["players"]) == len(world.players_a)
+    db.session.expire_all()
+    assert MatchPlayer.query.filter_by(match_id=match.id).count() == 0
 
 
 # =========================

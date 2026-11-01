@@ -4,7 +4,11 @@ from flask import jsonify, request
 from flask_jwt_extended import jwt_required
 
 from src.api.api_blueprint import api
-from src.api.coach_access import get_team_assignment_error
+from src.api.coach_access import (
+    can_manage_team,
+    get_team_access_resolver,
+    get_team_assignment_error,
+)
 from src.api.models import db, Team, TrainingAuditEvent, TrainingSession
 from src.api.season_service import (
     get_active_season_for_club,
@@ -529,6 +533,7 @@ def get_training_detail(training_id):
     return jsonify({
         "training": {
             **training.serialize(),
+            "can_manage": can_manage_team(user, team),
             "team_name": team.name,
             "team_gender": team.gender,
             "category_id": team.category_id,
@@ -942,10 +947,15 @@ def get_team_trainings(team_id):
         .order_by(TrainingSession.date.desc())\
         .all()
 
+    access = get_team_access_resolver(user)(team)
+
     return jsonify({
-        "team": team.serialize(),
+        "team": {**team.serialize(), **access},
         "total_trainings": len(trainings),
-        "trainings": [t.serialize() for t in trainings]
+        "trainings": [
+            {**t.serialize(), "can_manage": access["can_manage"]}
+            for t in trainings
+        ]
     }), 200
 
 @api.route("/trainings", methods=["GET"])
@@ -985,6 +995,7 @@ def get_all_trainings():
         query = query.filter(Team.status == "active")
 
     trainings = query.order_by(TrainingSession.date.desc()).all()
+    team_access = get_team_access_resolver(user)
 
     return jsonify({
         "season": season.serialize(),
@@ -992,6 +1003,7 @@ def get_all_trainings():
         "trainings": [
         {
             **t.serialize(),
+            "can_manage": team_access(t.team)["can_manage"],
             "team_name": t.team.name
         }
         for t in trainings

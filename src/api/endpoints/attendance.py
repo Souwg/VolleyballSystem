@@ -2,7 +2,13 @@ from flask import jsonify, request
 from flask_jwt_extended import jwt_required
 
 from src.api.api_blueprint import api
-from src.api.coach_access import get_team_assignment_error
+from src.api.coach_access import (
+    can_edit_player_profile,
+    get_team_access_resolver,
+    get_team_assignment_error,
+    is_current_membership,
+    serialize_player_for_user,
+)
 from src.api.models import (
     db,
     Attendance,
@@ -525,6 +531,7 @@ def get_player_attendance(player_id):
             403
         )
 
+    team_access = get_team_access_resolver(user)
 
     def serialize_membership(membership):
         return {
@@ -558,17 +565,9 @@ def get_player_attendance(player_id):
                 else None
             ),
             "team_status": membership.team.status,
+            "is_current": is_current_membership(membership),
+            **team_access(membership.team),
         }
-
-    # Cerrar una temporada o archivar un equipo no cierra la membership:
-    # left_at sigue en NULL, pero ese equipo ya no es un equipo actual.
-    def is_current_membership(membership):
-        return (
-            membership.left_at is None
-            and membership.team.status == "active"
-            and membership.team.season is not None
-            and membership.team.season.status in ["active", "planned"]
-        )
 
     current_memberships = [
         membership for membership in memberships
@@ -613,7 +612,8 @@ def get_player_attendance(player_id):
 
     return jsonify({
         "player": {
-            **player.serialize(),
+            **serialize_player_for_user(player, user),
+            "can_edit_profile": can_edit_player_profile(user, player),
             "teams": [
                 serialize_membership(membership)
                 for membership in current_memberships

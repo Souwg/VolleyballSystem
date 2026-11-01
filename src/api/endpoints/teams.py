@@ -4,6 +4,7 @@ from sqlalchemy import func
 from sqlalchemy.exc import IntegrityError
 
 from src.api.api_blueprint import api
+from src.api.coach_access import get_team_access_resolver
 from src.api.models import (
     db,
     Category,
@@ -181,10 +182,11 @@ def get_teams():
         query = query.filter_by(status="active")
 
     teams = query.order_by(Team.name).all()
+    team_access = get_team_access_resolver(user)
 
     return jsonify({
         "season": season.serialize(),
-        "teams": [t.serialize() for t in teams]
+        "teams": [{**t.serialize(), **team_access(t)} for t in teams]
     }), 200
 
 
@@ -230,7 +232,11 @@ def get_team_detail(team_id):
     ).count()
 
     return jsonify({
-        "team": team.serialize(),
+        "team": {
+            **team.serialize(),
+            **get_team_access_resolver(user)(team),
+            "season_status": team.season.status if team.season else None,
+        },
         "stats": {
             "total_players": total_players
         }

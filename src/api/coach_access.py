@@ -4,8 +4,28 @@ from src.api.models import Season, Team, TeamCoachAssignment, TeamPlayer, db
 COACH_ACCESS_CLUB_WIDE = "club_wide"
 COACH_ACCESS_TEAM_ASSIGNED = "team_assigned"
 
+CURRENT_SEASON_STATUSES = ("active", "planned")
 
-def _is_scoped_coach(user):
+PLAYER_FINANCE_FIELDS = (
+    "enrollment_date",
+    "enrollment_fee",
+    "monthly_fee",
+    "payment_cycle_day",
+    "payment_control_start_date",
+)
+PLAYER_SENSITIVE_FIELDS = (
+    "birth_date",
+    "representative_name",
+    "representative_phone",
+)
+SPORTS_MONEY_FIELDS = frozenset({
+    "default_referee_fee",
+    "referee_fee",
+    "registration_fee",
+})
+
+
+def is_scoped_coach(user):
     return (
         user.role == "coach"
         and user.club is not None
@@ -31,7 +51,7 @@ def can_manage_team(user, team):
     if user.role != "coach":
         return False
 
-    if not _is_scoped_coach(user):
+    if not is_scoped_coach(user):
         return True
 
     return _open_assignments(user).filter(
@@ -57,40 +77,106 @@ def get_team_assignment_error(user, team):
     )
 
 
-def can_edit_player_profile(user, player):
-    if not user.club_id or player.club_id != user.club_id:
-        return False
+def get_team_access_resolver(user):
+    """Metadata de lectura de un equipo para el usuario.
 
-    if user.role == "club_owner":
-        return True
+    is_assigned: existe una asignación abierta entre el Coach y el equipo.
+    can_manage: permiso por scoping, igual que can_manage_team. No incluye el
+    lifecycle: un equipo archivado o de una temporada cerrada puede dar True y
+    sus mutaciones siguen rechazándose con TEAM_ARCHIVED o SEASON_CLOSED.
+    """
+    assigned_team_ids = (
+        {assignment.team_id for assignment in _open_assignments(user).all()}
+        if user.role == "coach" and user.club_id
+        else set()
+    )
+    scoped = is_scoped_coach(user)
 
-    if user.role != "coach":
-        return False
+    def resolve(team):
+        same_club = bool(user.club_id) and team.club_id == user.club_id
+        is_assigned = same_club and team.id in assigned_team_ids
+
+        if not same_club:
+            can_manage = False
+        elif user.role == "club_owner":
+            can_manage = True
+        elif user.role == "coach":
+            can_manage = is_assigned if scoped else True
+        else:
+            can_manage = False
+
+        return {"is_assigned": is_assigned, "can_manage": can_manage}
+
+    return resolve
+
+
+def is_current_membership(membership):
+    """Python de la misma regla que _current_team_ids_by_player."""
+    return (
+        membership.left_at is None
+        and membership.team.status == "active"
+        and membership.team.season is not None
+        and membership.team.season.status in CURRENT_SEASON_STATUSES
+    )
+
+
+def _current_team_ids_by_player(player_ids):
+    # Cerrar una temporada o archivar un equipo no cierra la membership, pero
+    # esa relación ya es histórica y no da acceso al perfil global ni al contacto.
+    current_team_ids = {}
+
+    if not player_ids:
+        return current_team_ids
+
+    rows = db.session.query(TeamPlayer.player_id, TeamPlayer.team_id).join(
+        Team,
+        Team.id == TeamPlayer.team_id,
+    ).join(
+        Season,
+        Season.id == Team.season_id,
+    ).filter(
+        TeamPlayer.player_id.in_(player_ids),
+        TeamPlayer.left_at.is_(None),
+        Team.status == "active",
+        Season.status.in_(CURRENT_SEASON_STATUSES),
+    ).all()
+
+    for player_id, team_id in rows:
+        current_team_ids.setdefault(player_id, set()).add(team_id)
+
+    return current_team_ids
+
+
+def get_player_profile_access_resolver(user, players):
+    """Quién puede editar el perfil global y ver el contacto de cada Player."""
+    if not user.club_id or user.role not in ["club_owner", "coach"]:
+        return lambda player: False
 
     assigned_team_ids = get_assigned_team_ids(user)
 
     if assigned_team_ids is None:
-        return True
+        return lambda player: player.club_id == user.club_id
 
-    # Cerrar una temporada o archivar un equipo no cierra la membership, pero
-    # esa relación ya es histórica y no decide quién edita el perfil global.
-    current_team_ids = {
-        team_id
-        for (team_id,) in db.session.query(TeamPlayer.team_id).join(
-            Team,
-            Team.id == TeamPlayer.team_id,
-        ).join(
-            Season,
-            Season.id == Team.season_id,
-        ).filter(
-            TeamPlayer.player_id == player.id,
-            TeamPlayer.left_at.is_(None),
-            Team.status == "active",
-            Season.status.in_(["active", "planned"]),
-        ).all()
-    }
+    current_team_ids = _current_team_ids_by_player([
+        player.id
+        for player in players
+    ])
 
-    return not current_team_ids or bool(current_team_ids & assigned_team_ids)
+    def resolve(player):
+        if player.club_id != user.club_id:
+            return False
+
+        player_team_ids = current_team_ids.get(player.id)
+        return (
+            not player_team_ids
+            or bool(player_team_ids & assigned_team_ids)
+        )
+
+    return resolve
+
+
+def can_edit_player_profile(user, player):
+    return get_player_profile_access_resolver(user, [player])(player)
 
 
 def get_player_profile_error(user, player):
@@ -111,11 +197,80 @@ def get_player_profile_error(user, player):
     )
 
 
+def get_player_serializer(user, players):
+    """Serializa Players para el usuario. Evita una consulta por jugadora.
+
+    Owner y Staff reciben Player.serialize() sin cambios. Ningún Coach recibe
+    datos de cobro; el Coach team_assigned tampoco recibe el contacto ni la
+    fecha de nacimiento de quien no entrena.
+    """
+    if user.role != "coach":
+        return lambda player: player.serialize()
+
+    can_view_contact = get_player_profile_access_resolver(user, players)
+
+    def serialize(player):
+        data = player.serialize()
+
+        for field in PLAYER_FINANCE_FIELDS:
+            data.pop(field, None)
+
+        if not can_view_contact(player):
+            for field in PLAYER_SENSITIVE_FIELDS:
+                data.pop(field, None)
+
+        return data
+
+    return serialize
+
+
+def serialize_player_for_user(player, user):
+    return get_player_serializer(user, [player])(player)
+
+
+def serialize_with_player_for_user(row, user, player_serializer=None):
+    """Para serializers de modelos que anidan la Player completa."""
+    serialize_player = (
+        player_serializer
+        or get_player_serializer(user, [row.player])
+    )
+
+    return {
+        **row.serialize(),
+        "player": serialize_player(row.player) if row.player else None,
+    }
+
+
+def redact_sports_money_for_user(user, payload):
+    """Quita montos de una respuesta deportiva para el Coach team_assigned.
+
+    El Coach club_wide los conserva hasta 5.3-FIN: sus pantallas actuales de
+    partido y torneo los muestran.
+    """
+    if not is_scoped_coach(user):
+        return payload
+
+    def redact(value):
+        if isinstance(value, dict):
+            return {
+                key: redact(item)
+                for key, item in value.items()
+                if key not in SPORTS_MONEY_FIELDS
+            }
+
+        if isinstance(value, list):
+            return [redact(item) for item in value]
+
+        return value
+
+    return redact(payload)
+
+
 def can_manage_club_sports_entity(user):
     if user.role == "club_owner":
         return True
 
-    return user.role == "coach" and not _is_scoped_coach(user)
+    return user.role == "coach" and not is_scoped_coach(user)
 
 
 def get_club_sports_entity_error(user):
@@ -137,7 +292,7 @@ def get_assigned_team_ids(user):
     if user.role != "coach":
         return set()
 
-    if not _is_scoped_coach(user):
+    if not is_scoped_coach(user):
         return None
 
     return {

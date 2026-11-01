@@ -9,8 +9,14 @@ from werkzeug.utils import secure_filename
 
 from src.api.api_blueprint import api
 from src.api.coach_access import (
+    get_player_profile_access_resolver,
     get_player_profile_error,
+    get_player_serializer,
+    get_team_access_resolver,
     get_team_assignment_error,
+    is_current_membership,
+    serialize_player_for_user,
+    serialize_with_player_for_user,
 )
 from src.api.models import (
     db,
@@ -336,7 +342,7 @@ def create_player():
     return jsonify({
         "message": "Jugador registrado correctamente",
         "player": {
-            **player.serialize(),
+            **serialize_player_for_user(player, user),
             "team_id": membership.team_id if membership else None,
             "player_number": membership.player_number if membership else None,
             "status": membership.status if membership else "active"
@@ -431,7 +437,7 @@ def upload_player_image(player_id):
 
     return jsonify({
         "image_url": image_url,
-        "player": player.serialize()
+        "player": serialize_player_for_user(player, user)
     }), 201
 
 
@@ -522,13 +528,22 @@ def get_team_players(team_id):
         .order_by(TeamPlayer.player_number)\
         .all()
 
+    serialize_player = get_player_serializer(
+        user,
+        [m.player for m in memberships]
+    )
+
     players = [
         {
             "id": m.player.id,
             "first_name": m.player.first_name,
             "last_name": m.player.last_name,
             "sex": m.player.sex,
-            "birth_date": m.player.birth_date.isoformat() if m.player.birth_date else None,
+            **{
+                key: value
+                for key, value in serialize_player(m.player).items()
+                if key == "birth_date"
+            },
             "main_position": m.player.main_position,
             "team_id": m.team_id,
             "player_number": m.player_number,
@@ -537,7 +552,10 @@ def get_team_players(team_id):
         for m in memberships
     ]
 
-    team_data = team.serialize()
+    team_data = {
+        **team.serialize(),
+        **get_team_access_resolver(user)(team),
+    }
     team_data["season_status"] = team.season.status if team.season else None
 
     return jsonify({
@@ -586,6 +604,9 @@ def get_players():
     ).order_by(Player.created_at.desc()).all()
 
     serialized_players = []
+    serialize_player = get_player_serializer(user, players)
+    can_edit_profile = get_player_profile_access_resolver(user, players)
+    team_access = get_team_access_resolver(user)
 
     for player in players:
         memberships = sorted(
@@ -611,8 +632,11 @@ def get_players():
         )
         membership = memberships[0] if memberships else None
 
+        # team_id, player_number y status son escalares legacy de la primera
+        # membership: no son fuente de permisos. Para eso está "teams".
         serialized_players.append({
-            **player.serialize(),
+            **serialize_player(player),
+            "can_edit_profile": can_edit_profile(player),
             "team_id": membership.team_id if membership else None,
             "player_number": membership.player_number if membership else None,
             "status": membership.status if membership else "active",
@@ -629,7 +653,14 @@ def get_players():
                     "joined_at": m.joined_at.isoformat(),
                     "left_at": m.left_at.isoformat() if m.left_at else None,
                     "season_id": m.team.season_id,
+                    "season_status": (
+                        m.team.season.status
+                        if m.team.season
+                        else None
+                    ),
                     "team_status": m.team.status,
+                    "is_current": is_current_membership(m),
+                    **team_access(m.team),
                 }
                 for m in memberships
             ]
@@ -785,7 +816,7 @@ def add_existing_player_to_team(team_id):
 
     return jsonify({
         "message": "Jugador agregado al equipo",
-        "player": membership.serialize()
+        "player": serialize_with_player_for_user(membership, user)
     }), 201
 
 
@@ -988,7 +1019,7 @@ def update_player(player_id):
 
     return jsonify({
         "message": "Jugador actualizado correctamente",
-        "player": player.serialize()
+        "player": serialize_player_for_user(player, user)
     }), 200
 
 
@@ -1080,7 +1111,7 @@ def update_player_status(player_id):
     return jsonify({
         "message": "Estado del jugador actualizado correctamente",
         "player": {
-            **player.serialize(),
+            **serialize_player_for_user(player, user),
             "team_id": membership.team_id,
             "player_number": membership.player_number,
             "status": membership.status
