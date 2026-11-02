@@ -12,6 +12,12 @@ import { errorMessages } from "../../utils/errorMessages";
 import { validateTraining } from "../../utils/validators";
 import { getTrainingStatus } from "../../utils/trainingStatus";
 import { Pencil } from "lucide-react";
+import { ReadOnlyNotice } from "../../component/ui/readOnlyNotice";
+import {
+  canManage,
+  resolveTeamOperational,
+  useTeamAccessLost,
+} from "../../utils/coachAccess";
 import "../../../styles/trainingShared.css";
 import "../../../styles/trainingDetail.css";
 
@@ -122,6 +128,9 @@ export const TrainingDetail = () => {
   const [auditOpen, setAuditOpen] = useState(false);
   const [auditLoading, setAuditLoading] = useState(false);
   const [auditEvents, setAuditEvents] = useState([]);
+  const [teamOperational, setTeamOperational] = useState(true);
+
+  useTeamAccessLost(() => loadTrainingData());
 
   const [trainingForm, setTrainingForm] = useState({
     date: "",
@@ -168,6 +177,9 @@ export const TrainingDetail = () => {
       const trainingData = detailResult.data.training;
       setTraining(trainingData);
       resetTrainingForm(trainingData);
+      setTeamOperational(
+        await resolveTeamOperational(actions, trainingData.team_id),
+      );
     } else {
       nextErrors[detailResult.code] = true;
     }
@@ -440,7 +452,10 @@ export const TrainingDetail = () => {
   const canTransitionTraining = ["club_owner", "coach"].includes(
     store.user?.role,
   );
-  const attendanceEditable = isScheduled || attendanceCorrection;
+  const canManageTraining = canManage(training);
+  const canOperateTraining = canManageTraining && teamOperational;
+  const attendanceEditable =
+    (isScheduled && canOperateTraining) || attendanceCorrection;
   const generalErrorCode = Object.keys(errors).find(
     (code) => errors[code] && errorMessages[code],
   );
@@ -453,11 +468,22 @@ export const TrainingDetail = () => {
         variant="detail"
         eyebrow="Entrenamiento"
         title="Asistencia"
-        subtitle={isScheduled
+        subtitle={!canManageTraining
+          ? "Consulta la asistencia registrada en esta sesión."
+          : isScheduled && canOperateTraining
           ? "Marca la asistencia de los deportistas convocados a esta sesión."
+          : isScheduled
+          ? "Esta sesión no admite cambios porque su equipo no está operativo."
           : "Consulta el registro cerrado y realiza correcciones históricas cuando sea necesario."}
         onBack={() => navigate("/trainings")}
       />
+
+      {training && !canManageTraining && (
+        <ReadOnlyNotice>
+          Estás consultando un entrenamiento de un equipo que no tienes
+          asignado.
+        </ReadOnlyNotice>
+      )}
 
       <Card className="training-info-card">
         <div className="training-info-header">
@@ -473,7 +499,7 @@ export const TrainingDetail = () => {
             )}
           </div>
 
-          {!editMode && training && isScheduled && (
+          {!editMode && training && isScheduled && canOperateTraining && (
             <button
               type="button"
               className="training-info-edit-button"
@@ -621,7 +647,7 @@ export const TrainingDetail = () => {
           </p>
         )}
 
-        {isScheduled && canTransitionTraining && (
+        {isScheduled && canTransitionTraining && canOperateTraining && (
           <div className="training-status-actions">
             <Button
               type="button"
@@ -653,7 +679,7 @@ export const TrainingDetail = () => {
           </div>
         )}
 
-        {(isCompleted || isCancelled) && !editMode && (
+        {canManageTraining && (isCompleted || isCancelled) && !editMode && (
           <div className="training-status-actions training-history-actions">
             <Button
               type="button"
@@ -662,7 +688,7 @@ export const TrainingDetail = () => {
             >
               Corregir información
             </Button>
-            {isCancelled && (
+            {isCancelled && teamOperational && (
               <Button
                 type="button"
                 onClick={() => {
@@ -727,9 +753,11 @@ export const TrainingDetail = () => {
         <div className="training-attendance-heading">
           <div>
             <h3>Asistencia</h3>
-            {!isScheduled && <p>Registro histórico en modo de solo lectura.</p>}
+            {(!isScheduled || !canOperateTraining) && (
+              <p>Registro en modo de solo lectura.</p>
+            )}
           </div>
-          {isCompleted && !attendanceCorrection && (
+          {canManageTraining && isCompleted && !attendanceCorrection && (
             <Button
               type="button"
               variant="secondary"
@@ -882,7 +910,7 @@ export const TrainingDetail = () => {
         )}
       </Card>
 
-      {isScheduled && (
+      {isScheduled && canOperateTraining && (
         <div className="attendance-sticky-bar">
           <div>
             <div className="attendance-progress">

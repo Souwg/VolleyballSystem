@@ -2,6 +2,11 @@ import React, { useEffect, useState, useContext } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import { Context } from "../../store/appContext";
 import { Button } from "../../component/ui/button";
+import {
+  canManage,
+  resolveTeamOperational,
+  useTeamAccessLost,
+} from "../../utils/coachAccess";
 import "../../../styles/liveMatch.css";
 
 const ACTIONS = [
@@ -82,6 +87,10 @@ export const LiveMatch = () => {
   const [lineupError, setLineupError] = useState("");
   const [liveError, setLiveError] = useState("");
 
+  const [teamOperational, setTeamOperational] = useState(true);
+
+  useTeamAccessLost(() => loadMatchContext());
+
   const loadRoster = async () => {
     const result = await actions.getMatchRoster(match_id);
 
@@ -104,6 +113,9 @@ export const LiveMatch = () => {
 
     const matchData = result.data.match;
     setMatch(matchData);
+    setTeamOperational(
+      await resolveTeamOperational(actions, matchData.team_id),
+    );
 
     if (
       matchData.capture_mode === "live" &&
@@ -349,6 +361,38 @@ export const LiveMatch = () => {
           <p className="live-section-helper">
             La captura en vivo está cerrada. Las estadísticas históricas
             continúan disponibles desde el detalle del partido.
+          </p>
+          <Button
+            variant="secondary"
+            onClick={() => navigate(`/matches/${match_id}`)}
+          >
+            Consultar partido
+          </Button>
+        </section>
+      </div>
+    );
+  }
+
+  if (!canManage(match) || !teamOperational) {
+    return (
+      <div className="live-match-page">
+        <div className="live-topbar">
+          <button
+            type="button"
+            className="live-back-button"
+            onClick={() => navigate(`/matches/${match_id}`)}
+          >
+            ← Volver
+          </button>
+
+          <span className="live-topbar-label">Partido en vivo</span>
+        </div>
+
+        <section className="live-lineup-card">
+          <h3>Captura no disponible</h3>
+          <p className="live-section-helper">
+            Puedes consultar este partido, pero la captura en vivo no está
+            disponible para este equipo.
           </p>
           <Button
             variant="secondary"

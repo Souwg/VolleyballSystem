@@ -17,6 +17,12 @@ import { Select } from "../../component/ui/select";
 import { FormField } from "../../component/ui/formField";
 import { errorMessages } from "../../utils/errorMessages";
 import { formatMoney } from "../../utils/money";
+import { ReadOnlyNotice } from "../../component/ui/readOnlyNotice";
+import {
+  canManage,
+  resolveTeamOperational,
+  useTeamAccessLost,
+} from "../../utils/coachAccess";
 import "../../../styles/matchDetail.css";
 
 const STEPS = ["Convocadas", "Estado"];
@@ -136,6 +142,9 @@ export const MatchDetail = () => {
     useState(false);
   const [refereeError, setRefereeError] = useState("");
   const [refereeErrorCode, setRefereeErrorCode] = useState("");
+  const [teamOperational, setTeamOperational] = useState(true);
+
+  useTeamAccessLost(() => loadMatch());
 
   const totalSets = homeSets + opponentSets;
   const disableHomeIncrease = homeSets >= 3 || totalSets >= 5;
@@ -159,6 +168,9 @@ export const MatchDetail = () => {
     const matchData = matchResult.data.match;
 
     setMatch(matchData);
+    setTeamOperational(
+      await resolveTeamOperational(actions, matchData.team_id),
+    );
     setHomeSets(matchData.home_sets || 0);
     setOpponentSets(matchData.opponent_sets || 0);
     setCurrentStep(Math.min(matchData.match_step || 0, 1));
@@ -516,7 +528,9 @@ export const MatchDetail = () => {
 
   const statusSaved = (match?.match_step ?? 0) >= 2;
   const isMatchCompleted = match?.is_completed;
-  const canFinalizeMatch = hasValidSavedResult(match) && !isMatchCompleted;
+  const canOperateMatch = canManage(match) && teamOperational;
+  const isReadOnlyMatch = isMatchCompleted || !canOperateMatch;
+  const canFinalizeMatch = hasValidSavedResult(match) && !isReadOnlyMatch;
   const canManageMatchFinance = store.user?.role === "club_owner";
 
   const refereeFeeConfigured =
@@ -645,6 +659,13 @@ export const MatchDetail = () => {
         subtitle={match?.date}
         onBack={handleBack}
       />
+      {!isMatchCompleted && !canOperateMatch && (
+        <ReadOnlyNotice>
+          Estás consultando este partido. Convocatoria, asistencia y estadísticas
+          están disponibles en modo de solo lectura.
+        </ReadOnlyNotice>
+      )}
+
       <Card className="mb-4">
         <div className="d-flex justify-content-between align-items-center gap-3">
           <div>
@@ -677,7 +698,7 @@ export const MatchDetail = () => {
             </p>
           </div>
 
-          {!isMatchCompleted && (
+          {!isReadOnlyMatch && (
             <Button
               variant="primary"
               onClick={() => setShowResultEditor((prev) => !prev)}
@@ -687,7 +708,7 @@ export const MatchDetail = () => {
           )}
         </div>
 
-        {(match?.match_step ?? 0) < 3 && (
+        {!isReadOnlyMatch && (match?.match_step ?? 0) < 3 && (
           <small className="text-muted d-block mt-2">
             Puedes guardar solo el resultado. Para usar modo en vivo y
             estadísticas, completa la preparación del partido.
@@ -695,7 +716,7 @@ export const MatchDetail = () => {
         )}
       </Card>
 
-      {showResultEditor && !isMatchCompleted && (
+      {showResultEditor && !isReadOnlyMatch && (
         <Card className="mb-4">
           <h3>Registrar o actualizar resultado</h3>
 
@@ -780,14 +801,20 @@ export const MatchDetail = () => {
 
         {!match?.capture_mode ? (
           <>
-            <p className="text-muted">
-              ¿Cómo registrarás el partido?
-            </p>
+            {!isReadOnlyMatch && (
+              <p className="text-muted">
+                ¿Cómo registrarás el partido?
+              </p>
+            )}
 
             {isMatchCompleted ? (
               <p className="text-muted mb-0">
                 Partido histórico sin modo de captura verificable. Sus datos
                 permanecen disponibles en modo de solo lectura.
+              </p>
+            ) : isReadOnlyMatch ? (
+              <p className="text-muted mb-0">
+                Este partido aún no tiene modo de captura definido.
               </p>
             ) : (
               <div className="match-capture-mode-options">
@@ -823,7 +850,7 @@ export const MatchDetail = () => {
                 </strong>
               </div>
 
-              {!isMatchCompleted && (
+              {!isReadOnlyMatch && (
                 <Button
                   variant="secondary"
                   disabled={savingCaptureMode}
@@ -841,7 +868,7 @@ export const MatchDetail = () => {
             </div>
 
             {match.capture_mode === "live" ? (
-              !isMatchCompleted && canOpenLiveMode ? (
+              !isReadOnlyMatch && canOpenLiveMode ? (
                 <>
                   <p className="text-muted">
                     {hasInitialSix
@@ -861,18 +888,20 @@ export const MatchDetail = () => {
                 <p className="text-muted mb-0">
                   {isMatchCompleted
                     ? "El partido está finalizado. Las estadísticas provienen de LiveMatch."
+                    : isReadOnlyMatch
+                    ? "La captura en vivo no está disponible en modo de consulta."
                     : "Completa convocatoria y estado para iniciar el modo en vivo."}
                 </p>
               )
             ) : (
               <>
                 <p className="text-muted">
-                  {isMatchCompleted
-                    ? "El resumen estadístico está cerrado y disponible en modo de solo lectura."
+                  {isReadOnlyMatch
+                    ? "El resumen estadístico está disponible en modo de solo lectura."
                     : "Las estadísticas se cargarán como un resumen manual."}
                 </p>
 
-                {!isMatchCompleted && (
+                {!isReadOnlyMatch && (
                   <div className="match-participation-section">
                     <Button
                       variant="secondary"
@@ -983,7 +1012,7 @@ export const MatchDetail = () => {
                   </div>
                 )}
 
-                {isMatchCompleted && (
+                {isReadOnlyMatch && (
                   <p className="text-muted">
                     Participación registrada: {" "}
                     <strong>
@@ -999,19 +1028,19 @@ export const MatchDetail = () => {
                   onClick={() => navigate(`/matches/${match_id}/stats`)}
                   disabled={!hasPlayersWhoPlayed}
                 >
-                  {isMatchCompleted
+                  {isReadOnlyMatch
                     ? "Consultar estadísticas"
                     : "Cargar resumen estadístico"}
                 </Button>
 
-                {!hasPlayersWhoPlayed && !isMatchCompleted && (
+                {!hasPlayersWhoPlayed && !isReadOnlyMatch && (
                   <small className="text-muted d-block mt-2">
                     Podrás cargar el resumen cuando exista participación
                     registrada.
                   </small>
                 )}
 
-                {!hasPlayersWhoPlayed && isMatchCompleted && (
+                {!hasPlayersWhoPlayed && isReadOnlyMatch && (
                   <small className="text-muted d-block mt-2">
                     El partido no tiene participantes con estadísticas
                     individuales para consultar.
@@ -1049,11 +1078,11 @@ export const MatchDetail = () => {
               key={step}
               variant={currentStep === index ? "primary" : "secondary"}
               disabled={
-                isMatchCompleted || isLocked || isBlockedByChanges
+                isReadOnlyMatch || isLocked || isBlockedByChanges
               }
               onClick={() => {
                 if (
-                  isMatchCompleted ||
+                  isReadOnlyMatch ||
                   isLocked ||
                   isBlockedByChanges
                 ) return;
@@ -1066,7 +1095,7 @@ export const MatchDetail = () => {
           );
         })}
       </div>
-      {currentStep === 0 && (
+      {currentStep === 0 && !isReadOnlyMatch && (
         <p className="mb-3">
           Selecciona las jugadoras convocadas para este partido y guarda para
           continuar
@@ -1085,7 +1114,13 @@ export const MatchDetail = () => {
         <p className="form-error">{statusError}</p>
       )}
       {/* Players list */}
-      {currentStep === 0 ? (
+      {teamPlayers.length === 0 ? (
+        <Card className="mb-4">
+          <p className="text-muted mb-0">
+            Este partido no tiene convocatoria registrada.
+          </p>
+        </Card>
+      ) : currentStep === 0 ? (
         <div className="match-player-selection-list">
           {teamPlayers.map((player) => {
             const isSelected = selectedPlayers.includes(player.player_id);
@@ -1097,7 +1132,7 @@ export const MatchDetail = () => {
                 className={`match-player-option ${
                   isSelected ? "selected" : ""
                 }`}
-                disabled={isMatchCompleted}
+                disabled={isReadOnlyMatch}
                 onClick={() => togglePlayerSelection(player)}
               >
                 <div className="match-player-option-check">
@@ -1117,7 +1152,11 @@ export const MatchDetail = () => {
                 </div>
 
                 <span className="match-player-option-state">
-                  {isSelected ? "Convocada" : "Convocar"}
+                  {isSelected
+                    ? "Convocada"
+                    : isReadOnlyMatch
+                    ? "No convocada"
+                    : "Convocar"}
                 </span>
               </button>
             );
@@ -1130,7 +1169,7 @@ export const MatchDetail = () => {
               key={player.match_player_id}
               className="mb-3 cursor-pointer"
               onClick={() => {
-                if (!isMatchCompleted && currentStep === 1) {
+                if (!isReadOnlyMatch && currentStep === 1) {
                   toggleMatchStatus(player.match_player_id);
                 }
               }}
@@ -1139,11 +1178,11 @@ export const MatchDetail = () => {
                 #{player.player_number} {player.first_name} {player.last_name}
               </h3>
 
-              {PLAYABLE_STATUSES.includes(player.attendance_status) ? (
+              {PLAYABLE_STATUSES.includes(player.attendance_status) &&
+              !isReadOnlyMatch ? (
                 <FormField label="Posición hoy">
                   <Select
                     value={player.position || ""}
-                    disabled={isMatchCompleted}
                     onClick={(event) => event.stopPropagation()}
                     onChange={(event) => {
                       event.stopPropagation();
@@ -1176,13 +1215,15 @@ export const MatchDetail = () => {
                 {MATCH_STATUS_LABELS[player.attendance_status] || "Sin estado"}
               </p>
 
-              <small className="text-muted">Toca para cambiar estado</small>
+              {!isReadOnlyMatch && (
+                <small className="text-muted">Toca para cambiar estado</small>
+              )}
             </Card>
           ))}
         </div>
       )}
       {/* Footer CTA */}
-      {!isMatchCompleted && (
+      {!isReadOnlyMatch && (
         <div className="mt-4 mb-4 d-flex gap-2">
         {currentStep === 0 ? (
           <Button

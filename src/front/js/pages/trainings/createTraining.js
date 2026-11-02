@@ -9,6 +9,13 @@ import { Button } from "../../component/ui/button";
 import { Card } from "../../component/ui/card";
 import { FormField } from "../../component/ui/formField";
 import { Select } from "../../component/ui/select";
+import { ReadOnlyNotice } from "../../component/ui/readOnlyNotice";
+import {
+  canManage,
+  getManageableTeams,
+  isScopedCoach,
+  isTeamOperational,
+} from "../../utils/coachAccess";
 import "../../../styles/trainingShared.css";
 
 export const CreateTraining = () => {
@@ -24,8 +31,19 @@ export const CreateTraining = () => {
   const [loading, setLoading] = useState(false);
   const [errors, setErrors] = useState({});
 
+  const [fixedTeam, setFixedTeam] = useState(null);
+  const manageableTeams = getManageableTeams(store.teams);
+  const cannotCreate = team_id
+    ? !canManage(fixedTeam) || !isTeamOperational(fixedTeam)
+    : isScopedCoach(store) && manageableTeams.length === 0;
+
   const loadTeams = async () => {
-    if (team_id) return;
+    if (team_id) {
+      const result = await actions.getTeamDetail(team_id);
+      setFixedTeam(result.ok ? result.data.team : null);
+      return;
+    }
+
     await actions.getTeams();
   };
 
@@ -85,6 +103,11 @@ export const CreateTraining = () => {
         }
       />
 
+      {cannotCreate ? (
+        <ReadOnlyNotice>
+          No puedes crear entrenamientos para este equipo en este momento.
+        </ReadOnlyNotice>
+      ) : (
       <Card>
         <h4>Detalles del entrenamiento</h4>
         <p>Completa la información básica</p>
@@ -115,7 +138,7 @@ export const CreateTraining = () => {
               >
                 <option value="">Selecciona una categoría</option>
 
-                {store.teams.map((team) => (
+                {manageableTeams.map((team) => (
                   <option key={team.id} value={team.id}>
                     {team.name} ·{" "}
                     {team.gender === "mixed"
@@ -285,6 +308,7 @@ export const CreateTraining = () => {
           </div>
         </form>
       </Card>
+      )}
     </div>
   );
 };

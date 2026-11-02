@@ -5,6 +5,7 @@ import { StatCounter } from "../../component/ui/statCounter";
 import { PageHeader } from "../../component/ui/pageHeader";
 import { Card } from "../../component/ui/card";
 import { Button } from "../../component/ui/button";
+import { canManage, resolveTeamOperational } from "../../utils/coachAccess";
 
 const genderLabelMap = {
   female: "Femenino",
@@ -32,6 +33,7 @@ export const PlayerMatchStats = () => {
   const { match_player_id } = useParams();
   const navigate = useNavigate();
   const [context, setContext] = useState(null);
+  const [canOperate, setCanOperate] = useState(true);
   const [showLiveSummary, setShowLiveSummary] = useState(true);
   const [error, setError] = useState("");
 
@@ -177,6 +179,19 @@ export const PlayerMatchStats = () => {
     const stats = result.data.stats || null;
 
     setContext(contextData);
+
+    if (contextData?.match?.id) {
+      const matchResult = await actions.getMatchDetail(contextData.match.id);
+
+      if (matchResult.ok) {
+        const matchData = matchResult.data.match;
+
+        setCanOperate(
+          canManage(matchData) &&
+            (await resolveTeamOperational(actions, matchData.team_id)),
+        );
+      }
+    }
 
     if (!stats) {
       setAttacksTotal(0);
@@ -335,7 +350,8 @@ export const PlayerMatchStats = () => {
   const showBlock = !isLibero;
   const captureMode = context?.match?.capture_mode || null;
   const isMatchCompleted = Boolean(context?.match?.is_completed);
-  const canEditStats = captureMode === "summary" && !isMatchCompleted;
+  const canEditStats =
+    captureMode === "summary" && !isMatchCompleted && canOperate;
 
   return (
     <>

@@ -600,7 +600,7 @@ const OwnerDashboard = ({ sections, currencyCode }) => {
   );
 };
 
-const CoachDashboard = ({ sections }) => {
+const CoachDashboard = ({ sections, hasTeamAssignments }) => {
   const agenda = sections.agenda || {};
   const todayTrainings = (agenda.upcoming_trainings || []).filter(
     (item) => item.is_today
@@ -617,6 +617,21 @@ const CoachDashboard = ({ sections }) => {
   const lastMatch = sections.last_official_match;
   const hasFutureActivities =
     futureTrainings.length > 0 || futureMatches.length > 0;
+
+  // El flag solo llega en team_assigned: su ausencia no es "sin equipos".
+  if (hasTeamAssignments === false) {
+    return (
+      <div className="dashboard-role-content dashboard-coach">
+        <DashboardSection title="Tus equipos">
+          <DashboardEmpty title="Aún no tienes equipos asignados">
+            Cuando el club te asigne un equipo verás aquí su agenda. Mientras
+            tanto puedes consultar la información deportiva del club.
+          </DashboardEmpty>
+          <DashboardLink to="/categories">Ver equipos del club</DashboardLink>
+        </DashboardSection>
+      </div>
+    );
+  }
 
   return (
     <div className="dashboard-role-content dashboard-coach">
@@ -917,7 +932,12 @@ export const Dashboard = () => {
       {dashboard.role === "club_owner" && (
         <OwnerDashboard sections={sections} currencyCode={currencyCode} />
       )}
-      {dashboard.role === "coach" && <CoachDashboard sections={sections} />}
+      {dashboard.role === "coach" && (
+        <CoachDashboard
+          sections={sections}
+          hasTeamAssignments={dashboard.has_team_assignments}
+        />
+      )}
       {dashboard.role === "staff" && (
         <StaffDashboard sections={sections} currencyCode={currencyCode} />
       )}

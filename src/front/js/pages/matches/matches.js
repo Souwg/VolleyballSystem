@@ -4,6 +4,8 @@ import { Context } from "../../store/appContext";
 
 import { PageHeader } from "../../component/ui/pageHeader";
 import { Card } from "../../component/ui/card";
+import { ReadOnlyBadge } from "../../component/ui/readOnlyNotice";
+import { canManage } from "../../utils/coachAccess";
 import "../../../styles/match.css";
 import { Trophy } from "lucide-react";
 import {
@@ -117,7 +119,7 @@ export const Matches = () => {
             <p>
               {readOnlySeason
                 ? "No hay partidos registrados en la temporada seleccionada."
-                : "Los partidos aparecerán aquí cuando los crees desde un equipo."}
+                : "Los partidos aparecerán aquí cuando se creen desde un equipo."}
             </p>
           </div>
         </Card>
@@ -165,6 +167,7 @@ export const Matches = () => {
                     >
                       {getMatchStatusText(match)}
                     </span>
+                    {!canManage(match) && <ReadOnlyBadge />}
                   </div>
 
                   {hasScore && (

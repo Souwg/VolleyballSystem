@@ -15,6 +15,7 @@ import {
   validatePlayerAssignment,
 } from "../../utils/validators";
 import { errorMessages } from "../../utils/errorMessages";
+import { getManageableTeams } from "../../utils/coachAccess";
 import "../../../styles/playerShared.css";
 import "../../../styles/players.css";
 
@@ -57,9 +58,10 @@ export const Players = () => {
     store.user?.role,
   );
   const canManagePlayerStatus = store.user?.role === "club_owner";
+  const manageableTeams = getManageableTeams(store.teams);
 
   const assignAvailableTeams = assigningPlayer
-    ? store.teams.filter(
+    ? manageableTeams.filter(
         (team) =>
           team.gender === "mixed" || team.gender === assigningPlayer.sex,
       )
@@ -461,7 +463,7 @@ export const Players = () => {
               >
                 <option value="">Sin equipo</option>
 
-                {store.teams.map((team) => (
+                {manageableTeams.map((team) => (
                   <option key={team.id} value={team.id}>
                     {team.name} ·{" "}
                     {team.gender === "mixed"
@@ -930,10 +932,14 @@ export const Players = () => {
                     </div>
 
                     {canManagePlayers &&
-                      ((!player.teams?.length && player.is_active) ||
+                      ((!player.teams?.length &&
+                        player.is_active &&
+                        manageableTeams.length > 0) ||
                         canManagePlayerStatus) && (
                       <div className="player-actions">
-                        {!player.teams?.length && player.is_active && (
+                        {!player.teams?.length &&
+                          player.is_active &&
+                          manageableTeams.length > 0 && (
                           <Button
                             type="button"
                             className="button-primary"

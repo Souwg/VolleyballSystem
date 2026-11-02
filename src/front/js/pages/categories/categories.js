@@ -13,6 +13,9 @@ import {
   useSeasonSelection,
 } from "../../component/seasonSelector";
 import { Layers, Pencil } from "lucide-react";
+import { AssignedBadge } from "../../component/ui/readOnlyNotice";
+import { isScopedCoach } from "../../utils/coachAccess";
+
 import "../../../styles/teams.css";
 
 export const Categories = () => {
@@ -36,6 +39,13 @@ export const Categories = () => {
     selectSeason,
   } = useSeasonSelection();
   const readOnlySeason = selectedSeason?.status !== "active";
+  const canManageStructure = store.user?.role === "club_owner";
+  const showMyTeams = isScopedCoach(store);
+  const myTeams = (store.teams || []).filter((team) => team.is_assigned);
+
+  useEffect(() => {
+    if (showMyTeams) actions.getTeams({ seasonId });
+  }, [showMyTeams, seasonId]);
 
   useEffect(() => {
     const loadCategories = async () => {
@@ -169,6 +179,7 @@ export const Categories = () => {
         title="Categorías y equipos"
         subtitle="Organiza el club por edades, niveles, géneros o grupos de entrenamiento."
         actions={
+          canManageStructure &&
           !showForm &&
           !readOnlySeason &&
           !editingCategoryId && (
@@ -309,14 +320,60 @@ export const Categories = () => {
           </form>
         </Card>
       )}
+      {showMyTeams && (
+        <section className="my-teams-section">
+          <h4>Mis equipos</h4>
+
+          {myTeams.length === 0 ? (
+            <Card>
+              <div className="empty-state">
+                <h4>Aún no tienes equipos asignados</h4>
+                <p>
+                  Puedes consultar todos los equipos del club desde sus
+                  categorías.
+                </p>
+              </div>
+            </Card>
+          ) : (
+            <div className="teams-grid">
+              {myTeams.map((team) => (
+                <Card
+                  key={team.id}
+                  className="team-card card-interactive category-card"
+                  onClick={() => navigate(`/teams/${team.id}`)}
+                >
+                  <div className="category-card-header">
+                    <h3 className="team-card-title">{team.name}</h3>
+                    <AssignedBadge />
+                  </div>
+
+                  <p className="team-meta">
+                    {team.category?.name || "Sin categoría"}
+                    {team.status === "archived" ? " · Archivado" : ""}
+                  </p>
+                </Card>
+              ))}
+            </div>
+          )}
+
+          <h4 className="my-teams-all-title">Todas las categorías</h4>
+        </section>
+      )}
+
       {!showForm &&
         !editingCategoryId &&
         (store.categories?.length === 0 ? (
           <Card>
             <div className="empty-state">
               <h4>Aún no tienes categorías</h4>
-              <p>Crea una categoría como Iniciación, U12, U14 o Juvenil.</p>
-              <Button onClick={openCreateForm}>Crear categoría</Button>
+              {canManageStructure ? (
+                <>
+                  <p>Crea una categoría como Iniciación, U12, U14 o Juvenil.</p>
+                  <Button onClick={openCreateForm}>Crear categoría</Button>
+                </>
+              ) : (
+                <p>El dueño del club todavía no ha creado categorías.</p>
+              )}
             </div>
           </Card>
         ) : (
@@ -336,7 +393,7 @@ export const Categories = () => {
                 <div className="category-card-header">
                   <h3 className="team-card-title">{category.name}</h3>
 
-                  {!readOnlySeason && (
+                  {canManageStructure && !readOnlySeason && (
                     <button
                       type="button"
                       className="category-edit-button"

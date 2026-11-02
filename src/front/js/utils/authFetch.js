@@ -188,6 +188,7 @@ export const authFetch = async (endpoint, options = {}) => {
 };
 
 import { errorMessages } from "./errorMessages";
+import { TEAM_ACCESS_LOST_EVENT } from "./coachAccess";
 
 const FORM_ERRORS = [
   // CLIENTS
@@ -356,6 +357,10 @@ export const parseResponse = async (resp) => {
 
     if (showToastGlobal && !FORM_ERRORS.includes(code)) {
       showToastGlobal(finalMessage, "error");
+    }
+
+    if (code === "TEAM_NOT_ASSIGNED") {
+      window.dispatchEvent(new Event(TEAM_ACCESS_LOST_EVENT));
     }
 
     return {

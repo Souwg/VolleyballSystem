@@ -11,6 +11,17 @@ import { errorMessages } from "../../utils/errorMessages";
 import { formatMoney } from "../../utils/money";
 import { Trophy, Users, CalendarDays, DollarSign } from "lucide-react";
 
+import {
+  AssignedBadge,
+  ReadOnlyBadge,
+} from "../../component/ui/readOnlyNotice";
+import {
+  canManage,
+  getManageableTeams,
+  hasField,
+  isScopedCoach,
+  useTeamAccessLost,
+} from "../../utils/coachAccess";
 import "../../../styles/tournaments.css";
 
 const formatDate = (dateValue) => {
@@ -88,6 +99,11 @@ export const TournamentDetail = () => {
   useEffect(() => {
     loadTournamentDetail();
   }, [tournament_id]);
+
+  useTeamAccessLost(() => {
+    loadTournamentDetail();
+    actions.getTeams();
+  });
 
   useEffect(() => {
     const loadTeams = async () => {
@@ -200,7 +216,7 @@ export const TournamentDetail = () => {
     setTransitioningStatus(null);
   };
 
-  const availableTeams = (store.teams || []).filter((team) => {
+  const availableTeams = getManageableTeams(store.teams).filter((team) => {
     const alreadyAdded = tournamentTeams.some(
       (entry) => entry.team_id === team.id,
     );
@@ -217,10 +233,15 @@ export const TournamentDetail = () => {
   }
 
   const statusData = getStatusData(tournament.status);
-  const canAddTeam = tournament.status === "active";
+  const scopedCoach = isScopedCoach(store);
+  const canAddTeam =
+    tournament.status === "active" &&
+    (!scopedCoach || availableTeams.length > 0);
   const canManageLifecycle =
     tournament.status === "active" &&
+    canManage(tournament) &&
     ["club_owner", "coach"].includes(store.user?.role);
+  const hasRefereeFee = hasField(tournament, "default_referee_fee");
 
   return (
     <div className="tournament-detail-page">
@@ -304,16 +325,18 @@ export const TournamentDetail = () => {
           </strong>
         </div>
 
-        <div className="tournament-mobile-summary-row">
-          <span>Arbitraje base</span>
+        {hasRefereeFee && (
+          <div className="tournament-mobile-summary-row">
+            <span>Arbitraje base</span>
 
-          <strong>
-            {formatMoney(
-              tournament.default_referee_fee,
-              tournament.currency_code,
-            )} por partido
-          </strong>
-        </div>
+            <strong>
+              {formatMoney(
+                tournament.default_referee_fee,
+                tournament.currency_code,
+              )} por partido
+            </strong>
+          </div>
+        )}
 
         <div className="tournament-mobile-summary-row">
           <span>Organizador</span>
@@ -322,7 +345,11 @@ export const TournamentDetail = () => {
         </div>
       </Card>
 
-      <div className="tournament-summary-grid tournament-summary-grid-desktop">
+      <div
+        className={`tournament-summary-grid tournament-summary-grid-desktop ${
+          hasRefereeFee ? "" : "tournament-summary-grid-compact"
+        }`}
+      >
         <Card className="tournament-summary-card">
           <span className={`status-badge ${statusData.className}`}>
             {statusData.label}
@@ -346,20 +373,22 @@ export const TournamentDetail = () => {
           </p>
         </Card>
 
-        <Card className="tournament-summary-card">
-          <div className="tournament-summary-icon">
-            <DollarSign size={18} />
-          </div>
+        {hasRefereeFee && (
+          <Card className="tournament-summary-card">
+            <div className="tournament-summary-icon">
+              <DollarSign size={18} />
+            </div>
 
-          <h4>Arbitraje base</h4>
+            <h4>Arbitraje base</h4>
 
-          <p>
-            {formatMoney(
-              tournament.default_referee_fee,
-              tournament.currency_code,
-            )} por partido
-          </p>
-        </Card>
+            <p>
+              {formatMoney(
+                tournament.default_referee_fee,
+                tournament.currency_code,
+              )} por partido
+            </p>
+          </Card>
+        )}
       </div>
 
       {showAddTeamForm && (
@@ -477,8 +506,9 @@ export const TournamentDetail = () => {
               <h4>Aún no hay equipos inscritos</h4>
 
               <p>
-                Inscribe un equipo para seleccionar jugadoras, asociar partidos
-                y generar cargos.
+                {canAddTeam
+                  ? "Inscribe un equipo para seleccionar jugadoras, asociar partidos y generar cargos."
+                  : "Los equipos inscritos en este torneo aparecerán aquí."}
               </p>
 
               {canAddTeam && (
@@ -527,16 +557,21 @@ export const TournamentDetail = () => {
                       {entryStatus.label}
                     </span>
 
+                    {scopedCoach &&
+                      (entry.is_assigned ? <AssignedBadge /> : <ReadOnlyBadge />)}
+
                     <span>{entry.total_players || 0} deportistas</span>
 
                     <span>{entry.total_matches || 0} partidos</span>
 
-                    <strong>
-                      {formatMoney(
-                        entry.registration_fee,
-                        entry.currency_code || tournament.currency_code,
-                      )}
-                    </strong>
+                    {hasField(entry, "registration_fee") && (
+                      <strong>
+                        {formatMoney(
+                          entry.registration_fee,
+                          entry.currency_code || tournament.currency_code,
+                        )}
+                      </strong>
+                    )}
                   </div>
                 </Card>
               );

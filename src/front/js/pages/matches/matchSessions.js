@@ -4,6 +4,8 @@ import { Context } from "../../store/appContext";
 import { PageHeader } from "../../component/ui/pageHeader";
 import { Card } from "../../component/ui/card";
 import { Button } from "../../component/ui/button";
+import { ReadOnlyBadge } from "../../component/ui/readOnlyNotice";
+import { canManage, isTeamOperational } from "../../utils/coachAccess";
 import "../../../styles/match.css";
 
 export const MatchSessions = () => {
@@ -12,6 +14,7 @@ export const MatchSessions = () => {
   const navigate = useNavigate();
 
   const [loading, setLoading] = useState(true);
+  const [teamDetail, setTeamDetail] = useState(null);
 
   useEffect(() => {
     loadMatches();
@@ -21,7 +24,12 @@ export const MatchSessions = () => {
     setLoading(true);
 
     try {
-      await actions.getTeamMatches(team_id);
+      const [, teamResult] = await Promise.all([
+        actions.getTeamMatches(team_id),
+        actions.getTeamDetail(team_id),
+      ]);
+
+      setTeamDetail(teamResult.ok ? teamResult.data.team : null);
     } finally {
       setLoading(false);
     }
@@ -98,9 +106,12 @@ export const MatchSessions = () => {
         }
         onBack={() => navigate(`/teams/${team_id}`)}
         actions={
-          <Button onClick={() => navigate(`/teams/${team_id}/matches/new`)}>
-            + Crear partido
-          </Button>
+          canManage(teamDetail) &&
+          isTeamOperational(teamDetail) && (
+            <Button onClick={() => navigate(`/teams/${team_id}/matches/new`)}>
+              + Crear partido
+            </Button>
+          )
         }
       />
 
@@ -147,6 +158,7 @@ export const MatchSessions = () => {
                     >
                       {getMatchStatusText(match)}
                     </span>
+                    {!canManage(match) && <ReadOnlyBadge />}
                   </div>
 
                   {hasScore && (

@@ -1,6 +1,13 @@
 import React, { useEffect, useContext, useState } from "react";
 import { useParams, useNavigate, useLocation } from "react-router-dom";
 import { Context } from "../../store/appContext";
+import { AssignedBadge } from "../../component/ui/readOnlyNotice";
+import {
+  canManage,
+  hasField,
+  isScopedCoach,
+  useTeamAccessLost,
+} from "../../utils/coachAccess";
 import "../../../styles/playerDetails.css";
 import { Card } from "../../component/ui/card";
 import { Button } from "../../component/ui/button";
@@ -138,9 +145,18 @@ export const PlayerDetail = () => {
   const canViewPerformance = ["club_owner", "coach", "staff"].includes(
     store.user?.role,
   );
-  const canEditPlayer = ["club_owner", "coach"].includes(store.user?.role);
+  const canEditPlayer =
+    ["club_owner", "coach"].includes(store.user?.role) &&
+    player?.can_edit_profile !== false;
+  const canRemoveFromTeam = (team) =>
+    ["club_owner", "coach"].includes(store.user?.role) &&
+    canManage(team) &&
+    (store.user?.role === "club_owner" || team.season_status === "active");
+  const showAssignment = isScopedCoach(store);
   const canManagePlayerStatus = store.user?.role === "club_owner";
   const canDeletePlayer = store.user?.role === "club_owner";
+
+  useTeamAccessLost(() => loadPlayerData());
 
   const handleBack = () => {
     if (location.state?.from) {
@@ -502,14 +518,16 @@ export const PlayerDetail = () => {
                 </strong>
               </div>
 
-              <div className="player-info-row">
-                <span>Fecha de nacimiento</span>
-                <strong>
-                  {player.birth_date
-                    ? formatDate(player.birth_date)
-                    : "Sin definir"}
-                </strong>
-              </div>
+              {hasField(player, "birth_date") && (
+                <div className="player-info-row">
+                  <span>Fecha de nacimiento</span>
+                  <strong>
+                    {player.birth_date
+                      ? formatDate(player.birth_date)
+                      : "Sin definir"}
+                  </strong>
+                </div>
+              )}
 
               <div className="player-info-row">
                 <span>Posición principal</span>
@@ -521,6 +539,7 @@ export const PlayerDetail = () => {
           </Card>
           {/* 👤 REPRESENTANTE */}
 
+          {hasField(player, "representative_name") && (
           <Card className="player-info-card">
             <div className="player-card-edit-header">
               <h3>Contacto del representante</h3>
@@ -600,6 +619,7 @@ export const PlayerDetail = () => {
               </div>
             )}
           </Card>
+          )}
           {/* 🏐 MEMBERSHIP CARDS */}
           <Card className="player-teams-card">
             <div className="player-section-header">
@@ -628,6 +648,8 @@ export const PlayerDetail = () => {
                     </div>
 
                     <div className="player-team-row-actions">
+                      {showAssignment && team.is_assigned && <AssignedBadge />}
+
                       <span
                         className={`status-badge ${
                           team.status === "active"
@@ -644,7 +666,7 @@ export const PlayerDetail = () => {
                           : "Inactiva"}
                       </span>
 
-                      {canEditPlayer && (
+                      {canRemoveFromTeam(team) && (
                         <Button
                           type="button"
                           variant="secondary"
@@ -686,6 +708,9 @@ export const PlayerDetail = () => {
                       <span>
                         {team.name} · Número #{team.player_number}
                         {team.season_name ? ` · ${team.season_name}` : ""}
+                        {team.team_status === "archived"
+                          ? " · Equipo archivado"
+                          : ""}
                       </span>
                     </div>
                   </div>

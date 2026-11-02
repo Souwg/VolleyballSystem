@@ -6,6 +6,8 @@ import { Context } from "../../store/appContext";
 import { PageHeader } from "../../component/ui/pageHeader";
 import { Card } from "../../component/ui/card";
 import { Button } from "../../component/ui/button";
+import { ReadOnlyBadge } from "../../component/ui/readOnlyNotice";
+import { canManage, isTeamOperational } from "../../utils/coachAccess";
 import { getTrainingStatus } from "../../utils/trainingStatus";
 import "../../../styles/trainings.css";
 
@@ -22,10 +24,17 @@ export const TeamTrainings = () => {
   const { team_id } = useParams();
   const navigate = useNavigate();
   const [loading, setLoading] = useState(true);
+  const [team, setTeam] = useState(null);
 
   const loadTrainings = async () => {
     setLoading(true);
-    await actions.getTeamTrainings(team_id);
+
+    const [, teamResult] = await Promise.all([
+      actions.getTeamTrainings(team_id),
+      actions.getTeamDetail(team_id),
+    ]);
+
+    setTeam(teamResult.ok ? teamResult.data.team : null);
     setLoading(false);
   };
 
@@ -45,6 +54,8 @@ export const TeamTrainings = () => {
     return <p>Cargando entrenamientos...</p>;
   }
 
+  const canCreateTraining = canManage(team) && isTeamOperational(team);
+
   return (
     <div className="team-trainings-page">
       <PageHeader
@@ -54,7 +65,9 @@ export const TeamTrainings = () => {
         subtitle="Consulta y crea sesiones para esta categoría."
         onBack={() => navigate(`/teams/${team_id}`)}
         actions={
-          <Button onClick={handleCreateTraining}>+ Crear entrenamiento</Button>
+          canCreateTraining && (
+            <Button onClick={handleCreateTraining}>+ Crear entrenamiento</Button>
+          )
         }
       />
 
@@ -63,8 +76,9 @@ export const TeamTrainings = () => {
           <div className="empty-state">
             <h4>No hay entrenamientos aún</h4>
             <p>
-              Cuando crees una sesión, aparecerá aquí el historial de
-              entrenamientos de esta categoría.
+              {canCreateTraining
+                ? "Cuando crees una sesión, aparecerá aquí el historial de entrenamientos de esta categoría."
+                : "Esta categoría no tiene sesiones registradas."}
             </p>
           </div>
         </Card>
@@ -94,6 +108,7 @@ export const TeamTrainings = () => {
                         >
                           {trainingStatus.label}
                         </span>
+                        {!canManage(training) && <ReadOnlyBadge />}
                       </div>
 
                       <h3>{formatDate(training.date)}</h3>

@@ -6,6 +6,12 @@ import { PageHeader } from "../../component/ui/pageHeader";
 import { Card } from "../../component/ui/card";
 import { Button } from "../../component/ui/button";
 import { CalendarCheck } from "lucide-react";
+import { ReadOnlyBadge } from "../../component/ui/readOnlyNotice";
+import {
+  canManage,
+  getManageableTeams,
+  isScopedCoach,
+} from "../../utils/coachAccess";
 import { getTrainingStatus } from "../../utils/trainingStatus";
 import {
   SeasonSelector,
@@ -50,10 +56,17 @@ export const Trainings = () => {
     selectSeason,
   } = useSeasonSelection();
   const readOnlySeason = selectedSeason?.status !== "active";
+  const scopedCoach = isScopedCoach(store);
+  const canCreateTraining =
+    !readOnlySeason &&
+    (!scopedCoach || getManageableTeams(store.teams).length > 0);
 
   const loadTrainings = async () => {
     setLoading(true);
-    await actions.getAllTrainings({ seasonId });
+    await Promise.all([
+      actions.getAllTrainings({ seasonId }),
+      scopedCoach ? actions.getTeams() : null,
+    ]);
     setLoading(false);
   };
 
@@ -81,7 +94,7 @@ export const Trainings = () => {
         title="Entrenamientos"
         subtitle="Consulta y registra las sesiones de entrenamiento de tus equipos."
         actions={
-          !readOnlySeason && (
+          canCreateTraining && (
             <Button onClick={handleCreateTraining}>+ Crear entrenamiento</Button>
           )
         }
@@ -101,7 +114,9 @@ export const Trainings = () => {
             <p>
               {readOnlySeason
                 ? "No hay entrenamientos registrados en la temporada seleccionada."
-                : "Crea tu primer entrenamiento para empezar a registrar asistencia."}
+                : canCreateTraining
+                ? "Crea tu primer entrenamiento para empezar a registrar asistencia."
+                : "Los entrenamientos del club aparecerán aquí cuando se registren."}
             </p>
           </div>
         </Card>
@@ -133,6 +148,7 @@ export const Trainings = () => {
                         >
                           {trainingStatus.label}
                         </span>
+                        {!canManage(training) && <ReadOnlyBadge />}
                       </div>
 
                       <h3>{formatDate(training.date)}</h3>

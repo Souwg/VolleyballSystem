@@ -7,6 +7,8 @@ import { FormField } from "../../component/ui/formField";
 import { Select } from "../../component/ui/select";
 import { Button } from "../../component/ui/button";
 import { Card } from "../../component/ui/card";
+import { AssignedBadge } from "../../component/ui/readOnlyNotice";
+import { isScopedCoach } from "../../utils/coachAccess";
 import { validateTeam } from "../../utils/validators";
 import { errorMessages } from "../../utils/errorMessages";
 import { Pencil } from "lucide-react";
@@ -18,7 +20,7 @@ import {
 import "../../../styles/teams.css";
 
 export const CategoryDetail = () => {
-  const { actions } = useContext(Context);
+  const { store, actions } = useContext(Context);
   const { category_id } = useParams();
   const navigate = useNavigate();
 
@@ -44,6 +46,16 @@ export const CategoryDetail = () => {
     selectSeason,
   } = useSeasonSelection();
   const readOnlySeason = selectedSeason?.status !== "active";
+  const canManageStructure = store.user?.role === "club_owner";
+  const showAssignment = isScopedCoach(store);
+  // Mis equipos primero; los demás siguen visibles para consulta.
+  const orderedTeams = showAssignment
+    ? [...teams].sort(
+        (first, second) =>
+          Number(Boolean(second.is_assigned)) -
+          Number(Boolean(first.is_assigned)),
+      )
+    : teams;
 
   const loadCategoryDetail = async () => {
     setLoadingCategory(true);
@@ -193,6 +205,7 @@ export const CategoryDetail = () => {
           navigate(`/categories${seasonId ? `?season=${seasonId}` : ""}`)
         }
         actions={
+          canManageStructure &&
           !showForm &&
           !readOnlySeason &&
           !editingTeamId && (
@@ -384,12 +397,14 @@ export const CategoryDetail = () => {
             <Card>
               <div className="empty-state">
                 <h4>Aún no tienes equipos</h4>
-                <p>Crea el primer equipo dentro de {category.name}.</p>
+                {canManageStructure && (
+                  <p>Crea el primer equipo dentro de {category.name}.</p>
+                )}
               </div>
             </Card>
           ) : (
             <div className="teams-grid">
-              {teams.map((team) => (
+              {orderedTeams.map((team) => (
                 <Card
                   key={team.id}
                   className="team-card card-interactive category-card"
@@ -398,7 +413,9 @@ export const CategoryDetail = () => {
                   <div className="category-card-header">
                     <h3 className="team-card-title">{team.name}</h3>
 
-                    {!readOnlySeason && (
+                    {showAssignment && team.is_assigned && <AssignedBadge />}
+
+                    {canManageStructure && !readOnlySeason && (
                       <button
                         type="button"
                         className="category-edit-button"

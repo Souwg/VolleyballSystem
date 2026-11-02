@@ -14,6 +14,8 @@ import {
   CircleCheck,
 } from "lucide-react";
 
+import { ReadOnlyNotice } from "../../component/ui/readOnlyNotice";
+import { canManage, useTeamAccessLost } from "../../utils/coachAccess";
 import "../../../styles/tournaments.css";
 
 const getPaymentStatus = (status) => {
@@ -95,6 +97,8 @@ export const TournamentTeamDetail = () => {
       setLoadingPage(false);
     }
   };
+
+  useTeamAccessLost(() => loadTournamentPlayers());
 
   useEffect(() => {
     loadTournamentPlayers();
@@ -334,6 +338,8 @@ export const TournamentTeamDetail = () => {
 
   const canEditPlayers =
     canManageSports &&
+    canManage(tournamentTeam) &&
+    team?.status === "active" &&
     tournamentTeam.status === "active" &&
     tournament?.status === "active";
 
@@ -350,6 +356,12 @@ export const TournamentTeamDetail = () => {
         }`}
         onBack={() => navigate(`/tournaments/${tournamentTeam.tournament_id}`)}
       />
+
+      {!canManage(tournamentTeam) && (
+        <ReadOnlyNotice>
+          Estás consultando la inscripción de un equipo que no tienes asignado.
+        </ReadOnlyNotice>
+      )}
 
       <section className="tournament-detail-section">
         <div className="tournament-section-title">
@@ -441,10 +453,9 @@ export const TournamentTeamDetail = () => {
                 const isSelected = selectedPlayerIds.includes(row.player_id);
 
                 const isUnavailable =
-                  !canEditPlayers ||
-                  (!isSelected &&
-                    (row.team_status !== "active" ||
-                      row.player?.is_active === false));
+                  !isSelected &&
+                  (row.team_status !== "active" ||
+                    row.player?.is_active === false);
 
                 return (
                   <button
@@ -453,7 +464,7 @@ export const TournamentTeamDetail = () => {
                     className={`tournament-player-option ${
                       isSelected ? "selected" : ""
                     }`}
-                    disabled={isUnavailable}
+                    disabled={!canEditPlayers || isUnavailable}
                     onClick={() => togglePlayer(row.player_id)}
                   >
                     <div className="tournament-player-check">
@@ -476,7 +487,7 @@ export const TournamentTeamDetail = () => {
                       </span>
                     </div>
 
-                    {isUnavailable && (
+                    {canEditPlayers && isUnavailable && (
                       <span className="status-badge status-muted">
                         No disponible
                       </span>

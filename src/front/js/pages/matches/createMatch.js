@@ -12,6 +12,12 @@ import { Button } from "../../component/ui/button";
 
 import { errorMessages } from "../../utils/errorMessages";
 import { validateMatch } from "../../utils/validators";
+import { ReadOnlyNotice } from "../../component/ui/readOnlyNotice";
+import {
+  canManage,
+  isScopedCoach,
+  isTeamOperational,
+} from "../../utils/coachAccess";
 
 export const CreateMatch = () => {
   const { store, actions } = useContext(Context);
@@ -30,6 +36,7 @@ export const CreateMatch = () => {
   const [tournamentTeamId, setTournamentTeamId] = useState("");
   const [refereeFee, setRefereeFee] = useState("");
   const [loadingTournaments, setLoadingTournaments] = useState(true);
+  const [team, setTeam] = useState(null);
   const selectedTournamentEntry = tournamentEntries.find(
     (entry) => entry.id === tournamentTeamId,
   );
@@ -42,6 +49,9 @@ export const CreateMatch = () => {
   useEffect(() => {
     const loadTournamentEntries = async () => {
       setLoadingTournaments(true);
+
+      const teamResult = await actions.getTeamDetail(team_id);
+      setTeam(teamResult.ok ? teamResult.data.team : null);
 
       const result = await actions.getTeamTournamentEntries(team_id);
 
@@ -120,6 +130,11 @@ export const CreateMatch = () => {
         onBack={() => navigate(`/teams/${team_id}/matches`)}
       />
 
+      {!canManage(team) || !isTeamOperational(team) ? (
+        <ReadOnlyNotice>
+          No puedes crear partidos para este equipo en este momento.
+        </ReadOnlyNotice>
+      ) : (
       <Card>
         <form className="form" onSubmit={handleSubmit}>
           <FormField
@@ -239,7 +254,9 @@ export const CreateMatch = () => {
             })`}
             helper={
               tournamentTeamId
-                ? "Se tomó el monto predeterminado del torneo. Puedes modificarlo para este partido."
+                ? isScopedCoach(store)
+                  ? "Si lo dejas vacío se usará el monto predeterminado del torneo."
+                  : "Se tomó el monto predeterminado del torneo. Puedes modificarlo para este partido."
                 : "Opcional. Si lo defines, luego podrás dividirlo entre las convocadas."
             }
             error={
@@ -317,6 +334,7 @@ export const CreateMatch = () => {
           </div>
         </form>
       </Card>
+      )}
     </>
   );
 };

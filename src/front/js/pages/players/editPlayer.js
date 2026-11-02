@@ -12,6 +12,7 @@ import { Select } from "../../component/ui/select";
 import { validatePlayerProfile } from "../../utils/validators";
 import { errorMessages } from "../../utils/errorMessages";
 import { getAssetUrl } from "../../utils/getAssetUrl";
+import { useTeamAccessLost } from "../../utils/coachAccess";
 import "../../../styles/editPlayer.css";
 const POSITIONS = [
   { label: "Armador", value: "setter" },
@@ -73,6 +74,8 @@ export const EditPlayer = () => {
 
     loadPlayer();
   }, [player_id, canEditPlayer]);
+
+  useTeamAccessLost(() => loadPlayer());
 
   const handlePlayerImageChange = (e) => {
     const file = e.target.files?.[0];
@@ -162,7 +165,7 @@ export const EditPlayer = () => {
     navigate(`/players/${player_id}`);
   };
 
-  if (!canEditPlayer) {
+  if (!canEditPlayer || player?.can_edit_profile === false) {
     return <Navigate to={`/players/${player_id}`} replace />;
   }
 

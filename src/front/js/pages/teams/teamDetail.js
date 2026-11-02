@@ -14,6 +14,8 @@ import { FormField } from "../../component/ui/formField";
 import { Select } from "../../component/ui/select";
 import { Button } from "../../component/ui/button";
 import { Card } from "../../component/ui/card";
+import { ReadOnlyNotice } from "../../component/ui/readOnlyNotice";
+import { canManage, useTeamAccessLost } from "../../utils/coachAccess";
 import "../../../styles/playerShared.css";
 import "../../../styles/teamDetails.css";
 
@@ -114,6 +116,8 @@ export const TeamDetail = () => {
     setErrors({});
     setLoadingSubmit(false);
   };
+
+  useTeamAccessLost(() => loadTeamPlayers());
 
   const loadTeamPlayers = async () => {
     try {
@@ -318,10 +322,12 @@ export const TeamDetail = () => {
   const playerCountLabel =
     players.length === 1 ? "1 deportista" : `${players.length} deportistas`;
   const canUpdatePlayerStatus =
+    canManage(team) &&
     team.status === "active" &&
     ((store.user?.role === "club_owner" &&
       ["active", "planned"].includes(team.season_status)) ||
       (store.user?.role === "coach" && team.season_status === "active"));
+  const canManageStructure = store.user?.role === "club_owner";
 
   return (
     <div className="team-detail-page">
@@ -339,7 +345,8 @@ export const TeamDetail = () => {
         onBack={() => navigate(`/categories/${team.category_id}`)}
         actions={
           <div className="team-detail-header-actions">
-            {!showAddOptions &&
+            {canUpdatePlayerStatus &&
+              !showAddOptions &&
               !showForm &&
               availablePlayers.length === 0 &&
               !selectedExistingPlayer && (
@@ -373,6 +380,12 @@ export const TeamDetail = () => {
           </div>
         }
       />
+      {!canManage(team) && (
+        <ReadOnlyNotice>
+          Estás consultando este equipo. Solo quien lo tiene asignado puede
+          modificarlo.
+        </ReadOnlyNotice>
+      )}
       {showAddOptions && (
         <Card className="add-player-options">
           <h4>Añadir deportista</h4>
@@ -922,13 +935,15 @@ export const TeamDetail = () => {
                         </div>
                       </div>
 
-                      <button
-                        type="button"
-                        className="player-remove-link"
-                        onClick={(e) => handleRemovePlayer(e, player)}
-                      >
-                        Quitar del equipo
-                      </button>
+                      {canUpdatePlayerStatus && (
+                        <button
+                          type="button"
+                          className="player-remove-link"
+                          onClick={(e) => handleRemovePlayer(e, player)}
+                        >
+                          Quitar del equipo
+                        </button>
+                      )}
                     </>
                   )}
                 </div>
@@ -937,6 +952,7 @@ export const TeamDetail = () => {
           </div>
         )}
       </Card>
+      {canManageStructure && (
       <Card className="danger-zone">
         <h4>Zona peligrosa</h4>
 
@@ -960,6 +976,7 @@ export const TeamDetail = () => {
           Eliminar equipo
         </Button>
       </Card>
+      )}
     </div>
   );
 };

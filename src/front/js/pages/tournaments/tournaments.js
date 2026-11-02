@@ -14,6 +14,7 @@ import {
   useSeasonSelection,
 } from "../../component/seasonSelector";
 
+import { isScopedCoach } from "../../utils/coachAccess";
 import "../../../styles/tournaments.css";
 
 const formatDate = (dateValue) => {
@@ -74,6 +75,7 @@ export const Tournaments = () => {
     selectSeason,
   } = useSeasonSelection();
   const readOnlySeason = selectedSeason?.status !== "active";
+  const canCreateTournament = !readOnlySeason && !isScopedCoach(store);
 
   useEffect(() => {
     const loadTournaments = async () => {
@@ -183,7 +185,7 @@ export const Tournaments = () => {
         subtitle="Organiza las competencias del club, los equipos inscritos y los cargos asociados."
         actions={
           !showForm &&
-          !readOnlySeason && (
+          canCreateTournament && (
             <Button onClick={openCreateForm}>+ Crear torneo</Button>
           )
         }
@@ -359,6 +361,8 @@ export const Tournaments = () => {
               <p>
                 {readOnlySeason
                   ? "No hay torneos registrados en la temporada seleccionada."
+                  : !canCreateTournament
+                  ? "Los torneos del club aparecerán aquí cuando se registren."
                   : "Registra una competencia para asociar equipos, deportistas, partidos y pagos."}
               </p>
             </div>

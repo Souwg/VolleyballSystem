@@ -407,6 +407,20 @@ const getState = ({ getStore, getActions, setStore }) => {
         }
       },
 
+      getTeamDetail: async (teamId) => {
+        try {
+          const resp = await authFetch(`/api/teams/${teamId}`);
+
+          const result = await parseResponse(resp);
+
+          if (!result.ok) return result;
+
+          return successResponse(result.data);
+        } catch (error) {
+          return networkError("Error loading team:", error);
+        }
+      },
+
       getPlayers: async () => {
         try {
           const resp = await authFetch("/api/players");

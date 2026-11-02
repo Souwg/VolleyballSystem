@@ -4,6 +4,7 @@ import { Context } from "../../store/appContext";
 import { PageHeader } from "../../component/ui/pageHeader";
 import { Card } from "../../component/ui/card";
 import { Button } from "../../component/ui/button";
+import { canManage, resolveTeamOperational } from "../../utils/coachAccess";
 
 const PLAYABLE_STATUSES = ["present", "late"];
 
@@ -15,6 +16,7 @@ export const MatchStatsAdjust = () => {
   const [players, setPlayers] = useState([]);
   const [captureMode, setCaptureMode] = useState(null);
   const [isCompleted, setIsCompleted] = useState(false);
+  const [canOperate, setCanOperate] = useState(true);
   const [loading, setLoading] = useState(true);
 
   const loadPlayers = async () => {
@@ -27,8 +29,14 @@ export const MatchStatsAdjust = () => {
       ]);
 
       if (matchResult.ok) {
-        setCaptureMode(matchResult.data.match?.capture_mode || null);
-        setIsCompleted(Boolean(matchResult.data.match?.is_completed));
+        const matchData = matchResult.data.match;
+
+        setCaptureMode(matchData?.capture_mode || null);
+        setIsCompleted(Boolean(matchData?.is_completed));
+        setCanOperate(
+          canManage(matchData) &&
+            (await resolveTeamOperational(actions, matchData?.team_id)),
+        );
       }
 
       if (rosterResult.ok) {
@@ -66,7 +74,8 @@ export const MatchStatsAdjust = () => {
     );
   }
 
-  const canEditStats = captureMode === "summary" && !isCompleted;
+  const canEditStats =
+    captureMode === "summary" && !isCompleted && canOperate;
 
   return (
     <>

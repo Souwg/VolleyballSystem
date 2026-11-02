@@ -552,6 +552,28 @@ input[type="time"] {
   border-color: var(--color-border);
 }
 
+.read-only-notice {
+  display: flex;
+  align-items: flex-start;
+  gap: 9px;
+  margin-bottom: 16px;
+  padding: 12px;
+  border-radius: var(--radius-md);
+  background: var(--color-info-soft);
+  border: 1px solid var(--color-info-soft);
+}
+
+.read-only-notice svg {
+  flex-shrink: 0;
+  color: var(--color-info);
+}
+
+.read-only-notice p {
+  margin: 0;
+  font-size: var(--font-size-sm);
+  color: var(--color-text);
+}
+
 .app-toast-container {
   position: fixed;
   left: 16px;
