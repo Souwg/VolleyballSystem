@@ -191,6 +191,13 @@ import { errorMessages } from "./errorMessages";
 import { TEAM_ACCESS_LOST_EVENT } from "./coachAccess";
 
 const FORM_ERRORS = [
+  // TEAM COACHES
+  "COACH_ID_REQUIRED",
+  "COACH_NOT_FOUND",
+  "USER_NOT_COACH",
+  "COACH_INACTIVE",
+  "COACH_ASSIGNMENT_CONFLICT",
+
   // CLIENTS
   "FULL_NAME_REQUIRED",
   "EMAIL_REQUIRED",

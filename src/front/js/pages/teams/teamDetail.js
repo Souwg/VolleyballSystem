@@ -16,8 +16,15 @@ import { Button } from "../../component/ui/button";
 import { Card } from "../../component/ui/card";
 import { ReadOnlyNotice } from "../../component/ui/readOnlyNotice";
 import { canManage, useTeamAccessLost } from "../../utils/coachAccess";
+import { TeamCoachesSection } from "./teamCoachesSection";
 import "../../../styles/playerShared.css";
 import "../../../styles/teamDetails.css";
+
+const TEAM_DELETE_BLOCKED_CODES = [
+  "TEAM_HAS_PLAYERS",
+  "TEAM_HAS_TRAININGS",
+  "TEAM_HAS_HISTORY",
+];
 
 export const TeamDetail = () => {
   const { store, actions } = useContext(Context);
@@ -37,6 +44,10 @@ export const TeamDetail = () => {
   const [errors, setErrors] = useState({});
   const [loadingSubmit, setLoadingSubmit] = useState(false);
   const [updatingStatusPlayerId, setUpdatingStatusPlayerId] = useState(null);
+  const [assignedCoachCount, setAssignedCoachCount] = useState(0);
+  const [lifecycleAction, setLifecycleAction] = useState(null);
+  const [deleteBlockedCode, setDeleteBlockedCode] = useState(null);
+  const [archiveBlocked, setArchiveBlocked] = useState(false);
   const [showForm, setShowForm] = useState(false);
   const [showAddOptions, setShowAddOptions] = useState(false);
   const [selectedExistingPlayer, setSelectedExistingPlayer] = useState(null);
@@ -216,9 +227,69 @@ export const TeamDetail = () => {
         errorMessages[result.code] || "No se pudo eliminar el equipo",
         "error",
       );
+
+      // El historial no se ve desde aquí: el backend decide y la salida es archivar.
+      if (TEAM_DELETE_BLOCKED_CODES.includes(result.code)) {
+        setDeleteBlockedCode(result.code);
+      }
+
       return;
     }
     navigate("/categories");
+  };
+
+  // El onboarding se reabre si la temporada activa se queda sin equipos activos
+  // con deportistas: dejaría fuera a todo el club y sin acceso a este equipo.
+  const wouldReopenOnboarding = async () => {
+    if (team.season_status !== "active" || players.length === 0) return false;
+
+    const result = await actions.getCategories();
+
+    if (!result.ok) return true;
+
+    const clubMemberships = result.data.categories.reduce(
+      (total, category) => total + category.total_players,
+      0,
+    );
+
+    return clubMemberships <= players.length;
+  };
+
+  const handleTeamLifecycle = async (action) => {
+    if (lifecycleAction) return;
+
+    const isArchive = action === "archive";
+
+    if (isArchive) {
+      setArchiveBlocked(false);
+      setLifecycleAction(action);
+      const blocked = await wouldReopenOnboarding();
+      setLifecycleAction(null);
+
+      if (blocked) {
+        setArchiveBlocked(true);
+        return;
+      }
+    }
+
+    const confirmed = window.confirm(
+      isArchive
+        ? `¿Archivar el equipo ${team.name}?\n\nEl equipo dejará de admitir nuevas operaciones deportivas, pero conservará su historial. Sus actividades abiertas no se cancelan.`
+        : `¿Reactivar el equipo ${team.name}?\n\nVolverá a admitir operaciones deportivas. Lo que ya estaba finalizado no se reabre.`,
+    );
+
+    if (!confirmed) return;
+
+    setLifecycleAction(action);
+
+    if (isArchive) {
+      await actions.archiveTeam(team_id);
+    } else {
+      await actions.reactivateTeam(team_id);
+    }
+
+    await loadTeamPlayers();
+    setLifecycleAction(null);
   };
 
   const handleRemovePlayer = async (e, player) => {
@@ -312,11 +383,17 @@ export const TeamDetail = () => {
   };
 
   useEffect(() => {
+    setDeleteBlockedCode(null);
+    setArchiveBlocked(false);
     loadTeamPlayers();
   }, [team_id]);
 
   if (loading) {
     return <p>Cargando equipo...</p>;
+  }
+
+  if (!team) {
+    return <p>No se pudo cargar el equipo.</p>;
   }
 
   const playerCountLabel =
@@ -328,6 +405,8 @@ export const TeamDetail = () => {
       ["active", "planned"].includes(team.season_status)) ||
       (store.user?.role === "coach" && team.season_status === "active"));
   const canManageStructure = store.user?.role === "club_owner";
+  const isArchived = team.status === "archived";
+  const isClosedSeason = team.season_status === "closed";
 
   return (
     <div className="team-detail-page">
@@ -384,6 +463,13 @@ export const TeamDetail = () => {
         <ReadOnlyNotice>
           Estás consultando este equipo. Solo quien lo tiene asignado puede
           modificarlo.
+        </ReadOnlyNotice>
+      )}
+      {canManage(team) && !canManageStructure && (isArchived || isClosedSeason) && (
+        <ReadOnlyNotice>
+          {isArchived
+            ? "Este equipo está archivado: se conserva como histórico y no admite cambios."
+            : "Este equipo pertenece a una temporada cerrada: se conserva como histórico y no admite cambios."}
         </ReadOnlyNotice>
       )}
       {showAddOptions && (
@@ -741,6 +827,14 @@ export const TeamDetail = () => {
         </Card>
       )}
 
+      {canManageStructure && (
+        <TeamCoachesSection
+          team={team}
+          onTeamChanged={loadTeamPlayers}
+          onCoachesChange={setAssignedCoachCount}
+        />
+      )}
+
       {/* LISTA DE JUGADORES */}
       <Card>
         <h4>Deportistas</h4>
@@ -953,6 +1047,74 @@ export const TeamDetail = () => {
         )}
       </Card>
       {canManageStructure && (
+        <Card className="team-lifecycle-card">
+          <div className="team-lifecycle-header">
+            <h4>Estado del equipo</h4>
+            <span
+              className={`status-badge ${
+                isArchived ? "status-muted" : "status-success"
+              }`}
+            >
+              {isArchived ? "Equipo archivado" : "Equipo activo"}
+            </span>
+          </div>
+
+          {deleteBlockedCode && (
+            <p className="form-error">{errorMessages[deleteBlockedCode]}</p>
+          )}
+
+          {isClosedSeason ? (
+            <p>
+              Este equipo pertenece a una temporada cerrada: se conserva como
+              histórico y no admite cambios de estado.
+            </p>
+          ) : isArchived ? (
+            <>
+              <p>
+                El equipo se conserva como histórico y no admite nuevas
+                operaciones deportivas.
+              </p>
+              <Button
+                variant="secondary"
+                disabled={Boolean(lifecycleAction)}
+                onClick={() => handleTeamLifecycle("reactivate")}
+              >
+                {lifecycleAction === "reactivate"
+                  ? "Reactivando..."
+                  : "Reactivar equipo"}
+              </Button>
+            </>
+          ) : (
+            <>
+              <p>
+                Al archivarlo dejará de admitir nuevas operaciones deportivas,
+                pero conservará su historial.
+              </p>
+              {archiveBlocked && (
+                <p className="form-error">
+                  Este es el último equipo con deportistas de la temporada
+                  activa. Si lo archivas, el club volvería a la configuración
+                  inicial y entrenadores y personal no podrían entrar. Crea otro
+                  equipo con deportistas antes de archivarlo.
+                </p>
+              )}
+              <Button
+                variant="secondary"
+                disabled={Boolean(lifecycleAction)}
+                onClick={() => handleTeamLifecycle("archive")}
+              >
+                {lifecycleAction === "archive"
+                  ? "Archivando..."
+                  : "Archivar equipo"}
+              </Button>
+            </>
+          )}
+        </Card>
+      )}
+      {canManageStructure &&
+        !isClosedSeason &&
+        !deleteBlockedCode &&
+        !(isArchived && players.length > 0) && (
       <Card className="danger-zone">
         <h4>Zona peligrosa</h4>
 
@@ -961,17 +1123,21 @@ export const TeamDetail = () => {
             No puedes eliminar este equipo porque todavía tiene miembros
             asignados. Primero quítalos o reasígnalos.
           </p>
+        ) : assignedCoachCount > 0 ? (
+          <p>
+            No puedes eliminar este equipo porque tiene entrenadores asignados.
+          </p>
         ) : (
           <p>
-            Este equipo no tiene miembros asignados. Puedes eliminarlo si ya no
-            forma parte de la organización del club.
+            Este equipo no tiene miembros asignados. Si nunca tuvo actividad
+            puedes eliminarlo; si tiene historial, archívalo para conservarlo.
           </p>
         )}
 
         <Button
           variant="danger"
           onClick={handleDeleteTeam}
-          disabled={players.length > 0}
+          disabled={players.length > 0 || assignedCoachCount > 0}
         >
           Eliminar equipo
         </Button>

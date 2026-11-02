@@ -22,6 +22,12 @@ export const errorMessages = {
     "La temporada está cerrada y no admite nuevas operaciones deportivas.",
   TEAM_NOT_ASSIGNED:
     "Ya no tienes asignado este equipo. Puedes consultarlo, pero no modificarlo.",
+  COACH_ID_REQUIRED: "Selecciona un entrenador.",
+  COACH_NOT_FOUND: "Este entrenador ya no está disponible.",
+  USER_NOT_COACH: "Este usuario ya no tiene rol de entrenador.",
+  COACH_INACTIVE: "Este entrenador tiene la cuenta desactivada.",
+  COACH_ASSIGNMENT_CONFLICT:
+    "No se pudo asignar el entrenador. Revisa la lista e inténtalo de nuevo.",
   TEAM_ARCHIVED:
     "El equipo está archivado y no admite nuevas operaciones deportivas.",
   NETWORK_ERROR: "Error de conexión. Intenta nuevamente.",
@@ -106,6 +112,8 @@ export const errorMessages = {
   TEAM_ID_REQUIRED: "Selecciona un equipo",
   TEAM_NOT_FOUND: "Equipo no encontrado",
   TEAM_HAS_PLAYERS: "No puedes eliminar este equipo porque tiene jugadores.",
+  TEAM_HAS_HISTORY:
+    "No puedes eliminar este equipo porque tiene historial registrado.",
   TEAM_HAS_TRAININGS:
     "No puedes eliminar este equipo porque tiene entrenamientos históricos.",
   TEAM_GENDER_HAS_PLAYERS:

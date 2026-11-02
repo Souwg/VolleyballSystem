@@ -64,8 +64,27 @@ export const CategoryDetail = () => {
       const result = await actions.getCategoryDetail(category_id, { seasonId });
 
       if (result.ok) {
+        let nextTeams = result.data.teams || [];
+
+        // Sin temporada explícita solo llegan los activos: el Owner necesita
+        // ver los archivados de la temporada activa para poder reactivarlos.
+        if (canManageStructure && !seasonId && result.data.season) {
+          const explicit = await actions.getCategoryDetail(category_id, {
+            seasonId: result.data.season.id,
+          });
+
+          if (explicit.ok) {
+            nextTeams = [
+              ...nextTeams,
+              ...(explicit.data.teams || []).filter(
+                (team) => team.status === "archived",
+              ),
+            ];
+          }
+        }
+
         setCategory(result.data.category);
-        setTeams(result.data.teams || []);
+        setTeams(nextTeams);
         return;
       }
 
@@ -415,7 +434,7 @@ export const CategoryDetail = () => {
 
                     {showAssignment && team.is_assigned && <AssignedBadge />}
 
-                    {canManageStructure && !readOnlySeason && (
+                    {canManageStructure && !readOnlySeason && team.status !== "archived" && (
                       <button
                         type="button"
                         className="category-edit-button"

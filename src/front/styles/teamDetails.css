@@ -125,3 +125,108 @@
     margin-top: 10px;
   }
 }
+
+/* Estado del equipo */
+
+.team-lifecycle-card {
+  margin-bottom: 16px;
+}
+
+.team-lifecycle-header {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  margin-bottom: 10px;
+}
+
+.team-lifecycle-header h4 {
+  margin: 0;
+}
+
+/* Cuerpo técnico */
+
+.team-coaches-card {
+  margin-bottom: 16px;
+}
+
+.team-coaches-header {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  margin-bottom: 10px;
+}
+
+.team-coaches-header h4 {
+  margin: 0;
+}
+
+.team-coaches-notice {
+  margin: 0 0 12px;
+  padding: 10px 12px;
+  border-radius: var(--radius-md);
+  background: var(--color-surface-soft);
+  font-size: var(--font-size-sm);
+  color: var(--color-text);
+}
+
+.team-coaches-muted {
+  margin: 0;
+  font-size: var(--font-size-sm);
+  color: var(--color-muted);
+}
+
+.team-coaches-form {
+  margin-bottom: 14px;
+}
+
+.team-coaches-form .form-actions {
+  margin-top: 12px;
+}
+
+.team-coaches-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin-bottom: 10px;
+}
+
+.team-coach-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 12px;
+  border-radius: var(--radius-md);
+  background: var(--color-surface-soft);
+  border: 1px solid var(--color-border);
+}
+
+.team-coach-info {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.team-coach-info span {
+  font-size: var(--font-size-sm);
+  color: var(--color-muted);
+}
+
+.team-coach-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.team-coaches-error {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 8px;
+}

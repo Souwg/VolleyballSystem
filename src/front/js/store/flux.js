@@ -421,6 +421,57 @@ const getState = ({ getStore, getActions, setStore }) => {
         }
       },
 
+      getTeamCoaches: async (teamId) => {
+        try {
+          const resp = await authFetch(`/api/teams/${teamId}/coaches`);
+
+          const result = await parseResponse(resp);
+
+          if (!result.ok) return result;
+
+          return successResponse(result.data);
+        } catch (error) {
+          return networkError("Error loading team coaches:", error);
+        }
+      },
+
+      assignTeamCoach: async (teamId, userId) => {
+        try {
+          const resp = await authFetch(`/api/teams/${teamId}/coaches`, {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+            },
+            body: JSON.stringify({ user_id: userId }),
+          });
+
+          const result = await parseResponse(resp);
+
+          if (!result.ok) return result;
+
+          return successResponse(result.data);
+        } catch (error) {
+          return networkError("Error assigning team coach:", error);
+        }
+      },
+
+      removeTeamCoach: async (teamId, userId) => {
+        try {
+          const resp = await authFetch(
+            `/api/teams/${teamId}/coaches/${userId}`,
+            { method: "DELETE" },
+          );
+
+          const result = await parseResponse(resp);
+
+          if (!result.ok) return result;
+
+          return successResponse(result.data);
+        } catch (error) {
+          return networkError("Error removing team coach:", error);
+        }
+      },
+
       getPlayers: async () => {
         try {
           const resp = await authFetch("/api/players");
@@ -881,6 +932,42 @@ const getState = ({ getStore, getActions, setStore }) => {
           return successResponse(result.data);
         } catch (error) {
           return networkError("Error updating club:", error);
+        }
+      },
+
+      archiveTeam: async (teamId) => {
+        try {
+          const resp = await authFetch(`/api/teams/${teamId}/archive`, {
+            method: "PUT",
+          });
+
+          const result = await parseResponse(resp);
+
+          if (!result.ok) return result;
+
+          await getActions().getTeams();
+
+          return successResponse(result.data);
+        } catch (error) {
+          return networkError("Error archiving team:", error);
+        }
+      },
+
+      reactivateTeam: async (teamId) => {
+        try {
+          const resp = await authFetch(`/api/teams/${teamId}/reactivate`, {
+            method: "PUT",
+          });
+
+          const result = await parseResponse(resp);
+
+          if (!result.ok) return result;
+
+          await getActions().getTeams();
+
+          return successResponse(result.data);
+        } catch (error) {
+          return networkError("Error reactivating team:", error);
         }
       },
 
