@@ -13,6 +13,7 @@ from src.api.coach_access import (
     can_manage_team,
     get_team_access_resolver,
 )
+from src.api.finance_access import CLUB_FINANCE_FIELDS
 from src.api.models import (
     MatchEvent,
     MatchPlayer,
@@ -509,7 +510,7 @@ def test_scoped_coach_receives_no_money_in_sports_responses(
         assert leaked == set(), url
 
 
-def test_club_wide_coach_keeps_legacy_money_but_no_player_finance(
+def test_club_wide_coach_receives_no_money_in_sports_reads(
     client, world, auth_headers, match_factory
 ):
     team, match, tournament_match, entry = _finance_scenario(
@@ -517,23 +518,12 @@ def test_club_wide_coach_keeps_legacy_money_but_no_player_finance(
     )
     headers = auth_headers(world.coach_a)
 
-    match_data = client.get(
-        f"/api/matches/{match.id}", headers=headers
-    ).get_json()["match"]
-    tournament_data = client.get(
-        f"/api/tournaments/{entry.tournament_id}", headers=headers
-    ).get_json()["tournament"]
-
-    assert match_data["referee_fee"] == 25
-    assert tournament_data["default_referee_fee"] == 30
-    assert tournament_data["teams"][0]["registration_fee"] == 500
-
     for url in _sports_read_urls(
         team, match, tournament_match, entry, world.players_a[0].id
     ):
-        leaked = _keys(
-            client.get(url, headers=headers).get_json()
-        ) & set(PLAYER_FINANCE_FIELDS)
+        leaked = _keys(client.get(url, headers=headers).get_json()) & (
+            SPORTS_MONEY_FIELDS | set(PLAYER_FINANCE_FIELDS)
+        )
         assert leaked == set(), url
 
 
@@ -572,7 +562,7 @@ def test_mutation_responses_do_not_leak_finance_to_scoped_coach(ctx, mutation):
 
 
 @pytest.mark.parametrize("mutation", sorted(TEAM_BOUND))
-def test_mutation_responses_do_not_leak_player_finance_to_club_wide_coach(
+def test_mutation_responses_do_not_leak_finance_to_club_wide_coach(
     ctx, mutation
 ):
     request = TEAM_BOUND[mutation](ctx)
@@ -580,7 +570,9 @@ def test_mutation_responses_do_not_leak_player_finance_to_club_wide_coach(
     response = _send(ctx.client, ctx.auth_headers(ctx.world.coach_a), request)
 
     assert response.status_code in [200, 201], response.get_json()
-    assert _keys(response.get_json()) & set(PLAYER_FINANCE_FIELDS) == set()
+    assert _keys(response.get_json()) & (
+        SPORTS_MONEY_FIELDS | set(PLAYER_FINANCE_FIELDS)
+    ) == set()
 
 
 def test_starting_lineup_response_applies_player_policy(
@@ -993,10 +985,11 @@ def test_no_get_route_of_the_api_writes_to_the_database(
     forbidden = set()
 
     if "coach" in user_key:
-        forbidden |= set(PLAYER_FINANCE_FIELDS)
-
-    if user_key in ["coach_scoped", "coach_assigned"]:
-        forbidden |= SPORTS_MONEY_FIELDS
+        forbidden |= (
+            set(PLAYER_FINANCE_FIELDS)
+            | SPORTS_MONEY_FIELDS
+            | set(CLUB_FINANCE_FIELDS)
+        )
 
     # Todas las jugadoras de este mundo están en un Team que no le asignamos.
     if user_key == "coach_scoped":

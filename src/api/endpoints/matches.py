@@ -13,6 +13,13 @@ from src.api.coach_access import (
     redact_sports_money_for_user,
     serialize_with_player_for_user,
 )
+from src.api.finance_access import (
+    FINANCE_DEPENDENCY_ERROR,
+    can_configure_sports_finance,
+    charge_blocks_roster_change,
+    get_finance_payload_error,
+    get_sports_finance_error,
+)
 from src.api.models import (
     db,
     MatchEvent,
@@ -247,6 +254,22 @@ def _match_payload(match, user, team_access=None):
         **redact_sports_money_for_user(user, match.serialize()),
         "can_manage": resolve_access(match.team)["can_manage"],
     }
+
+
+def _get_match_for_update(match_id):
+    # Serializa los cambios de roster y de cargos de un mismo partido.
+    return MatchSession.query.filter_by(
+        id=match_id
+    ).populate_existing().with_for_update().first()
+
+
+def _get_referee_charges_for_update(club_id, match_id):
+    # El estado se lee ya bloqueado: un pago simultáneo no puede perderse.
+    return PlayerPayment.query.filter_by(
+        club_id=club_id,
+        match_id=match_id,
+        payment_type="referee"
+    ).populate_existing().with_for_update().all()
 
 
 def _plan_match_roster_sync(match):
@@ -685,6 +708,11 @@ def create_match():
                 409
             )
 
+    finance_error = get_finance_payload_error(user, body, ("referee_fee",))
+
+    if finance_error:
+        return error_response(*finance_error)
+
     parsed_referee_fee = None
 
     if referee_fee not in [None, ""]:
@@ -900,9 +928,29 @@ def save_match_roster(match_id):
     # El GET muestra el roster derivado sin persistirlo: guardar la convocatoria
     # es donde el snapshot abierto se reconcilia. El lock serializa dos guardados
     # simultáneos; el segundo ve match_step ya avanzado y no vuelve a reconciliar.
-    match = MatchSession.query.filter_by(
-        id=match.id
-    ).populate_existing().with_for_update().first()
+    match = _get_match_for_update(match.id)
+
+    # El reparto depende de toda la convocatoria: con cargos existentes, el Coach
+    # no puede cambiarla aunque quien entra o sale no tenga cargo propio.
+    if not can_configure_sports_finance(user) and not match.is_completed:
+        called_player_ids = {
+            row.player_id
+            for row in MatchPlayer.query.filter_by(
+                match_id=match.id,
+                is_called=True
+            ).all()
+        }
+
+        if called_player_ids != selected_ids and any(
+            charge_blocks_roster_change(charge)
+            for charge in _get_referee_charges_for_update(
+                user.club_id,
+                match.id
+            )
+        ):
+            db.session.rollback()
+            return error_response(*FINANCE_DEPENDENCY_ERROR)
+
     sync_match_roster_if_open(match, commit=False)
 
     rows = MatchPlayer.query.filter_by(match_id=match.id).all()
@@ -962,13 +1010,13 @@ def save_match_roster(match_id):
 
     removed_player_charges = []
 
-    if removed_player_ids:
+    if removed_player_ids and can_configure_sports_finance(user):
         removed_player_charges = PlayerPayment.query.filter(
             PlayerPayment.club_id == user.club_id,
             PlayerPayment.player_id.in_(removed_player_ids),
             PlayerPayment.match_id == match.id,
             PlayerPayment.payment_type == "referee"
-        ).all()
+        ).populate_existing().with_for_update().all()
 
     locked_referee_charge = next(
         (
@@ -1012,6 +1060,83 @@ def save_match_roster(match_id):
         "message": "Convocatoria guardada correctamente"
     }), 200
 
+@api.route("/matches/<string:match_id>/referee-fee", methods=["PUT"])
+@jwt_required()
+def update_match_referee_fee(match_id):
+    user = get_current_user()
+
+    match = (
+        MatchSession.query
+        .join(Team)
+        .filter(
+            MatchSession.id == match_id,
+            Team.club_id == user.club_id
+        )
+        .first()
+    )
+
+    if not match:
+        return error_response(
+            "Partido no encontrado",
+            "MATCH_NOT_FOUND",
+            404
+        )
+
+    finance_error = get_sports_finance_error(user)
+
+    if finance_error:
+        return error_response(*finance_error)
+
+    body = request.get_json() or {}
+    referee_fee = body.get("referee_fee")
+
+    if referee_fee in [None, ""]:
+        return error_response(
+            "El costo de arbitraje debe ser mayor que cero",
+            "INVALID_REFEREE_FEE",
+            400
+        )
+
+    parsed_referee_fee, amount_error = parse_money(
+        referee_fee,
+        "El costo de arbitraje"
+    )
+
+    if amount_error:
+        return amount_error
+
+    if parsed_referee_fee <= 0:
+        return error_response(
+            "El costo de arbitraje debe ser mayor que cero",
+            "INVALID_REFEREE_FEE",
+            400
+        )
+
+    match = _get_match_for_update(match.id)
+
+    # Los cargos pendientes no se recalculan aquí: los reemplaza generar de nuevo.
+    if any(
+        charge.status == "paid" or charge.has_receipt_history
+        for charge in _get_referee_charges_for_update(user.club_id, match.id)
+    ):
+        db.session.rollback()
+        return error_response(
+            (
+                "No puedes cambiar el arbitraje porque uno o más "
+                "cargos ya fueron pagados o tienen recibo"
+            ),
+            "REFEREE_CHARGES_LOCKED",
+            409
+        )
+
+    match.referee_fee = parsed_referee_fee
+    db.session.commit()
+
+    return jsonify({
+        "message": "Costo de arbitraje actualizado correctamente",
+        "match": _match_payload(match, user)
+    }), 200
+
 @api.route(
     "/matches/<string:match_id>/referee-charges/preview",
     methods=["GET"]
@@ -1037,12 +1162,10 @@ def preview_match_referee_charges(match_id):
             404
         )
 
-    if user.role != "club_owner":
-        return error_response(
-            "Solo el dueño del club puede consultar el reparto de arbitraje",
-            "FORBIDDEN",
-            403
-        )
+    finance_error = get_sports_finance_error(user)
+
+    if finance_error:
+        return error_response(*finance_error)
 
     if match.referee_fee is None:
         return error_response(
@@ -1156,12 +1279,12 @@ def generate_match_referee_charges(match_id):
             404
         )
 
-    if user.role != "club_owner":
-        return error_response(
-            "Solo el dueño del club puede generar cargos de arbitraje",
-            "FORBIDDEN",
-            403
-        )
+    finance_error = get_sports_finance_error(user)
+
+    if finance_error:
+        return error_response(*finance_error)
+
+    match = _get_match_for_update(match.id)
 
     if match.referee_fee is None:
         return error_response(
@@ -1196,11 +1319,10 @@ def generate_match_referee_charges(match_id):
             400
         )
 
-    existing_charges = PlayerPayment.query.filter_by(
-        club_id=user.club_id,
-        match_id=match.id,
-        payment_type="referee"
-    ).all()
+    existing_charges = _get_referee_charges_for_update(
+        user.club_id,
+        match.id
+    )
 
     protected_charges = [
         charge

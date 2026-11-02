@@ -17,6 +17,7 @@ from flask_jwt_extended import (
 from src.api.api_blueprint import api
 from src.api.email_service import send_password_reset_email
 from src.api.extensions import bcrypt
+from src.api.finance_access import serialize_user_for_viewer
 from src.api.models import (
     db,
     PasswordResetToken,
@@ -120,7 +121,7 @@ def login():
         "token": access_token,
         "refresh": refresh_token,
         "first_login": user.first_login,
-        "user": user.serialize()
+        "user": serialize_user_for_viewer(user, user)
     }), 200
 
 @api.route("/auth/forgot-password", methods=["POST"])
@@ -430,7 +431,7 @@ def set_password():
         "token": new_access,
         "refresh": new_refresh,
         "first_login": user.first_login,
-        "user": user.serialize()
+        "user": serialize_user_for_viewer(user, user)
     }), 200
 
 @api.route("/logout", methods=["POST"])

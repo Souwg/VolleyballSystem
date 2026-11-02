@@ -6,13 +6,15 @@ import { Button } from "../../component/ui/button";
 import { Card } from "../../component/ui/card";
 import { errorMessages } from "../../utils/errorMessages";
 import { formatMoney } from "../../utils/money";
+import { canConfigureSportsFinance } from "../../utils/coachAccess";
 import { AlertCircle, ArrowRight, CircleCheck, ReceiptText } from "lucide-react";
 
 import "../../../styles/tournaments.css";
 
 export const TournamentCharges = () => {
-  const { actions } = useContext(Context);
+  const { store, actions } = useContext(Context);
   const navigate = useNavigate();
+  const canGenerateCharges = canConfigureSportsFinance(store);
 
   const [entries, setEntries] = useState([]);
   const [selectedId, setSelectedId] = useState(null);
@@ -91,7 +93,11 @@ export const TournamentCharges = () => {
   const allChargesCreated =
     Boolean(preview) &&
     preview.registered_players_count > 0 &&
-    preview.existing_charges_count === preview.registered_players_count;
+    preview.existing_charges_count === preview.registered_players_count &&
+    preview.players?.every(
+      (row) =>
+        Number(row.existing_charge?.amount) === Number(row.amount),
+    );
 
   return (
     <div className="tournament-team-detail-page">
@@ -101,7 +107,11 @@ export const TournamentCharges = () => {
         icon={ReceiptText}
         eyebrow="Control financiero"
         title="Cargos de torneos"
-        subtitle="Revisa la distribución y crea los cargos de inscripción autorizados por el área deportiva."
+        subtitle={
+          canGenerateCharges
+            ? "Revisa la distribución y crea los cargos de inscripción autorizados por el área deportiva."
+            : "Consulta las inscripciones y sus cargos. El dueño del club genera los cargos; pagos y recibos se administran desde Pagos."
+        }
         onBack={() => navigate("/payments")}
       />
 
@@ -138,16 +148,18 @@ export const TournamentCharges = () => {
                   </div>
                 </div>
 
-                <Button
-                  type="button"
-                  variant={isSelected ? "secondary" : "primary"}
-                  onClick={() => loadPreview(entry.id)}
-                  disabled={loadingPreview && isSelected}
-                >
-                  {loadingPreview && isSelected
-                    ? "Calculando..."
-                    : "Revisar distribución"}
-                </Button>
+                {canGenerateCharges && (
+                  <Button
+                    type="button"
+                    variant={isSelected ? "secondary" : "primary"}
+                    onClick={() => loadPreview(entry.id)}
+                    disabled={loadingPreview && isSelected}
+                  >
+                    {loadingPreview && isSelected
+                      ? "Calculando..."
+                      : "Revisar distribución"}
+                  </Button>
+                )}
               </Card>
             );
           })}

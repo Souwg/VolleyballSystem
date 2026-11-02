@@ -16,6 +16,7 @@ import {
 
 import { ReadOnlyNotice } from "../../component/ui/readOnlyNotice";
 import { canManage, useTeamAccessLost } from "../../utils/coachAccess";
+import { FeeEditor } from "../../component/feeEditor";
 import "../../../styles/tournaments.css";
 
 const getPaymentStatus = (status) => {
@@ -140,7 +141,11 @@ export const TournamentTeamDetail = () => {
   const allChargesCreated =
     Boolean(preview) &&
     preview.registered_players_count > 0 &&
-    existingChargesCount === preview.registered_players_count;
+    existingChargesCount === preview.registered_players_count &&
+    preview.players?.every(
+      (row) =>
+        Number(row.existing_charge?.amount) === Number(row.amount),
+    );
 
   const clearErrors = (...codes) => {
     setErrors((previousErrors) => {
@@ -171,6 +176,7 @@ export const TournamentTeamDetail = () => {
       "TOURNAMENT_PLAYERS_REQUIRED",
       "INVALID_TOURNAMENT_PLAYERS",
       "PLAYER_NOT_IN_TEAM",
+      "FINANCE_DEPENDENCY",
     );
   };
 
@@ -194,12 +200,14 @@ export const TournamentTeamDetail = () => {
     ]);
     setSelectionChanged(true);
     setPreview(null);
+    clearErrors("FINANCE_DEPENDENCY");
   };
 
   const clearSelection = () => {
     setSelectedPlayerIds([]);
     setSelectionChanged(true);
     setPreview(null);
+    clearErrors("FINANCE_DEPENDENCY");
   };
 
   const handleSavePlayers = async () => {
@@ -216,6 +224,11 @@ export const TournamentTeamDetail = () => {
     setSavingPlayers(false);
 
     if (!result.ok) {
+      // Nada se guardó: la selección vuelve a las inscripciones reales.
+      if (result.code === "FINANCE_DEPENDENCY") {
+        await loadTournamentPlayers();
+      }
+
       setErrors({
         [result.code || "NETWORK_ERROR"]: true,
       });
@@ -317,6 +330,23 @@ export const TournamentTeamDetail = () => {
       setPreview(previewResult.data);
       setShowChargeDetails(false);
     }
+  };
+
+  const handleSaveRegistrationFee = async (amount) => {
+    const result = await actions.updateTournamentTeamRegistrationFee(
+      tournament_team_id,
+      amount,
+    );
+
+    if (result.ok) {
+      setTournamentTeam((prev) => ({
+        ...prev,
+        registration_fee: result.data.tournament_team.registration_fee,
+      }));
+      setErrors({});
+    }
+
+    return result;
   };
 
   const handleGoToPayments = () => {
@@ -498,6 +528,14 @@ export const TournamentTeamDetail = () => {
             </div>
           ) : null}
 
+          {errors.FINANCE_DEPENDENCY && (
+            <div className="tournament-inline-alert danger">
+              <AlertCircle size={18} />
+
+              <p>{errorMessages.FINANCE_DEPENDENCY}</p>
+            </div>
+          )}
+
           {errors.TOURNAMENT_PLAYERS_FINANCIALLY_LOCKED && (
             <div className="tournament-inline-alert danger">
               <AlertCircle size={18} />
@@ -535,7 +573,10 @@ export const TournamentTeamDetail = () => {
                 <Button
                   type="button"
                   variant="secondary"
-                  onClick={loadTournamentPlayers}
+                  onClick={() => {
+                    clearErrors("TOURNAMENT_PLAYERS_FINANCIALLY_LOCKED");
+                    loadTournamentPlayers();
+                  }}
                 >
                   Restaurar selección
                 </Button>
@@ -568,6 +609,18 @@ export const TournamentTeamDetail = () => {
             </p>
           </div>
         </div>
+
+        {tournamentTeam.status === "active" && tournament?.status === "active" && (
+          <Card className="mb-4">
+            <FeeEditor
+              label="Costo de inscripción"
+              value={tournamentTeam.registration_fee}
+              currencyCode={tournamentTeam.currency_code}
+              helper="Los cobros pendientes no cambian solos: revisa la distribución y actualízala después de guardar."
+              onSave={handleSaveRegistrationFee}
+            />
+          </Card>
+        )}
 
         <Card className="tournament-cost-summary-card">
           <div>

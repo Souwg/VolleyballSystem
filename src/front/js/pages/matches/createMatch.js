@@ -14,8 +14,8 @@ import { errorMessages } from "../../utils/errorMessages";
 import { validateMatch } from "../../utils/validators";
 import { ReadOnlyNotice } from "../../component/ui/readOnlyNotice";
 import {
+  canConfigureSportsFinance,
   canManage,
-  isScopedCoach,
   isTeamOperational,
 } from "../../utils/coachAccess";
 
@@ -37,6 +37,7 @@ export const CreateMatch = () => {
   const [refereeFee, setRefereeFee] = useState("");
   const [loadingTournaments, setLoadingTournaments] = useState(true);
   const [team, setTeam] = useState(null);
+  const canConfigureFinance = canConfigureSportsFinance(store);
   const selectedTournamentEntry = tournamentEntries.find(
     (entry) => entry.id === tournamentTeamId,
   );
@@ -107,7 +108,9 @@ export const CreateMatch = () => {
       location: location.trim(),
       notes: notes.trim(),
       tournament_team_id: tournamentTeamId || null,
-      referee_fee: refereeFee === "" ? null : refereeFee,
+      ...(canConfigureFinance && {
+        referee_fee: refereeFee === "" ? null : refereeFee,
+      }),
     });
 
     setLoading(false);
@@ -226,13 +229,15 @@ export const CreateMatch = () => {
                   (entry) => entry.id === selectedId,
                 );
 
-                setRefereeFee(
-                  selectedEntry
-                    ? String(
-                        selectedEntry.tournament?.default_referee_fee ?? "",
-                      )
-                    : "",
-                );
+                if (canConfigureFinance) {
+                  setRefereeFee(
+                    selectedEntry
+                      ? String(
+                          selectedEntry.tournament?.default_referee_fee ?? "",
+                        )
+                      : "",
+                  );
+                }
 
                 clearFieldError("TOURNAMENT_TEAM_MISMATCH");
                 clearFieldError("TOURNAMENT_TEAM_NOT_FOUND");
@@ -248,43 +253,43 @@ export const CreateMatch = () => {
             </Select>
           </FormField>
 
-          <FormField
-            label={`Costo de arbitraje (${
-              refereeCurrencyCode || "moneda no configurada"
-            })`}
-            helper={
-              tournamentTeamId
-                ? isScopedCoach(store)
-                  ? "Si lo dejas vacío se usará el monto predeterminado del torneo."
-                  : "Se tomó el monto predeterminado del torneo. Puedes modificarlo para este partido."
-                : "Opcional. Si lo defines, luego podrás dividirlo entre las convocadas."
-            }
-            error={
-              errors.INVALID_AMOUNT
-                ? errorMessages.INVALID_AMOUNT
-                : errors.INVALID_REFEREE_FEE
-                ? errorMessages.INVALID_REFEREE_FEE
-                : null
-            }
-          >
-            <Input
-              type="number"
-              min="0"
-              step="0.01"
-              value={refereeFee}
-              className={
-                errors.INVALID_AMOUNT || errors.INVALID_REFEREE_FEE
-                  ? "input-error"
-                  : ""
+          {canConfigureFinance && (
+            <FormField
+              label={`Costo de arbitraje (${
+                refereeCurrencyCode || "moneda no configurada"
+              })`}
+              helper={
+                tournamentTeamId
+                  ? "Se tomó el monto predeterminado del torneo. Puedes modificarlo para este partido."
+                  : "Opcional. Si lo defines, luego podrás dividirlo entre las convocadas."
               }
-              onChange={(e) => {
-                setRefereeFee(e.target.value);
-                clearFieldError("INVALID_AMOUNT");
-                clearFieldError("INVALID_REFEREE_FEE");
-              }}
-              placeholder="Ej: 25.00"
-            />
-          </FormField>
+              error={
+                errors.INVALID_AMOUNT
+                  ? errorMessages.INVALID_AMOUNT
+                  : errors.INVALID_REFEREE_FEE
+                  ? errorMessages.INVALID_REFEREE_FEE
+                  : null
+              }
+            >
+              <Input
+                type="number"
+                min="0"
+                step="0.01"
+                value={refereeFee}
+                className={
+                  errors.INVALID_AMOUNT || errors.INVALID_REFEREE_FEE
+                    ? "input-error"
+                    : ""
+                }
+                onChange={(e) => {
+                  setRefereeFee(e.target.value);
+                  clearFieldError("INVALID_AMOUNT");
+                  clearFieldError("INVALID_REFEREE_FEE");
+                }}
+                placeholder="Ej: 25.00"
+              />
+            </FormField>
+          )}
 
           <FormField
             label="Ubicación"

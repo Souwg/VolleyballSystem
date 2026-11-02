@@ -26,6 +26,10 @@ from src.api.time_utils import (
     get_suggested_timezone,
     normalize_iana_timezone,
 )
+from src.api.finance_access import (
+    serialize_club_for_user,
+    serialize_user_for_viewer,
+)
 from src.api.utils import error_response, generate_temp_password, get_current_user
 
 
@@ -436,7 +440,7 @@ def create_client():
             "email": email,
             "temporary_password": temp_password
         },
-        "user": new_user.serialize()
+        "user": serialize_user_for_viewer(new_user, user)
     }), 201
 
 @api.route('/admin/clients', methods=['GET'])
@@ -462,7 +466,7 @@ def list_clients():
 
     return jsonify({
         "total": len(clients),
-        "clients": [c.serialize() for c in clients]
+        "clients": [serialize_user_for_viewer(c, user) for c in clients]
     }), 200
 
 @api.route('/admin/clients/<string:user_id>/deactivate', methods=['PUT'])
@@ -503,7 +507,7 @@ def deactivate_client(user_id):
 
     return jsonify({
         "message": "Cliente desactivado correctamente",
-        "client": client.serialize()
+        "client": serialize_user_for_viewer(client, user)
     }), 200
 
 @api.route('/admin/clients/<string:user_id>/activate', methods=['PUT'])
@@ -540,7 +544,7 @@ def activate_client(user_id):
 
     return jsonify({
         "message": "Cliente reactivado correctamente",
-        "client": client.serialize()
+        "client": serialize_user_for_viewer(client, user)
     }), 200
 
 
@@ -583,7 +587,7 @@ def suspend_club(club_id):
 
     return jsonify({
         "message": "Acceso del club suspendido correctamente",
-        "club": club.serialize()
+        "club": serialize_club_for_user(club, user)
     }), 200
 
 
@@ -623,5 +627,5 @@ def activate_club(club_id):
 
     return jsonify({
         "message": "Acceso del club reactivado correctamente",
-        "club": club.serialize()
+        "club": serialize_club_for_user(club, user)
     }), 200

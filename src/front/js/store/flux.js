@@ -1608,6 +1608,32 @@ const getState = ({ getStore, getActions, setStore }) => {
         }
       },
 
+      updateTournamentTeamRegistrationFee: async (
+        tournamentTeamId,
+        registrationFee,
+      ) => {
+        try {
+          const resp = await authFetch(
+            `/api/tournament-teams/${tournamentTeamId}/registration-fee`,
+            {
+              method: "PUT",
+              headers: {
+                "Content-Type": "application/json",
+              },
+              body: JSON.stringify({ registration_fee: registrationFee }),
+            },
+          );
+
+          const result = await parseResponse(resp);
+
+          if (!result.ok) return result;
+
+          return successResponse(result.data);
+        } catch (error) {
+          return networkError("Error updating registration fee:", error);
+        }
+      },
+
       previewRegistrationCharges: async (tournamentTeamId) => {
         try {
           const resp = await authFetch(
@@ -1787,6 +1813,26 @@ const getState = ({ getStore, getActions, setStore }) => {
           return successResponse(result.data);
         } catch (error) {
           return networkError("Error updating match capture mode:", error);
+        }
+      },
+
+      updateMatchRefereeFee: async (matchId, refereeFee) => {
+        try {
+          const resp = await authFetch(`/api/matches/${matchId}/referee-fee`, {
+            method: "PUT",
+            headers: {
+              "Content-Type": "application/json",
+            },
+            body: JSON.stringify({ referee_fee: refereeFee }),
+          });
+
+          const result = await parseResponse(resp);
+
+          if (!result.ok) return result;
+
+          return successResponse(result.data);
+        } catch (error) {
+          return networkError("Error updating referee fee:", error);
         }
       },
 
@@ -2358,6 +2404,13 @@ const getState = ({ getStore, getActions, setStore }) => {
           const userRaw = localStorage.getItem("user");
           const user =
             userRaw && userRaw !== "undefined" ? JSON.parse(userRaw) : null;
+
+          // Una sesión anterior pudo guardar las tarifas del club en este navegador.
+          if (user?.role === "coach" && user.club) {
+            delete user.club.default_enrollment_fee;
+            delete user.club.default_monthly_fee;
+            localStorage.setItem("user", JSON.stringify(user));
+          }
 
           setStore({ user, token: data.token });
 

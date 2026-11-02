@@ -18,6 +18,7 @@ import { FormField } from "../../component/ui/formField";
 import { errorMessages } from "../../utils/errorMessages";
 import { formatMoney } from "../../utils/money";
 import { ReadOnlyNotice } from "../../component/ui/readOnlyNotice";
+import { FeeEditor } from "../../component/feeEditor";
 import {
   canManage,
   resolveTeamOperational,
@@ -291,6 +292,13 @@ export const MatchDetail = () => {
           result.message ||
           "No se pudo guardar la convocatoria",
       );
+
+      // Nada se guardó: la selección vuelve a la convocatoria real.
+      if (result.code === "FINANCE_DEPENDENCY") {
+        setSelectedPlayers(
+          roster.filter((p) => p.is_called).map((p) => p.player_id),
+        );
+      }
 
       return;
     }
@@ -626,6 +634,22 @@ export const MatchDetail = () => {
     if (previewResult.ok) {
       setRefereePreview(previewResult.data);
     }
+  };
+
+  const handleSaveRefereeFee = async (amount) => {
+    const result = await actions.updateMatchRefereeFee(match_id, amount);
+
+    if (result.ok) {
+      setMatch((prev) => ({
+        ...prev,
+        referee_fee: result.data.match.referee_fee,
+      }));
+      setRefereePreview(null);
+      setRefereeError("");
+      setRefereeErrorCode("");
+    }
+
+    return result;
   };
 
   const handleGoToRefereePayments = () => {
@@ -1258,6 +1282,18 @@ export const MatchDetail = () => {
           )
         ) : null}
         </div>
+      )}
+
+      {canManageMatchFinance && (
+        <Card className="mb-4">
+          <FeeEditor
+            label="Costo de arbitraje"
+            value={match?.referee_fee}
+            currencyCode={match?.currency_code}
+            helper="Los cargos pendientes no cambian solos: revisa la distribución y actualízala después de guardar."
+            onSave={handleSaveRefereeFee}
+          />
+        </Card>
       )}
 
       {canManageMatchFinance && (calledPlayersCount === 0 ? (

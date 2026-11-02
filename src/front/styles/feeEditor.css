@@ -1,0 +1,29 @@
+.fee-editor-summary {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.fee-editor-summary > div {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.fee-editor-summary span {
+  font-size: 0.85rem;
+  color: var(--color-muted);
+}
+
+.fee-editor-form {
+  margin-top: 14px;
+}
+
+@media (max-width: 480px) {
+  .fee-editor-summary button {
+    width: 100%;
+  }
+}

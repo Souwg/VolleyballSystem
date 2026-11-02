@@ -15,18 +15,17 @@ from src.api.receipt_service import (
     get_receipt_pdf_path,
     issue_payment_receipt,
 )
+from src.api.finance_access import get_finance_access_error
 from src.api.utils import error_response, get_current_user
 
 
 def _get_receipt_sharing_user():
     user = get_current_user()
 
-    if user.role not in ["club_owner", "staff"]:
-        return None, error_response(
-            "No tienes permisos para compartir recibos",
-            "FORBIDDEN",
-            403
-        )
+    finance_error = get_finance_access_error(user)
+
+    if finance_error:
+        return None, error_response(*finance_error)
 
     if not user.club_id:
         return None, error_response(
@@ -104,12 +103,10 @@ def _create_receipt_share_event(receipt, user, channel, destination):
 def create_payment_receipt(payment_id):
     user = get_current_user()
 
-    if user.role not in ["club_owner", "staff"]:
-        return error_response(
-            "No tienes permisos para generar recibos",
-            "FORBIDDEN",
-            403
-        )
+    finance_error = get_finance_access_error(user)
+
+    if finance_error:
+        return error_response(*finance_error)
 
     if not user.club_id:
         return error_response(
@@ -158,12 +155,10 @@ def create_payment_receipt(payment_id):
 def repair_payment_receipt_pdf(receipt_id):
     user = get_current_user()
 
-    if user.role not in ["club_owner", "staff"]:
-        return error_response(
-            "No tienes permisos para reparar recibos",
-            "FORBIDDEN",
-            403
-        )
+    finance_error = get_finance_access_error(user)
+
+    if finance_error:
+        return error_response(*finance_error)
 
     if not user.club_id:
         return error_response(

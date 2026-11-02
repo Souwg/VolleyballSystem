@@ -18,6 +18,10 @@ from src.api.coach_access import (
     serialize_player_for_user,
     serialize_with_player_for_user,
 )
+from src.api.finance_access import (
+    PLAYER_FINANCE_FIELDS,
+    get_finance_payload_error,
+)
 from src.api.models import (
     db,
     Attendance,
@@ -159,6 +163,15 @@ def create_player():
         return setup_error
 
     body = request.get_json() or {}
+
+    finance_error = get_finance_payload_error(
+        user,
+        body,
+        PLAYER_FINANCE_FIELDS
+    )
+
+    if finance_error:
+        return error_response(*finance_error)
 
     first_name = body.get("first_name")
     last_name = body.get("last_name")
@@ -854,6 +867,15 @@ def update_player(player_id):
         return error_response(*profile_error)
 
     body = request.get_json() or {}
+
+    finance_error = get_finance_payload_error(
+        user,
+        body,
+        PLAYER_FINANCE_FIELDS
+    )
+
+    if finance_error:
+        return error_response(*finance_error)
 
     first_name = body.get("first_name")
     last_name = body.get("last_name")

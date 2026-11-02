@@ -15,7 +15,9 @@ import {
   AssignedBadge,
   ReadOnlyBadge,
 } from "../../component/ui/readOnlyNotice";
+import { FeeEditor } from "../../component/feeEditor";
 import {
+  canConfigureSportsFinance,
   canManage,
   getManageableTeams,
   hasField,
@@ -164,7 +166,9 @@ export const TournamentDetail = () => {
 
     const result = await actions.addTeamToTournament(tournament_id, {
       team_id: teamId,
-      registration_fee: registrationFee === "" ? 0 : registrationFee,
+      ...(canConfigureSportsFinance(store) && {
+        registration_fee: registrationFee === "" ? 0 : registrationFee,
+      }),
     });
 
     if (!result.ok) {
@@ -180,6 +184,21 @@ export const TournamentDetail = () => {
 
     closeAddTeamForm();
     setLoadingSubmit(false);
+  };
+
+  const handleSaveDefaultRefereeFee = async (amount) => {
+    const result = await actions.updateTournament(tournament_id, {
+      default_referee_fee: amount,
+    });
+
+    if (result.ok) {
+      setTournament((prev) => ({
+        ...prev,
+        default_referee_fee: result.data.tournament.default_referee_fee,
+      }));
+    }
+
+    return result;
   };
 
   const handleStatusTransition = async (targetStatus) => {
@@ -391,6 +410,18 @@ export const TournamentDetail = () => {
         )}
       </div>
 
+      {canConfigureSportsFinance(store) && tournament.status === "active" && (
+        <Card className="mb-4">
+          <FeeEditor
+            label="Arbitraje base por partido"
+            value={tournament.default_referee_fee}
+            currencyCode={tournament.currency_code}
+            helper="Se aplica a los partidos que se creen desde ahora. Los partidos existentes conservan su monto."
+            onSave={handleSaveDefaultRefereeFee}
+          />
+        </Card>
+      )}
+
       {showAddTeamForm && (
         <Card className="tournament-form-card">
           <div className="tournament-section-heading">
@@ -445,28 +476,30 @@ export const TournamentDetail = () => {
               </Select>
             </FormField>
 
-            <FormField
-              label={`Costo total de inscripción (${
-                tournament.currency_code || "moneda no configurada"
-              })`}
-              helper="Luego podrás dividir este monto entre las deportistas inscritas."
-              error={
-                errors.INVALID_AMOUNT ? errorMessages.INVALID_AMOUNT : null
-              }
-            >
-              <Input
-                type="number"
-                min="0"
-                step="0.01"
-                placeholder="Ej: 100.00"
-                value={registrationFee}
-                className={errors.INVALID_AMOUNT ? "input-error" : ""}
-                onChange={(event) => {
-                  setRegistrationFee(event.target.value);
-                  clearError("INVALID_AMOUNT");
-                }}
-              />
-            </FormField>
+            {canConfigureSportsFinance(store) && (
+              <FormField
+                label={`Costo total de inscripción (${
+                  tournament.currency_code || "moneda no configurada"
+                })`}
+                helper="Luego podrás dividir este monto entre las deportistas inscritas."
+                error={
+                  errors.INVALID_AMOUNT ? errorMessages.INVALID_AMOUNT : null
+                }
+              >
+                <Input
+                  type="number"
+                  min="0"
+                  step="0.01"
+                  placeholder="Ej: 100.00"
+                  value={registrationFee}
+                  className={errors.INVALID_AMOUNT ? "input-error" : ""}
+                  onChange={(event) => {
+                    setRegistrationFee(event.target.value);
+                    clearError("INVALID_AMOUNT");
+                  }}
+                />
+              </FormField>
+            )}
 
             {(errors.FORBIDDEN ||
               errors.TOURNAMENT_NOT_ACTIVE ||

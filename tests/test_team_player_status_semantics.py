@@ -823,11 +823,18 @@ def test_paid_charge_does_not_block_saving_roster_with_closed_membership(
         _registered_then_membership_closed(client, world, auth_headers)
     )
     charge = _registration_charge(world, entry, membership.player_id, "paid")
+    roster = [membership.player_id, teammate.player_id]
+
+    # Añadir cambia el reparto: el Coach no puede; el Owner conserva su flujo.
+    rejected = client.put(url, headers=headers, json={"player_ids": roster})
+
+    assert rejected.status_code == 409
+    assert rejected.get_json()["code"] == "FINANCE_DEPENDENCY"
 
     response = client.put(
         url,
-        headers=headers,
-        json={"player_ids": [membership.player_id, teammate.player_id]},
+        headers=auth_headers(world.owner_a),
+        json={"player_ids": roster},
     )
 
     assert response.status_code == 200
@@ -843,14 +850,23 @@ def test_explicit_withdrawal_with_closed_membership_keeps_financial_rules(
     )
     paid = _registration_charge(world, entry, membership.player_id, "paid")
 
-    response = client.put(url, headers=headers, json={"player_ids": []})
+    # El Coach no recibe el detalle financiero; el Owner, sí.
+    for user, code in [
+        (world.coach_a, "FINANCE_DEPENDENCY"),
+        (world.owner_a, "TOURNAMENT_PLAYERS_FINANCIALLY_LOCKED"),
+    ]:
+        response = client.put(
+            url,
+            headers=auth_headers(user),
+            json={"player_ids": []},
+        )
 
-    assert response.status_code == 409
-    assert response.get_json()["code"] == (
-        "TOURNAMENT_PLAYERS_FINANCIALLY_LOCKED"
-    )
-    assert db.session.get(TournamentPlayer, registration.id).status == "active"
-    assert db.session.get(PlayerPayment, paid.id).status == "paid"
+        assert response.status_code == 409
+        assert response.get_json()["code"] == code
+        assert (
+            db.session.get(TournamentPlayer, registration.id).status == "active"
+        )
+        assert db.session.get(PlayerPayment, paid.id).status == "paid"
 
 
 def test_keeping_registration_with_closed_membership_keeps_pending_charge(

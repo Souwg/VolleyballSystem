@@ -10,6 +10,7 @@ import { FormField } from "../../component/ui/formField";
 import { validateClubProfile } from "../../utils/validators";
 import { errorMessages } from "../../utils/errorMessages";
 import { getAssetUrl } from "../../utils/getAssetUrl";
+import { canAccessFinance } from "../../utils/coachAccess";
 import "../../../styles/clubShared.css";
 import "../../../styles/clubProfile.css";
 import { Shield } from "lucide-react";
@@ -33,6 +34,7 @@ export const ClubProfile = () => {
   const club = store.club || store.user?.club;
   const canEditClubProfile = store.user?.role === "club_owner";
   const isReadOnly = !canEditClubProfile;
+  const canViewClubFees = canAccessFinance(store);
 
   const getInitials = (value = "") => {
     return value
@@ -130,7 +132,9 @@ export const ClubProfile = () => {
         title="Mi club"
         subtitle={
           isReadOnly
-            ? "Consulta la información principal y la configuración de pagos del club."
+            ? canViewClubFees
+              ? "Consulta la información principal y la configuración de pagos del club."
+              : "Consulta la información principal del club."
             : "Actualiza la información principal, imagen y configuración de pagos del club."
         }
       />
@@ -304,80 +308,82 @@ export const ClubProfile = () => {
             />
           </FormField>
 
-          <div className="club-profile-section">
-            <div>
-              <h3>Configuración de pagos</h3>
-              <p>
-                Define los montos base que se usarán al configurar pagos de las
-                jugadoras. Cada jugadora puede tener un monto personalizado sin
-                cambiar estos valores del club.
-              </p>
+          {canViewClubFees && (
+            <div className="club-profile-section">
+              <div>
+                <h3>Configuración de pagos</h3>
+                <p>
+                  Define los montos base que se usarán al configurar pagos de las
+                  jugadoras. Cada jugadora puede tener un monto personalizado sin
+                  cambiar estos valores del club.
+                </p>
+              </div>
+
+              <FormField
+                label={`Inscripción por defecto (${
+                  club?.currency_code || "moneda no configurada"
+                })`}
+                error={
+                  errors.INVALID_DEFAULT_ENROLLMENT_FEE
+                    ? errorMessages.INVALID_DEFAULT_ENROLLMENT_FEE
+                    : null
+                }
+              >
+                <Input
+                  type="number"
+                  className={
+                    errors.INVALID_DEFAULT_ENROLLMENT_FEE ? "input-error" : ""
+                  }
+                  placeholder={isReadOnly ? "No registrado" : "Ej: 20"}
+                  value={defaultEnrollmentFee}
+                  disabled={isReadOnly}
+                  onChange={(e) => {
+                    setDefaultEnrollmentFee(e.target.value);
+                    setErrors((prev) => ({
+                      ...prev,
+                      INVALID_DEFAULT_ENROLLMENT_FEE: false,
+                      SESSION_EXPIRED: false,
+                      NETWORK_ERROR: false,
+                      FORBIDDEN: false,
+                      CLUB_NOT_FOUND: false,
+                    }));
+                  }}
+                />
+              </FormField>
+
+              <FormField
+                label={`Mensualidad por defecto (${
+                  club?.currency_code || "moneda no configurada"
+                })`}
+                error={
+                  errors.INVALID_DEFAULT_MONTHLY_FEE
+                    ? errorMessages.INVALID_DEFAULT_MONTHLY_FEE
+                    : null
+                }
+              >
+                <Input
+                  type="number"
+                  className={
+                    errors.INVALID_DEFAULT_MONTHLY_FEE ? "input-error" : ""
+                  }
+                  placeholder={isReadOnly ? "No registrado" : "Ej: 25"}
+                  value={defaultMonthlyFee}
+                  disabled={isReadOnly}
+                  onChange={(e) => {
+                    setDefaultMonthlyFee(e.target.value);
+                    setErrors((prev) => ({
+                      ...prev,
+                      INVALID_DEFAULT_MONTHLY_FEE: false,
+                      SESSION_EXPIRED: false,
+                      NETWORK_ERROR: false,
+                      FORBIDDEN: false,
+                      CLUB_NOT_FOUND: false,
+                    }));
+                  }}
+                />
+              </FormField>
             </div>
-
-            <FormField
-              label={`Inscripción por defecto (${
-                club?.currency_code || "moneda no configurada"
-              })`}
-              error={
-                errors.INVALID_DEFAULT_ENROLLMENT_FEE
-                  ? errorMessages.INVALID_DEFAULT_ENROLLMENT_FEE
-                  : null
-              }
-            >
-              <Input
-                type="number"
-                className={
-                  errors.INVALID_DEFAULT_ENROLLMENT_FEE ? "input-error" : ""
-                }
-                placeholder={isReadOnly ? "No registrado" : "Ej: 20"}
-                value={defaultEnrollmentFee}
-                disabled={isReadOnly}
-                onChange={(e) => {
-                  setDefaultEnrollmentFee(e.target.value);
-                  setErrors((prev) => ({
-                    ...prev,
-                    INVALID_DEFAULT_ENROLLMENT_FEE: false,
-                    SESSION_EXPIRED: false,
-                    NETWORK_ERROR: false,
-                    FORBIDDEN: false,
-                    CLUB_NOT_FOUND: false,
-                  }));
-                }}
-              />
-            </FormField>
-
-            <FormField
-              label={`Mensualidad por defecto (${
-                club?.currency_code || "moneda no configurada"
-              })`}
-              error={
-                errors.INVALID_DEFAULT_MONTHLY_FEE
-                  ? errorMessages.INVALID_DEFAULT_MONTHLY_FEE
-                  : null
-              }
-            >
-              <Input
-                type="number"
-                className={
-                  errors.INVALID_DEFAULT_MONTHLY_FEE ? "input-error" : ""
-                }
-                placeholder={isReadOnly ? "No registrado" : "Ej: 25"}
-                value={defaultMonthlyFee}
-                disabled={isReadOnly}
-                onChange={(e) => {
-                  setDefaultMonthlyFee(e.target.value);
-                  setErrors((prev) => ({
-                    ...prev,
-                    INVALID_DEFAULT_MONTHLY_FEE: false,
-                    SESSION_EXPIRED: false,
-                    NETWORK_ERROR: false,
-                    FORBIDDEN: false,
-                    CLUB_NOT_FOUND: false,
-                  }));
-                }}
-              />
-            </FormField>
-          </div>
+          )}
 
           {errors.IMAGE_TOO_LARGE && (
             <p className="form-error">{errorMessages.IMAGE_TOO_LARGE}</p>

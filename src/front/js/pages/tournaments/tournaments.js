@@ -14,7 +14,7 @@ import {
   useSeasonSelection,
 } from "../../component/seasonSelector";
 
-import { isScopedCoach } from "../../utils/coachAccess";
+import { canConfigureSportsFinance, isScopedCoach } from "../../utils/coachAccess";
 import "../../../styles/tournaments.css";
 
 const formatDate = (dateValue) => {
@@ -56,6 +56,7 @@ export const Tournaments = () => {
   const { store, actions } = useContext(Context);
   const navigate = useNavigate();
   const club = store.club || store.user?.club;
+  const canConfigureFinance = canConfigureSportsFinance(store);
 
   const [showForm, setShowForm] = useState(false);
   const [loadingTournaments, setLoadingTournaments] = useState(true);
@@ -134,12 +135,19 @@ export const Tournaments = () => {
 
     setErrors({});
 
+    const financePayload = canConfigureFinance
+      ? {
+          default_referee_fee:
+            defaultRefereeFee === "" ? 0 : defaultRefereeFee,
+        }
+      : {};
+
     const tournamentData = {
       name,
       organizer_name: organizerName,
       start_date: startDate,
       end_date: endDate,
-      default_referee_fee: defaultRefereeFee === "" ? 0 : defaultRefereeFee,
+      ...financePayload,
     };
 
     const validationErrors = validateTournament(tournamentData);
@@ -156,7 +164,7 @@ export const Tournaments = () => {
       organizer_name: organizerName.trim(),
       start_date: startDate,
       end_date: endDate || null,
-      default_referee_fee: defaultRefereeFee === "" ? 0 : defaultRefereeFee,
+      ...financePayload,
     });
 
     setLoadingCreate(false);
@@ -182,7 +190,11 @@ export const Tournaments = () => {
         icon={Trophy}
         eyebrow="Competencias"
         title="Torneos"
-        subtitle="Organiza las competencias del club, los equipos inscritos y los cargos asociados."
+        subtitle={
+          canConfigureFinance
+            ? "Organiza las competencias del club, los equipos inscritos y los cargos asociados."
+            : "Organiza las competencias del club y los equipos inscritos."
+        }
         actions={
           !showForm &&
           canCreateTournament && (
@@ -302,28 +314,30 @@ export const Tournaments = () => {
               </FormField>
             </div>
 
-            <FormField
-              label={`Arbitraje predeterminado por partido (${
-                club?.currency_code || "moneda no configurada"
-              })`}
-              helper="Podrás modificar este monto individualmente al crear cada partido."
-              error={
-                errors.INVALID_AMOUNT ? errorMessages.INVALID_AMOUNT : null
-              }
-            >
-              <Input
-                type="number"
-                min="0"
-                step="0.01"
-                placeholder="Ej: 25.00"
-                value={defaultRefereeFee}
-                className={errors.INVALID_AMOUNT ? "input-error" : ""}
-                onChange={(event) => {
-                  setDefaultRefereeFee(event.target.value);
-                  clearError("INVALID_AMOUNT");
-                }}
-              />
-            </FormField>
+            {canConfigureFinance && (
+              <FormField
+                label={`Arbitraje predeterminado por partido (${
+                  club?.currency_code || "moneda no configurada"
+                })`}
+                helper="Podrás modificar este monto individualmente al crear cada partido."
+                error={
+                  errors.INVALID_AMOUNT ? errorMessages.INVALID_AMOUNT : null
+                }
+              >
+                <Input
+                  type="number"
+                  min="0"
+                  step="0.01"
+                  placeholder="Ej: 25.00"
+                  value={defaultRefereeFee}
+                  className={errors.INVALID_AMOUNT ? "input-error" : ""}
+                  onChange={(event) => {
+                    setDefaultRefereeFee(event.target.value);
+                    clearError("INVALID_AMOUNT");
+                  }}
+                />
+              </FormField>
+            )}
 
             {(errors.NETWORK_ERROR || errors.FORBIDDEN) && (
               <p className="form-error">

@@ -1,3 +1,8 @@
+from src.api.finance_access import (
+    PLAYER_FINANCE_FIELDS,
+    SPORTS_MONEY_FIELDS,
+    can_access_finance,
+)
 from src.api.models import Season, Team, TeamCoachAssignment, TeamPlayer, db
 
 
@@ -6,23 +11,11 @@ COACH_ACCESS_TEAM_ASSIGNED = "team_assigned"
 
 CURRENT_SEASON_STATUSES = ("active", "planned")
 
-PLAYER_FINANCE_FIELDS = (
-    "enrollment_date",
-    "enrollment_fee",
-    "monthly_fee",
-    "payment_cycle_day",
-    "payment_control_start_date",
-)
 PLAYER_SENSITIVE_FIELDS = (
     "birth_date",
     "representative_name",
     "representative_phone",
 )
-SPORTS_MONEY_FIELDS = frozenset({
-    "default_referee_fee",
-    "referee_fee",
-    "registration_fee",
-})
 
 
 def is_scoped_coach(user):
@@ -242,12 +235,8 @@ def serialize_with_player_for_user(row, user, player_serializer=None):
 
 
 def redact_sports_money_for_user(user, payload):
-    """Quita montos de una respuesta deportiva para el Coach team_assigned.
-
-    El Coach club_wide los conserva hasta 5.3-FIN: sus pantallas actuales de
-    partido y torneo los muestran.
-    """
-    if not is_scoped_coach(user):
+    """Quita montos de una respuesta deportiva para quien no accede a Finance."""
+    if can_access_finance(user):
         return payload
 
     def redact(value):

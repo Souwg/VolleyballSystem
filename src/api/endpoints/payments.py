@@ -19,6 +19,7 @@ from src.api.payment_service import (
 )
 from src.api.receipt_service import get_payment_for_update
 from src.api.time_utils import get_club_today
+from src.api.finance_access import get_finance_access_error
 from src.api.utils import error_response, get_current_user
 
 
@@ -45,12 +46,10 @@ VALID_PAYMENT_TYPES = [
 def _get_payments_user():
     user = get_current_user()
 
-    if user.role not in ["club_owner", "staff"]:
-        return None, error_response(
-            "No tienes permisos para ver pagos",
-            "FORBIDDEN",
-            403
-        )
+    finance_error = get_finance_access_error(user)
+
+    if finance_error:
+        return None, error_response(*finance_error)
 
     if not user.club_id:
         return None, error_response(
@@ -141,12 +140,10 @@ def update_player_payment_settings(player_id):
             400
         )
 
-    if user.role not in ["club_owner", "staff"]:
-        return error_response(
-            "No tienes permisos para configurar pagos",
-            "FORBIDDEN",
-            403
-        )
+    finance_error = get_finance_access_error(user)
+
+    if finance_error:
+        return error_response(*finance_error)
 
     club = Club.query.get(user.club_id)
 
@@ -600,12 +597,10 @@ def get_payments():
             400
         )
 
-    if user.role not in ["club_owner", "staff"]:
-        return error_response(
-            "No tienes permisos para ver pagos",
-            "FORBIDDEN",
-            403
-        )
+    finance_error = get_finance_access_error(user)
+
+    if finance_error:
+        return error_response(*finance_error)
 
     club = Club.query.get(user.club_id)
 
@@ -804,12 +799,10 @@ def get_payments():
 def update_payment(payment_id):
     user = get_current_user()
 
-    if user.role not in ["club_owner", "staff"]:
-        return error_response(
-            "No tienes permisos para actualizar pagos",
-            "FORBIDDEN",
-            403
-        )
+    finance_error = get_finance_access_error(user)
+
+    if finance_error:
+        return error_response(*finance_error)
 
     if not user.club_id:
         return error_response(
@@ -1184,12 +1177,10 @@ def get_player_payments(player_id):
             400
         )
 
-    if user.role not in ["club_owner", "staff"]:
-        return error_response(
-            "No tienes permisos para ver pagos",
-            "FORBIDDEN",
-            403
-        )
+    finance_error = get_finance_access_error(user)
+
+    if finance_error:
+        return error_response(*finance_error)
 
     player = Player.query.get(player_id)
 

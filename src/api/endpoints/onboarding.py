@@ -2,6 +2,7 @@ from flask import jsonify
 from flask_jwt_extended import jwt_required
 
 from src.api.api_blueprint import api
+from src.api.finance_access import serialize_club_for_user
 from src.api.models import Club
 from src.api.onboarding_service import get_club_onboarding_progress
 from src.api.utils import error_response, get_current_user
@@ -32,5 +33,5 @@ def onboarding_status():
 
     return jsonify({
         **progress,
-        "club": club.serialize()
+        "club": serialize_club_for_user(club, user)
     }), 200

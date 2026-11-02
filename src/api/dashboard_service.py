@@ -3,6 +3,7 @@ from datetime import datetime, timedelta
 from sqlalchemy import and_, case, exists, false, func, or_
 
 from src.api.coach_access import get_assigned_team_ids
+from src.api.finance_access import serialize_club_for_user
 from src.api.models import (
     db,
     Attendance,
@@ -39,16 +40,6 @@ def _money(value):
 
 def _player_name(first_name, last_name):
     return " ".join(part for part in [first_name, last_name] if part)
-
-
-def _serialize_club_for_role(club, role):
-    data = club.serialize()
-
-    if role == "coach":
-        data.pop("default_enrollment_fee", None)
-        data.pop("default_monthly_fee", None)
-
-    return data
 
 
 def _get_financial_summary(club_id, today):
@@ -1172,7 +1163,7 @@ def build_club_dashboard(user, club, as_of=None, active_season_id=None):
     response = {
         "role": user.role,
         "as_of": as_of.replace(microsecond=0).isoformat() + "Z",
-        "club": _serialize_club_for_role(club, user.role),
+        "club": serialize_club_for_user(club, user),
         "sections": {},
     }
 

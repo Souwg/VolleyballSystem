@@ -353,7 +353,7 @@ def _add_team_to_tournament(ctx):
     return (
         "post",
         f"/api/tournaments/{_tournament(ctx.world).id}/teams",
-        {"team_id": ctx.world.team_a.id, "registration_fee": 0},
+        {"team_id": ctx.world.team_a.id},
     )
 
 
@@ -1625,14 +1625,21 @@ def test_every_coach_route_is_classified_and_the_rest_reject_coach(
     classified = COACH_TEAM_BOUND_ROUTES | COACH_ENTITY_ROUTES
 
     assert classified <= routes
-    # Esta ruta busca el partido antes de comprobar el rol.
+    # Las rutas de Finance comprueban el tenant antes que el rol.
     match_id = match_factory(world).match.id
+    entry_id = _entry(world).id
     _scope(world.club_a)
     headers = auth_headers(world.coach_a)
     accepted = []
 
     for method, rule in sorted(routes - classified - ACCOUNT_ROUTES):
-        path_id = match_id if rule.endswith("/referee-charges") and "/matches/" in rule else str(uuid.uuid4())
+        if "/matches/" in rule and "/referee-" in rule:
+            path_id = match_id
+        elif "/tournament-teams/" in rule and "/registration-" in rule:
+            path_id = entry_id
+        else:
+            path_id = str(uuid.uuid4())
+
         url = re.sub(r"<[^>]+>", path_id, rule)
         response = getattr(client, method.lower())(url, headers=headers, json={})
 

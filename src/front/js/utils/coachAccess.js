@@ -11,6 +11,12 @@ export const isScopedCoach = (store) => {
   );
 };
 
+export const canAccessFinance = (store) =>
+  ["club_owner", "staff"].includes(store.user?.role);
+
+export const canConfigureSportsFinance = (store) =>
+  store.user?.role === "club_owner";
+
 // can_manage es permiso por asignación, no lifecycle: combínalo con
 // isTeamOperational. Sin metadata no se bloquea: decide el backend.
 export const canManage = (resource) => resource?.can_manage !== false;
