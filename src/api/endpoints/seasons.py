@@ -7,6 +7,7 @@ from sqlalchemy.exc import IntegrityError
 
 from src.api.api_blueprint import api
 from src.api.models import db, Player, Season, Team, TeamPlayer
+from src.api.onboarding_service import finish_club_onboarding_if_complete
 from src.api.season_service import get_season_open_activities
 from src.api.utils import error_response, get_current_user
 
@@ -475,6 +476,7 @@ def transition_season(target_season_id):
     target.status = "active"
 
     try:
+        finish_club_onboarding_if_complete(target.club)
         db.session.commit()
     except IntegrityError:
         db.session.rollback()

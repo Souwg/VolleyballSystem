@@ -278,3 +278,13 @@ Antes de desplegar cambios en el backend verificar:
 | Versión | 1.0 |
 | Última actualización | 2026-07-26 |
 | Autor | Sousan Wong |
+
+---
+
+## Flask-Admin
+
+Está apagado por defecto. Solo se registra con `APP_ENV=development` y
+`ENABLE_FLASK_ADMIN=1`; fuera de desarrollo la variable se ignora y `/admin`
+responde 404. Con la opción activa, cada vista exige un JWT de `system_admin` en
+la cabecera `Authorization`. El formulario de Club no permite editar el modo de
+acceso de entrenadores: lo decide el dueño del club desde "Mi club".

@@ -144,6 +144,23 @@ const cloneResponseIfPossible = (response) =>
 
 let showToastGlobal = null;
 
+// Al salir de la página el navegador aborta lo que esté en curso: no es un error.
+let pageUnloading = false;
+
+if (typeof window !== "undefined") {
+  window.addEventListener("pagehide", () => {
+    pageUnloading = true;
+  });
+  window.addEventListener("pageshow", () => {
+    pageUnloading = false;
+  });
+  window.addEventListener("beforeunload", () => {
+    pageUnloading = true;
+  });
+}
+
+export const isPageUnloading = () => pageUnloading;
+
 export const setAuthActions = (actions, toastFn) => {
   if (actions) actionsRef = actions;
   if (toastFn) showToastGlobal = toastFn;
@@ -350,10 +367,29 @@ export const parseResponse = async (resp) => {
   }
 
   let data = null;
+  let unreadableBody = false;
 
   try {
     data = await resp.json();
-  } catch (e) {}
+  } catch (e) {
+    unreadableBody = true;
+  }
+
+  // Un 200 sin cuerpo legible no es un éxito: nadie puede leer sus datos.
+  if (resp.ok && unreadableBody && resp.status !== 204) {
+    const message = errorMessages.NETWORK_ERROR;
+
+    if (showToastGlobal && !pageUnloading) {
+      showToastGlobal(message, "error");
+    }
+
+    return {
+      ok: false,
+      message,
+      code: "NETWORK_ERROR",
+      status: resp.status,
+    };
+  }
 
   if (!resp.ok) {
     const code = data?.code || "UNKNOWN_ERROR";

@@ -175,3 +175,15 @@
     align-items: flex-start;
   }
 }
+
+.onboarding-skip {
+  display: block;
+  margin: 16px auto 0;
+  padding: 8px 12px;
+  border: 0;
+  background: none;
+  font-size: var(--font-size-sm);
+  color: var(--color-muted);
+  text-decoration: underline;
+  cursor: pointer;
+}

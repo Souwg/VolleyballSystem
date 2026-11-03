@@ -93,6 +93,7 @@ export const errorMessages = {
   CLUB_SETUP_PENDING:
     "El dueño del club debe completar la configuración inicial.",
   FORBIDDEN: "No tienes permisos para realizar esta acción",
+  INVALID_COACH_ACCESS_MODE: "Selecciona un modo de acceso válido",
   FINANCE_FORBIDDEN: "No tienes permisos para acceder a la información financiera",
   FINANCE_DEPENDENCY:
     "Este registro tiene cargos asociados. El dueño debe resolverlos antes de modificar esta información.",

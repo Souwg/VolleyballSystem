@@ -35,7 +35,10 @@ from src.api.models import (
     TrainingPlayer,
 )
 from src.api.upload_utils import allowed_image_file
-from src.api.onboarding_service import is_club_onboarding_complete
+from src.api.onboarding_service import (
+    finish_club_onboarding_if_complete,
+    is_club_onboarding_complete,
+)
 from src.api.season_service import (
     get_active_season_for_club,
     get_team_membership_operation_error,
@@ -350,6 +353,8 @@ def create_player():
             status=status
         )
         db.session.add(membership)
+        finish_club_onboarding_if_complete(team.club)
+
     db.session.commit()
 
     return jsonify({
@@ -825,6 +830,7 @@ def add_existing_player_to_team(team_id):
     )
 
     db.session.add(membership)
+    finish_club_onboarding_if_complete(team.club)
     db.session.commit()
 
     return jsonify({

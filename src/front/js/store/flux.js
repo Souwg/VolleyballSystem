@@ -1,10 +1,13 @@
-import { authFetch, parseResponse } from "../utils/authFetch";
+import { authFetch, isPageUnloading, parseResponse } from "../utils/authFetch";
+import { TEAM_ACCESS_LOST_EVENT } from "../utils/coachAccess";
 
 const BACKEND_URL =
   process.env.REACT_APP_BACKEND_URL || "http://localhost:3001";
 
 const networkError = (label, error) => {
-  console.error(label, error);
+  if (!isPageUnloading()) {
+    console.error(label, error);
+  }
 
   return {
     ok: false,
@@ -18,7 +21,32 @@ const successResponse = (data = null) => ({
   data,
 });
 
+const STALE_RESPONSE = { ok: false, code: "STALE_RESPONSE" };
+
 const getState = ({ getStore, getActions, setStore }) => {
+  let dashboardRequestId = 0;
+  let coachAccessSyncInFlight = false;
+
+  const getSessionClub = () => getStore().club || getStore().user?.club;
+
+  // El store y la sesión guardada siguen al club real, sin esperar a un nuevo login.
+  const applyClubToSession = (club) => {
+    const { user } = getStore();
+    const sessionChanged =
+      user?.club &&
+      user.club.coach_access_mode !== club?.coach_access_mode;
+
+    if (!sessionChanged) {
+      setStore({ club });
+      return;
+    }
+
+    const nextUser = { ...user, club };
+
+    localStorage.setItem("user", JSON.stringify(nextUser));
+    setStore({ club, user: nextUser });
+  };
+
   const state = {
     store: {
       message: null,
@@ -235,12 +263,93 @@ const getState = ({ getStore, getActions, setStore }) => {
           setStore({
             onboardingStatus: data.status,
             onboardingStep: data.step,
-            club: data.club,
           });
+          applyClubToSession(data.club);
 
           return successResponse(data);
         } catch (error) {
           return networkError("Error loading onboarding status:", error);
+        }
+      },
+
+      finishOnboarding: async () => {
+        try {
+          const resp = await authFetch("/api/onboarding/finish", {
+            method: "POST",
+          });
+
+          const result = await parseResponse(resp);
+
+          if (!result.ok) return result;
+
+          const data = result.data;
+
+          setStore({
+            onboardingStatus: data.status,
+            onboardingStep: data.step,
+          });
+          applyClubToSession(data.club);
+
+          return successResponse(data);
+        } catch (error) {
+          return networkError("Error finishing onboarding:", error);
+        }
+      },
+
+      syncCoachAccess: async () => {
+        if (coachAccessSyncInFlight) return;
+
+        coachAccessSyncInFlight = true;
+
+        try {
+          const previousMode = getSessionClub()?.coach_access_mode;
+          const result = await getActions().getOnboardingStatus();
+          const currentMode = result.ok
+            ? result.data.club?.coach_access_mode
+            : previousMode;
+
+          // Las pantallas abiertas vuelven a pedir sus permisos al backend.
+          if (previousMode && currentMode !== previousMode) {
+            window.dispatchEvent(new Event(TEAM_ACCESS_LOST_EVENT));
+          }
+        } finally {
+          coachAccessSyncInFlight = false;
+        }
+      },
+
+      getClubCoachAccess: async () => {
+        try {
+          const resp = await authFetch("/api/club/coach-access-mode");
+
+          const result = await parseResponse(resp);
+
+          if (!result.ok) return result;
+
+          return successResponse(result.data);
+        } catch (error) {
+          return networkError("Error loading coach access:", error);
+        }
+      },
+
+      updateClubCoachAccess: async (mode) => {
+        try {
+          const resp = await authFetch("/api/club/coach-access-mode", {
+            method: "PUT",
+            headers: {
+              "Content-Type": "application/json",
+            },
+            body: JSON.stringify({ coach_access_mode: mode }),
+          });
+
+          const result = await parseResponse(resp);
+
+          if (!result.ok) return result;
+
+          applyClubToSession(result.data.club);
+
+          return successResponse(result.data);
+        } catch (error) {
+          return networkError("Error updating coach access:", error);
         }
       },
 
@@ -886,6 +995,16 @@ const getState = ({ getStore, getActions, setStore }) => {
       },
 
       getDashboard: async () => {
+        dashboardRequestId += 1;
+
+        const requestId = dashboardRequestId;
+        const sessionUserId = getStore().user?.id;
+
+        // Una respuesta tardía no pisa una carga más reciente ni otra sesión.
+        const isStale = () =>
+          requestId !== dashboardRequestId ||
+          getStore().user?.id !== sessionUserId;
+
         try {
           setStore({ dashboardData: null });
 
@@ -893,12 +1012,14 @@ const getState = ({ getStore, getActions, setStore }) => {
 
           const result = await parseResponse(resp);
 
+          if (isStale()) return STALE_RESPONSE;
+
           if (!result.ok) return result;
 
           const data = result.data;
 
+          applyClubToSession(data.club);
           setStore({
-            club: data.club,
             dashboardData: data,
             dashboardStats: data.stats,
             nextMatch: data.next_match,
@@ -906,6 +1027,8 @@ const getState = ({ getStore, getActions, setStore }) => {
 
           return successResponse(data);
         } catch (error) {
+          if (isStale()) return STALE_RESPONSE;
+
           return networkError("Error loading dashboard:", error);
         }
       },

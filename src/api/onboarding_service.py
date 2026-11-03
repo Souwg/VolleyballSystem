@@ -1,8 +1,18 @@
+from datetime import datetime
+
 from src.api.models import Category, Team, TeamPlayer
 from src.api.season_service import get_active_season_for_club
 
 
 def get_club_onboarding_progress(club):
+    # El onboarding es un proceso inicial: una vez terminado, los cambios
+    # operativos posteriores no lo reabren.
+    if club.onboarding_finished_at is not None:
+        return {
+            "step": 5,
+            "status": "completed"
+        }
+
     if not (club.city or club.location):
         return {
             "step": 1,
@@ -55,3 +65,14 @@ def get_club_onboarding_progress(club):
 
 def is_club_onboarding_complete(club):
     return get_club_onboarding_progress(club)["status"] == "completed"
+
+
+def finish_club_onboarding(club):
+    if club.onboarding_finished_at is None:
+        club.onboarding_finished_at = datetime.utcnow()
+
+
+def finish_club_onboarding_if_complete(club):
+    """Llamar antes del commit en toda mutación que pueda completar los requisitos."""
+    if is_club_onboarding_complete(club):
+        finish_club_onboarding(club)

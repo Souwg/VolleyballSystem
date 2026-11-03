@@ -47,7 +47,6 @@ export const TeamDetail = () => {
   const [assignedCoachCount, setAssignedCoachCount] = useState(0);
   const [lifecycleAction, setLifecycleAction] = useState(null);
   const [deleteBlockedCode, setDeleteBlockedCode] = useState(null);
-  const [archiveBlocked, setArchiveBlocked] = useState(false);
   const [showForm, setShowForm] = useState(false);
   const [showAddOptions, setShowAddOptions] = useState(false);
   const [selectedExistingPlayer, setSelectedExistingPlayer] = useState(null);
@@ -238,40 +237,10 @@ export const TeamDetail = () => {
     navigate("/categories");
   };
 
-  // El onboarding se reabre si la temporada activa se queda sin equipos activos
-  // con deportistas: dejaría fuera a todo el club y sin acceso a este equipo.
-  const wouldReopenOnboarding = async () => {
-    if (team.season_status !== "active" || players.length === 0) return false;
-
-    const result = await actions.getCategories();
-
-    if (!result.ok) return true;
-
-    const clubMemberships = result.data.categories.reduce(
-      (total, category) => total + category.total_players,
-      0,
-    );
-
-    return clubMemberships <= players.length;
-  };
-
   const handleTeamLifecycle = async (action) => {
     if (lifecycleAction) return;
 
     const isArchive = action === "archive";
-
-    if (isArchive) {
-      setArchiveBlocked(false);
-      setLifecycleAction(action);
-      const blocked = await wouldReopenOnboarding();
-      setLifecycleAction(null);
-
-      if (blocked) {
-        setArchiveBlocked(true);
-        return;
-      }
-    }
-
     const confirmed = window.confirm(
       isArchive
         ? `¿Archivar el equipo ${team.name}?\n\nEl equipo dejará de admitir nuevas operaciones deportivas, pero conservará su historial. Sus actividades abiertas no se cancelan.`
@@ -384,7 +353,6 @@ export const TeamDetail = () => {
 
   useEffect(() => {
     setDeleteBlockedCode(null);
-    setArchiveBlocked(false);
     loadTeamPlayers();
   }, [team_id]);
 
@@ -1090,14 +1058,6 @@ export const TeamDetail = () => {
                 Al archivarlo dejará de admitir nuevas operaciones deportivas,
                 pero conservará su historial.
               </p>
-              {archiveBlocked && (
-                <p className="form-error">
-                  Este es el último equipo con deportistas de la temporada
-                  activa. Si lo archivas, el club volvería a la configuración
-                  inicial y entrenadores y personal no podrían entrar. Crea otro
-                  equipo con deportistas antes de archivarlo.
-                </p>
-              )}
               <Button
                 variant="secondary"
                 disabled={Boolean(lifecycleAction)}

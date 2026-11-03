@@ -11,6 +11,7 @@ import { validateClubProfile } from "../../utils/validators";
 import { errorMessages } from "../../utils/errorMessages";
 import { getAssetUrl } from "../../utils/getAssetUrl";
 import { canAccessFinance } from "../../utils/coachAccess";
+import { CoachAccessSection } from "./coachAccessSection";
 import "../../../styles/clubShared.css";
 import "../../../styles/clubProfile.css";
 import { Shield } from "lucide-react";
@@ -429,6 +430,8 @@ export const ClubProfile = () => {
           </div>
         </form>
       </Card>
+
+      {canEditClubProfile && <CoachAccessSection />}
     </div>
   );
 };

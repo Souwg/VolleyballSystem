@@ -1,18 +1,23 @@
 import os
 from flask import redirect, request
-from flask_admin import Admin
+from flask_admin import Admin, AdminIndexView
 from flask_admin.contrib.sqla import ModelView
 from flask_jwt_extended import verify_jwt_in_request, get_jwt_identity
 from .models import db, User, Club, Team, Category, Player, TeamPlayer, Attendance, TrainingSession, TrainingPlayer, MatchSession, MatchPlayer, MatchSubstitution, MatchEvent, PlayerMatchStat, PlayerPayment, PaymentReceipt, ReceiptCounter, TokenBlockedList, RefreshToken
 import os
-ENV = os.getenv("APP_ENV")
 
-class SecureModelView(ModelView):
+
+def is_flask_admin_enabled():
+    """Apagado por defecto. Fuera de desarrollo nunca se registra."""
+    env = (os.getenv("APP_ENV") or "production").strip().lower()
+    flag = (os.getenv("ENABLE_FLASK_ADMIN") or "").strip()
+
+    return env == "development" and flag == "1"
+
+
+class SystemAdminOnly:
 
     def is_accessible(self):
-
-        if ENV == "development":
-            return True
 
         try:
             verify_jwt_in_request()
@@ -31,14 +36,32 @@ class SecureModelView(ModelView):
         return redirect("/")
 
 
+class SecureIndexView(SystemAdminOnly, AdminIndexView):
+    pass
+
+
+class SecureModelView(SystemAdminOnly, ModelView):
+    pass
+
+
+class ClubAdminView(SecureModelView):
+    # El acceso de entrenadores lo decide el dueño del club.
+    form_excluded_columns = ("coach_access_mode",)
+
+
 def setup_admin(app):
     app.secret_key = os.environ.get('FLASK_APP_KEY', 'sample key')
     app.config['FLASK_ADMIN_SWATCH'] = 'cerulean'
 
-    admin = Admin(app, name='Volleyball System', url='/admin')
+    admin = Admin(
+        app,
+        name='Volleyball System',
+        url='/admin',
+        index_view=SecureIndexView(url='/admin')
+    )
 
     admin.add_view(SecureModelView(User, db.session))
-    admin.add_view(SecureModelView(Club, db.session))
+    admin.add_view(ClubAdminView(Club, db.session))
     admin.add_view(SecureModelView(Team, db.session))
     admin.add_view(SecureModelView(Category, db.session))
     admin.add_view(SecureModelView(Player, db.session))

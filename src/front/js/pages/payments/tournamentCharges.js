@@ -130,7 +130,7 @@ export const TournamentCharges = () => {
             return (
               <Card key={entry.id} className="tournament-team-card">
                 <div className="tournament-team-main">
-                  <div className="tournament-team-info">
+                  <div className="tournament-team-info tournament-charge-context">
                     <strong>{entry.tournament?.name || "Torneo"}</strong>
                     <span>{entry.team?.name || "Equipo"}</span>
                   </div>

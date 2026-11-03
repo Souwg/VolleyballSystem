@@ -1,4 +1,10 @@
-import React, { useCallback, useContext, useEffect, useState } from "react";
+import React, {
+  useCallback,
+  useContext,
+  useEffect,
+  useRef,
+  useState,
+} from "react";
 import { Context } from "../../store/appContext";
 import { PageHeader } from "../../component/ui/pageHeader";
 import { Card } from "../../component/ui/card";
@@ -871,12 +877,24 @@ export const Dashboard = () => {
   const dashboard = store.dashboardData;
   const userRole = store.user?.role;
   const getDashboard = actions.getDashboard;
+  const mounted = useRef(true);
+
+  useEffect(() => {
+    mounted.current = true;
+
+    return () => {
+      mounted.current = false;
+    };
+  }, []);
 
   const loadDashboard = useCallback(async () => {
     setLoading(true);
     setError("");
 
     const result = await getDashboard();
+
+    // Respondió otra carga más reciente, o ya se salió de la pantalla.
+    if (!mounted.current || result?.code === "STALE_RESPONSE") return;
 
     if (!result?.ok) {
       setError(result?.message || "No pudimos cargar el Dashboard.");

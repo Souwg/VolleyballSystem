@@ -14,7 +14,7 @@ load_dotenv()
 from src.api.utils import APIException, generate_sitemap
 from src.api.models import db, User, TokenBlockedList
 from src.api.routes import api
-from src.api.admin import setup_admin
+from src.api.admin import is_flask_admin_enabled, setup_admin
 from src.api.commands import setup_commands
 
 # -------------------------------------------------------------------
@@ -107,8 +107,8 @@ db.init_app(app)
 # BLUEPRINTS & ADMIN
 # -------------------------------------------------------------------
 
-#habilitar Flask-Admin en desarrollo
-if ENV == "development":
+# Flask-Admin requiere activación explícita: ver ENABLE_FLASK_ADMIN en .env.example
+if is_flask_admin_enabled():
     setup_admin(app)
 
 setup_commands(app)
@@ -176,6 +176,18 @@ def serve_any_other_file(path):
             "error": True,
             "message": "Recibo no encontrado",
             "code": "RECEIPT_NOT_FOUND"
+        }), 404
+
+    # /admin/clients es la única pantalla del frontend bajo /admin. Si Flask-Admin
+    # está activo, sus rutas son más específicas y no llegan hasta aquí.
+    if (
+        (path == "admin" or path.startswith("admin/"))
+        and path.rstrip("/") != "admin/clients"
+    ):
+        return jsonify({
+            "error": True,
+            "message": "Recurso no encontrado",
+            "code": "NOT_FOUND"
         }), 404
 
     if not os.path.isfile(os.path.join(static_file_dir, path)):

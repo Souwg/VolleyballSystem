@@ -121,7 +121,7 @@ def _rows(team, coach):
 # =========================
 
 
-def test_club_defaults_to_club_wide_and_serializes_mode(world):
+def test_legacy_club_keeps_club_wide_and_serializes_mode(world):
     assert world.club_a.coach_access_mode == "club_wide"
     assert world.club_a.serialize()["coach_access_mode"] == "club_wide"
 
@@ -133,7 +133,7 @@ def test_club_rejects_invalid_coach_access_mode(world):
         db.session.commit()
 
 
-def test_new_club_from_create_client_stays_club_wide(
+def test_new_club_from_create_client_ignores_mode_in_payload(
     client, world, auth_headers, monkeypatch
 ):
     country = Country(
@@ -166,13 +166,15 @@ def test_new_club_from_create_client_stays_club_wide(
             "city": "Caracas",
             "timezone": "America/Caracas",
             "currency_code": "USD",
-            "coach_access_mode": "team_assigned",
+            "coach_access_mode": "club_wide",
         },
     )
 
     assert response.status_code == 201
     owner = User.query.filter_by(email="owner-nuevo@example.com").one()
-    assert db.session.get(Club, owner.club_id).coach_access_mode == "club_wide"
+    assert db.session.get(Club, owner.club_id).coach_access_mode == (
+        "team_assigned"
+    )
 
 
 def test_general_club_update_cannot_change_coach_access_mode(

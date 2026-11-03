@@ -938,3 +938,12 @@ Verificación
    v
 SportFlow actualizado
 ```
+
+---
+
+## Pestañas abiertas durante un despliegue
+
+Una pestaña abierta conserva el bundle anterior hasta recargarse. Si ese bundle
+envía un dato que el backend ya no acepta, por ejemplo montos enviados por un
+entrenador, el backend lo rechaza y el usuario ve el error hasta recargar. Es lo
+esperado: el backend no relaja sus reglas para clientes antiguos.

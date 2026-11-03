@@ -259,9 +259,10 @@ class Club(db.Model):
     coach_access_mode = db.Column(
         db.String(20),
         nullable=False,
-        default="club_wide",
-        server_default="club_wide"
+        default="team_assigned",
+        server_default="team_assigned"
     )
+    onboarding_finished_at = db.Column(db.DateTime(), nullable=True)
     created_at = db.Column(db.DateTime(), default=datetime.utcnow)
 
     sport = db.relationship(

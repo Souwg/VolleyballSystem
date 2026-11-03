@@ -79,7 +79,17 @@ def _get_club_tournament_team(tournament_team_id, user):
 
 
 def _get_tournament_team_for_update(tournament_team_id):
-    # Serializa los cambios de inscripciones y de cargos de una participación.
+    # Mismo orden en todos los flujos: Tournament, TournamentTeam y cargos. Bloquear
+    # el torneo serializa estas escrituras con completarlo o cancelarlo; el estado
+    # del torneo debe comprobarse después de esta llamada.
+    tournament_id = db.session.query(
+        TournamentTeam.tournament_id
+    ).filter_by(id=tournament_team_id).scalar()
+
+    Tournament.query.filter_by(
+        id=tournament_id
+    ).populate_existing().with_for_update(key_share=True).first()
+
     return TournamentTeam.query.filter_by(
         id=tournament_team_id
     ).populate_existing().with_for_update().first()
@@ -1014,6 +1024,8 @@ def update_tournament_team_players(tournament_team_id):
     if team_error:
         return error_response(*team_error)
 
+    tournament_team = _get_tournament_team_for_update(tournament_team.id)
+
     if tournament_team.tournament.status != "active":
         return error_response(
             "Solo puedes modificar participantes en torneos activos",
@@ -1044,8 +1056,6 @@ def update_tournament_team_players(tournament_team_id):
         for player_id in player_ids
         if str(player_id).strip()
     })
-
-    tournament_team = _get_tournament_team_for_update(tournament_team.id)
 
     valid_memberships = TeamPlayer.query.filter(
         TeamPlayer.team_id == tournament_team.team_id,
@@ -1239,6 +1249,8 @@ def update_tournament_team_registration_fee(tournament_team_id):
     if finance_error:
         return error_response(*finance_error)
 
+    tournament_team = _get_tournament_team_for_update(tournament_team.id)
+
     if tournament_team.tournament.status != "active":
         return error_response(
             "Solo puedes cambiar la inscripción en torneos activos",
@@ -1277,8 +1289,6 @@ def update_tournament_team_registration_fee(tournament_team_id):
             "INVALID_TOURNAMENT_REGISTRATION_FEE",
             400
         )
-
-    tournament_team = _get_tournament_team_for_update(tournament_team.id)
 
     # Los cargos pendientes no se recalculan aquí: los reemplaza generar de nuevo.
     if any(

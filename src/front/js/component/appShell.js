@@ -1,4 +1,4 @@
-import React, { useState, useContext } from "react";
+import React, { useEffect, useState, useContext } from "react";
 import { Context } from "../store/appContext";
 import { Navigate, useNavigate, Outlet, useLocation } from "react-router-dom";
 
@@ -6,6 +6,7 @@ import { Sidebar } from "./layout/sidebar";
 import { Topbar } from "./layout/topbar";
 import { Container } from "./ui/container";
 import { getRoleLandingPath } from "./roleRedirect";
+import { TEAM_ACCESS_LOST_EVENT } from "../utils/coachAccess";
 
 const defaultNavItems = [
   { name: "Panel", path: "/dashboard" },
@@ -83,6 +84,27 @@ export const AppShell = () => {
   const isCoach = store.user?.role === "coach";
   const isSystemAdmin = store.user?.role === "system_admin";
   const isClubOwner = store.user?.role === "club_owner";
+
+  // Sin polling: el modo de acceso se revisa al navegar, al volver a la pestaña
+  // y cuando el backend rechaza una operación por falta de asignación.
+  useEffect(() => {
+    if (isCoach) actions.syncCoachAccess();
+  }, [isCoach, location.pathname]);
+
+  useEffect(() => {
+    if (!isCoach) return undefined;
+
+    const sync = () => actions.syncCoachAccess();
+
+    window.addEventListener("focus", sync);
+    window.addEventListener(TEAM_ACCESS_LOST_EVENT, sync);
+
+    return () => {
+      window.removeEventListener("focus", sync);
+      window.removeEventListener(TEAM_ACCESS_LOST_EVENT, sync);
+    };
+  }, [isCoach]);
+
   const navItems = isStaff
     ? staffNavItems
     : isCoach

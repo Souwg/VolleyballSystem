@@ -17,6 +17,7 @@ from src.api.models import (
     TournamentTeam,
     TrainingSession,
 )
+from src.api.onboarding_service import finish_club_onboarding_if_complete
 from src.api.season_service import (
     get_active_season_for_club,
     get_season_structure_operation_error,
@@ -409,6 +410,7 @@ def reactivate_team(team_id):
         return error_response(*season_error)
 
     team.status = "active"
+    finish_club_onboarding_if_complete(team.club)
     db.session.commit()
 
     return jsonify({

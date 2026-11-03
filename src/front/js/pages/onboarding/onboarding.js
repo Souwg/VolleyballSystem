@@ -46,6 +46,27 @@ export const Onboarding = () => {
   const [creatingCategory, setCreatingCategory] = useState(false);
   const [creatingTeam, setCreatingTeam] = useState(false);
   const [creatingPlayer, setCreatingPlayer] = useState(false);
+  const [skipping, setSkipping] = useState(false);
+
+  const handleSkip = async () => {
+    if (skipping) return;
+
+    const confirmed = window.confirm(
+      "El asistente no volverá a abrirse. Podrás terminar de configurar el club desde Categorías, Jugadores y Mi club.\n\n¿Quieres omitirlo?",
+    );
+
+    if (!confirmed) return;
+
+    setSkipping(true);
+
+    const result = await actions.finishOnboarding();
+
+    setSkipping(false);
+
+    if (result?.ok) {
+      navigate("/dashboard", { replace: true });
+    }
+  };
 
   useEffect(() => {
     actions.getOnboardingStatus();
@@ -824,6 +845,16 @@ export const Onboarding = () => {
         {step === 4 && "Agregando tu primer deportista"}
       </p>
       {content.form}
+      {step !== 5 && (
+        <button
+          type="button"
+          className="onboarding-skip"
+          onClick={handleSkip}
+          disabled={skipping}
+        >
+          {skipping ? "Omitiendo..." : "Omitir por ahora"}
+        </button>
+      )}
     </AuthLayout>
   );
 };

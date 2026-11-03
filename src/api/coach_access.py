@@ -3,11 +3,12 @@ from src.api.finance_access import (
     SPORTS_MONEY_FIELDS,
     can_access_finance,
 )
-from src.api.models import Season, Team, TeamCoachAssignment, TeamPlayer, db
+from src.api.models import Season, Team, TeamCoachAssignment, TeamPlayer, User, db
 
 
 COACH_ACCESS_CLUB_WIDE = "club_wide"
 COACH_ACCESS_TEAM_ASSIGNED = "team_assigned"
+COACH_ACCESS_MODES = (COACH_ACCESS_CLUB_WIDE, COACH_ACCESS_TEAM_ASSIGNED)
 
 CURRENT_SEASON_STATUSES = ("active", "planned")
 
@@ -287,4 +288,60 @@ def get_assigned_team_ids(user):
     return {
         assignment.team_id
         for assignment in _open_assignments(user).all()
+    }
+
+
+def get_coach_access_readiness(club_id):
+    """Conteos informativos para activar el acceso por equipos; no son requisito.
+
+    Los equipos archivados y las temporadas cerradas no son operación pendiente.
+    """
+    teams = db.session.query(Team.id, Season.status).join(
+        Season,
+        Season.id == Team.season_id,
+    ).filter(
+        Team.club_id == club_id,
+        Team.status == "active",
+        Season.status.in_(CURRENT_SEASON_STATUSES),
+    ).all()
+    assignments = db.session.query(
+        TeamCoachAssignment.team_id,
+        TeamCoachAssignment.user_id,
+    ).filter(
+        TeamCoachAssignment.club_id == club_id,
+        TeamCoachAssignment.removed_at.is_(None),
+    ).all()
+    coach_ids = {
+        user_id
+        for (user_id,) in db.session.query(User.id).filter(
+            User.club_id == club_id,
+            User.role == "coach",
+            User.is_active.is_(True),
+        ).all()
+    }
+    current_team_ids = {team_id for team_id, _ in teams}
+    staffed_team_ids = {
+        team_id
+        for team_id, user_id in assignments
+        if user_id in coach_ids
+    }
+    assigned_coach_ids = {
+        user_id
+        for team_id, user_id in assignments
+        if team_id in current_team_ids
+    }
+
+    return {
+        "active_coaches": len(coach_ids),
+        "coaches_without_team": len(coach_ids - assigned_coach_ids),
+        "active_teams_without_coach": sum(
+            1
+            for team_id, season_status in teams
+            if season_status == "active" and team_id not in staffed_team_ids
+        ),
+        "planned_teams_without_coach": sum(
+            1
+            for team_id, season_status in teams
+            if season_status == "planned" and team_id not in staffed_team_ids
+        ),
     }

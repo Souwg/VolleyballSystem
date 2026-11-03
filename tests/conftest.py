@@ -106,6 +106,7 @@ def _new_club(sport, suffix):
         timezone="America/Caracas",
         currency_code="USD",
         access_status="active",
+        coach_access_mode="club_wide",
     )
     owner = User(
         id=owner_id,

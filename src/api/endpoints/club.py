@@ -7,14 +7,17 @@ from flask_jwt_extended import jwt_required
 from werkzeug.utils import secure_filename
 
 from src.api.api_blueprint import api
+from src.api.coach_access import COACH_ACCESS_MODES, get_coach_access_readiness
 from src.api.dashboard_service import build_club_dashboard
 from src.api.extensions import bcrypt
+from src.api.finance_access import serialize_club_for_user
 from src.api.models import (
     db,
     User,
     Club,
     RefreshToken,
 )
+from src.api.onboarding_service import finish_club_onboarding_if_complete
 from src.api.season_service import get_active_season_for_club
 from src.api.upload_utils import allowed_image_file
 from src.api.utils import error_response, generate_temp_password, get_current_user
@@ -579,11 +582,84 @@ def update_club():
 
         club.default_monthly_fee = default_monthly_fee
 
+    finish_club_onboarding_if_complete(club)
     db.session.commit()
 
     return jsonify({
         "message": "Información del club actualizada",
         "club": club.serialize()
+    }), 200
+
+
+@api.route("/club/coach-access-mode", methods=["GET"])
+@jwt_required()
+def get_club_coach_access_mode():
+    user = get_current_user()
+
+    if user.role != "club_owner":
+        return error_response(
+            "Solo el dueño del club puede consultar el acceso de entrenadores",
+            "FORBIDDEN",
+            403
+        )
+
+    club = Club.query.get(user.club_id)
+
+    if not club:
+        return error_response(
+            "Club no encontrado",
+            "CLUB_NOT_FOUND",
+            404
+        )
+
+    return jsonify({
+        "coach_access_mode": club.coach_access_mode,
+        "readiness": get_coach_access_readiness(club.id)
+    }), 200
+
+
+@api.route("/club/coach-access-mode", methods=["PUT"])
+@jwt_required()
+def update_club_coach_access_mode():
+    user = get_current_user()
+
+    if user.role != "club_owner":
+        return error_response(
+            "Solo el dueño del club puede cambiar el acceso de entrenadores",
+            "FORBIDDEN",
+            403
+        )
+
+    body = request.get_json() or {}
+    mode = body.get("coach_access_mode")
+
+    if mode not in COACH_ACCESS_MODES:
+        return error_response(
+            "El modo de acceso de entrenadores no es válido",
+            "INVALID_COACH_ACCESS_MODE",
+            400
+        )
+
+    club = Club.query.filter_by(
+        id=user.club_id
+    ).populate_existing().with_for_update(key_share=True).first()
+
+    if not club:
+        return error_response(
+            "Club no encontrado",
+            "CLUB_NOT_FOUND",
+            404
+        )
+
+    # Las asignaciones no se tocan: quedan preparadas y solo cambia si aplican.
+    club.coach_access_mode = mode
+    db.session.commit()
+
+    return jsonify({
+        "message": "Acceso de entrenadores actualizado",
+        "coach_access_mode": club.coach_access_mode,
+        "readiness": get_coach_access_readiness(club.id),
+        "club": serialize_club_for_user(club, user)
     }), 200
 
 @api.route("/club/dashboard", methods=["GET"])
