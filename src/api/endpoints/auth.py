@@ -290,7 +290,12 @@ def refresh():
     user_id = get_jwt_identity()
     jti = jwt_data["jti"]
 
-    user = User.query.get(user_id)
+    # El lock del User serializa la rotación con logout, cambios de contraseña
+    # y desactivaciones: los datos de sesión se leen ya bloqueados. FOR NO KEY
+    # UPDATE no frena las FK que referencian al usuario.
+    user = User.query.filter_by(
+        id=user_id
+    ).populate_existing().with_for_update(key_share=True).first()
 
     if not user:
         return error_response(
@@ -308,26 +313,40 @@ def refresh():
 
     ensure_club_access(user)
 
-    stored_token = RefreshToken.query.filter_by(jti=jti).first()
-
-
-    if not stored_token:
-        return error_response(
-            "La sesión ya no es válida. Inicia sesión nuevamente",
-            "REFRESH_NOT_FOUND",
-            401
-        )
-
-    if stored_token.revoked:
+    if jwt_data.get("session_version", 0) != user.session_version:
         return error_response(
             "La sesión fue cerrada previamente",
             "REFRESH_REVOKED",
             401
         )
 
+    # Un refresh es de un solo uso: consumirlo es un UPDATE condicional y solo
+    # quien lo consume emite tokens nuevos.
+    consumed = RefreshToken.query.filter_by(
+        jti=jti,
+        user_id=user.id,
+        revoked=False
+    ).update(
+        {"revoked": True},
+        synchronize_session=False
+    )
 
-    stored_token.revoked = True
+    if consumed != 1:
+        stored_token = RefreshToken.query.filter_by(jti=jti).first()
+        db.session.rollback()
 
+        if not stored_token:
+            return error_response(
+                "La sesión ya no es válida. Inicia sesión nuevamente",
+                "REFRESH_NOT_FOUND",
+                401
+            )
+
+        return error_response(
+            "La sesión fue cerrada previamente",
+            "REFRESH_REVOKED",
+            401
+        )
 
     session_claims = {
         "session_version": user.session_version
@@ -441,10 +460,18 @@ def logout():
     jwt_data = get_jwt()
     jti = jwt_data["jti"]
 
-    blocked_token = TokenBlockedList(jti=jti)
-    db.session.add(blocked_token)
-
     user = get_current_user(allow_first_login=True)
+
+    # El logout cierra todas las sesiones del usuario (siempre revocó todos sus
+    # refresh). Subir session_version invalida también los access vigentes y
+    # cualquier token que emita un refresh que estaba en vuelo; el lock del User
+    # lo serializa con la rotación de refresh.
+    user = User.query.filter_by(
+        id=user.id
+    ).populate_existing().with_for_update(key_share=True).first()
+    user.session_version = (user.session_version or 0) + 1
+
+    db.session.add(TokenBlockedList(jti=jti))
 
     RefreshToken.query.filter_by(user_id=user.id, revoked=False).update({
         "revoked": True

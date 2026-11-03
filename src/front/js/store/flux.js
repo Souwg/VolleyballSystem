@@ -1,4 +1,9 @@
-import { authFetch, isPageUnloading, parseResponse } from "../utils/authFetch";
+import {
+  authFetch,
+  isPageUnloading,
+  parseResponse,
+  rotateStoredSession,
+} from "../utils/authFetch";
 import { TEAM_ACCESS_LOST_EVENT } from "../utils/coachAccess";
 
 const BACKEND_URL =
@@ -2508,21 +2513,21 @@ const getState = ({ getStore, getActions, setStore }) => {
         }
 
         try {
-          const resp = await fetch(`${BACKEND_URL}/api/refresh`, {
-            method: "POST",
-            headers: { Authorization: `Bearer ${refresh}` },
-          });
+          // El refresh es de un solo uso: si otra pestaña lo rota a la vez,
+          // rotateStoredSession adopta la sesión que esa pestaña guardó.
+          const rotation = await rotateStoredSession();
 
-          const result = await parseResponse(resp);
+          if (rotation.failure) await parseResponse(rotation.failure);
 
-          if (!result.ok) {
-            throw new Error(result.code);
+          const token =
+            rotation.token ||
+            (rotation.sessionChanged ? localStorage.getItem("token") : null);
+
+          if (!token || !localStorage.getItem("refresh")) {
+            throw new Error("SESSION_NOT_RESTORED");
           }
 
-          const data = result.data;
-
-          localStorage.setItem("token", data.token);
-          localStorage.setItem("refresh", data.refresh);
+          const data = { token };
 
           const userRaw = localStorage.getItem("user");
           const user =

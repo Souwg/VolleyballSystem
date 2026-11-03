@@ -343,6 +343,8 @@ export const errorMessages = {
     "La fecha de inscripción ya no puede modificarse porque el control de pagos ya fue iniciado",
   LEGACY_PAYMENT_HISTORY_REQUIRES_REVIEW:
     "Este deportista tiene pagos creados con la configuración anterior y requiere revisión antes de iniciar el nuevo control",
+  PAYMENT_SETTINGS_CONFLICT:
+    "La configuración de pagos cambió mientras guardabas. Recarga la página antes de intentarlo de nuevo",
   MIGRATED_PAYMENT_LOCKED:
     "Los pagos anteriores a SportFlow forman parte del historial y no pueden modificarse",
   MIGRATED_PAYMENT_RECEIPT_NOT_ALLOWED:

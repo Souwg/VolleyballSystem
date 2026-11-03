@@ -70,6 +70,53 @@ def get_season_operation_error(season):
     )
 
 
+def lock_team_lifecycle(team_id, club_id, exclusive=False):
+    """Bloquea Team y luego su Season antes de validar su lifecycle.
+
+    Orden fijo Team -> Season. transition_season toma las Season con FOR
+    UPDATE, así que quien crea actividad espera a que termine y vuelve a leer
+    el estado; si gana la creación, la transición espera y ve la actividad.
+    exclusive=True bloquea el Team con FOR UPDATE (asignaciones de coach).
+    populate_existing porque el lock no refresca lo ya cargado en la sesión.
+    """
+    team = Team.query.filter_by(
+        id=team_id,
+        club_id=club_id,
+    ).populate_existing().with_for_update(read=not exclusive).first()
+
+    if team:
+        lock_season_for_operation(team.season_id, club_id)
+
+    return team
+
+
+def lock_season_for_operation(season_id, club_id):
+    return Season.query.filter_by(
+        id=season_id,
+        club_id=club_id,
+    ).populate_existing().with_for_update(read=True).first()
+
+
+def lock_active_season_for_operation(club_id):
+    """Temporada activa resuelta con su lock compartido ya tomado.
+
+    Si una transición termina mientras se espera el lock, la temporada leída
+    ya está cerrada: se resuelve otra vez y se usa la nueva activa.
+    """
+    for _ in range(2):
+        season = get_active_season_for_club(club_id)
+
+        if not season:
+            return None
+
+        season = lock_season_for_operation(season.id, club_id)
+
+        if season and season.status == "active":
+            return season
+
+    return None
+
+
 def get_team_operation_error(team):
     if team.status == "archived":
         return (

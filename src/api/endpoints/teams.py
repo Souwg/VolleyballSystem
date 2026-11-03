@@ -19,9 +19,9 @@ from src.api.models import (
 )
 from src.api.onboarding_service import finish_club_onboarding_if_complete
 from src.api.season_service import (
-    get_active_season_for_club,
     get_season_structure_operation_error,
     get_team_membership_operation_error,
+    lock_active_season_for_operation,
     resolve_season_for_read,
 )
 from src.api.utils import error_response, get_current_user
@@ -105,7 +105,8 @@ def create_team(category_id):
                 409
             )
     else:
-        season = get_active_season_for_club(user.club_id)
+        # Sin id de temporada leído antes del lock de transition_season.
+        season = lock_active_season_for_operation(user.club_id)
 
         if not season:
             return error_response(

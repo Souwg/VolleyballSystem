@@ -13,6 +13,7 @@ from src.api.models import db, Team, TrainingAuditEvent, TrainingSession
 from src.api.season_service import (
     get_active_season_for_club,
     get_team_operation_error,
+    lock_team_lifecycle,
     resolve_season_for_read,
 )
 from src.api.training_audit_service import (
@@ -355,6 +356,16 @@ def create_training():
             "No tienes acceso",
             "FORBIDDEN",
             403
+        )
+
+    # Serializa con transition_season: valida el lifecycle ya bloqueado.
+    team = lock_team_lifecycle(team.id, user.club_id)
+
+    if not team:
+        return error_response(
+            "Equipo no encontrado",
+            "TEAM_NOT_FOUND",
+            404
         )
 
     assignment_error = get_team_assignment_error(user, team)
@@ -818,6 +829,9 @@ def reactivate_training(training_id):
             "INVALID_TRAINING_STATUS",
             409
         )
+
+    # Reactivar crea de nuevo un bloqueador de transition_season.
+    lock_team_lifecycle(training.team_id, user.club_id)
 
     team_error = get_team_operation_error(training.team)
 

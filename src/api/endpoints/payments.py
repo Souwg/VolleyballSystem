@@ -4,6 +4,7 @@ from decimal import Decimal, InvalidOperation, ROUND_HALF_UP
 
 from flask import current_app, jsonify, request
 from flask_jwt_extended import jwt_required
+from sqlalchemy.exc import IntegrityError
 
 from src.api.api_blueprint import api
 from src.api.models import db, Club, Player, PlayerPayment
@@ -33,6 +34,15 @@ VALID_INITIAL_ENROLLMENT_STATUSES = [
     "paid_before_sportflow",
     "not_applicable"
 ]
+# El índice único de inscripción es la última defensa si el lock no basta.
+PAYMENT_SETTINGS_CONFLICT_ERROR = (
+    (
+        "La configuración de pagos cambió mientras guardabas. "
+        "Recarga la página antes de intentarlo de nuevo."
+    ),
+    "PAYMENT_SETTINGS_CONFLICT",
+    409
+)
 VALID_PAYMENT_TYPES = [
     "enrollment",
     "monthly",
@@ -162,6 +172,16 @@ def update_player_payment_settings(player_id):
             "PLAYER_NOT_FOUND",
             404
         )
+
+    # Dos guardados simultáneos de la configuración inicial crearían dos
+    # inscripciones. Se serializan por jugadora y todo lo que sigue decide con
+    # el estado ya bloqueado: el segundo ve la configuración del primero.
+    # FOR NO KEY UPDATE: no bloquea las FK que referencian a la jugadora, así
+    # una sincronización mensual concurrente no forma un deadlock con esta.
+    player = Player.query.filter_by(
+        id=player.id,
+        club_id=user.club_id
+    ).populate_existing().with_for_update(key_share=True).first()
 
     body = request.get_json() or {}
 
@@ -456,17 +476,21 @@ def update_player_payment_settings(player_id):
 
     if is_initial_setup:
 
-        initialization = initialize_player_payment_history(
-            player=player,
-            enrollment_fee=enrollment_fee,
-            monthly_fee=monthly_fee,
-            enrollment_status=initial_enrollment_status,
-            initial_payment_mode=initial_payment_mode,
-            last_paid_month=last_paid_month,
-            user_id=user.id
-        )
+        try:
+            initialization = initialize_player_payment_history(
+                player=player,
+                enrollment_fee=enrollment_fee,
+                monthly_fee=monthly_fee,
+                enrollment_status=initial_enrollment_status,
+                initial_payment_mode=initial_payment_mode,
+                last_paid_month=last_paid_month,
+                user_id=user.id
+            )
 
-        db.session.commit()
+            db.session.commit()
+        except IntegrityError:
+            db.session.rollback()
+            return error_response(*PAYMENT_SETTINGS_CONFLICT_ERROR)
 
         return jsonify({
             "message": "Configuración de pagos creada correctamente",
@@ -513,13 +537,17 @@ def update_player_payment_settings(player_id):
 
     # Crea cualquier mensualidad que deba existir y aún falte.
     # Las mensualidades históricas existentes NO se destruyen.
-    sync_player_monthly_payments(
-        player=player,
-        monthly_fee=monthly_fee,
-        user_id=user.id
-    )
+    try:
+        sync_player_monthly_payments(
+            player=player,
+            monthly_fee=monthly_fee,
+            user_id=user.id
+        )
 
-    db.session.commit()
+        db.session.commit()
+    except IntegrityError:
+        db.session.rollback()
+        return error_response(*PAYMENT_SETTINGS_CONFLICT_ERROR)
 
     return jsonify({
         "message": "Configuración de pagos actualizada correctamente",

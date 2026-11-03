@@ -1777,6 +1777,14 @@ class PlayerPayment(db.Model):
             postgresql_where=db.text("payment_type = 'referee'"),
             sqlite_where=db.text("payment_type = 'referee'")
         ),
+        db.Index(
+            "uq_player_payments_enrollment_charge",
+            "club_id",
+            "player_id",
+            unique=True,
+            postgresql_where=db.text("payment_type = 'enrollment'"),
+            sqlite_where=db.text("payment_type = 'enrollment'")
+        ),
         db.CheckConstraint(
             "LENGTH(currency_code) = 3 "
             "AND currency_code = UPPER(currency_code)",

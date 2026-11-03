@@ -5,8 +5,11 @@ from flask_jwt_extended import jwt_required
 from sqlalchemy.exc import IntegrityError
 
 from src.api.api_blueprint import api
-from src.api.models import db, Season, Team, TeamCoachAssignment, User
-from src.api.season_service import get_team_membership_operation_error
+from src.api.models import db, Team, TeamCoachAssignment, User
+from src.api.season_service import (
+    get_team_membership_operation_error,
+    lock_team_lifecycle,
+)
 from src.api.utils import error_response, get_current_user
 
 
@@ -36,20 +39,8 @@ def _lock_team_lifecycle(team_id, club_id):
     # Orden fijo Team -> Season -> User. archive_team solo toma la fila del Team,
     # transition_season las de Season y los cambios de usuario la del User, así
     # que no hay ciclo posible. La FK de la asignación no basta: su FOR KEY SHARE
-    # no choca con esos UPDATE. populate_existing porque el lock no refresca lo
-    # ya cargado en la sesión.
-    team = Team.query.filter_by(
-        id=team_id,
-        club_id=club_id,
-    ).populate_existing().with_for_update().first()
-
-    if team:
-        Season.query.filter_by(
-            id=team.season_id,
-            club_id=club_id,
-        ).populate_existing().with_for_update(read=True).first()
-
-    return team
+    # no choca con esos UPDATE.
+    return lock_team_lifecycle(team_id, club_id, exclusive=True)
 
 
 def _lock_coach(user_id, club_id):

@@ -40,9 +40,9 @@ from src.api.payment_charge_helpers import (
     split_money_exactly,
 )
 from src.api.season_service import (
-    get_active_season_for_club,
     get_season_operation_error,
     get_team_operation_error,
+    lock_active_season_for_operation,
     resolve_season_for_read,
 )
 from src.api.team_player_status import TEAM_PLAYER_STATUS_ACTIVE
@@ -223,7 +223,9 @@ def create_tournament():
             409
         )
 
-    season = get_active_season_for_club(user.club_id)
+    # transition_season bloquea las Season con FOR UPDATE: no se usa un id de
+    # temporada leído antes de esperar ese lock.
+    season = lock_active_season_for_operation(user.club_id)
 
     if not season:
         return error_response(

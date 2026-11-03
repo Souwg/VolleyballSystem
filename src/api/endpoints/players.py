@@ -42,6 +42,7 @@ from src.api.onboarding_service import (
 from src.api.season_service import (
     get_active_season_for_club,
     get_team_membership_operation_error,
+    lock_team_lifecycle,
     resolve_season_for_read,
 )
 from src.api.sports import get_club_sport_adapter
@@ -279,6 +280,16 @@ def create_player():
                 "No tienes permisos para registrar jugadores en este equipo",
                 "FORBIDDEN",
                 403
+            )
+
+        # Serializa con transition_season: valida el lifecycle ya bloqueado.
+        team = lock_team_lifecycle(team.id, user.club_id)
+
+        if not team:
+            return error_response(
+                "Equipo no encontrado",
+                "TEAM_NOT_FOUND",
+                404
             )
 
         assignment_error = get_team_assignment_error(user, team)
@@ -717,6 +728,16 @@ def add_existing_player_to_team(team_id):
             "No tienes acceso",
             "FORBIDDEN",
             403
+        )
+
+    # Serializa con transition_season: valida el lifecycle ya bloqueado.
+    team = lock_team_lifecycle(team.id, user.club_id)
+
+    if not team:
+        return error_response(
+            "Equipo no encontrado",
+            "TEAM_NOT_FOUND",
+            404
         )
 
     assignment_error = get_team_assignment_error(user, team)

@@ -54,6 +54,22 @@ const redirectFirstLoginIfRequired = async (response) => {
   }
 };
 
+// El refresh es de un solo uso: si dos pestañas lo usan a la vez, solo una
+// gana. La otra espera a que la ganadora guarde la sesión nueva y la adopta.
+const ROTATION_WAIT_MS = 1500;
+const ROTATION_POLL_MS = 100;
+
+const waitForRotatedRefresh = async (previousRefresh) => {
+  const deadline = Date.now() + ROTATION_WAIT_MS;
+
+  while (Date.now() < deadline) {
+    if (localStorage.getItem("refresh") !== previousRefresh) break;
+    await new Promise((resolve) => setTimeout(resolve, ROTATION_POLL_MS));
+  }
+
+  return localStorage.getItem("refresh");
+};
+
 async function refreshToken() {
   const refresh = localStorage.getItem("refresh");
 
@@ -70,10 +86,24 @@ async function refreshToken() {
     });
 
     if (!resp.ok) {
+      if (resp.status === 401) {
+        const currentRefresh = await waitForRotatedRefresh(refresh);
+
+        if (currentRefresh !== refresh) {
+          const currentToken = localStorage.getItem("token");
+
+          // Otra pestaña rotó la sesión (o cerró sesión): no se borra la suya.
+          return currentRefresh && currentToken
+            ? { token: currentToken, response: null, sessionChanged: false }
+            : { token: null, response: null, sessionChanged: true };
+        }
+      }
+
       return {
         token: null,
         response: (await isClubSuspendedResponse(resp)) ? resp : null,
         sessionChanged: false,
+        failure: resp,
       };
     }
 
@@ -94,6 +124,10 @@ async function refreshToken() {
     return { token: null, response: null, sessionChanged: false };
   }
 }
+
+// Para restaurar la sesión al cargar la página con la misma rotación segura
+// entre pestañas. No limpia nada: el llamador decide qué hacer si falla.
+export const rotateStoredSession = () => refreshToken();
 
 const getSharedRefresh = () => {
   if (!refreshPromise) {
@@ -324,6 +358,7 @@ const FORM_ERRORS = [
   "LAST_PAID_MONTH_NOT_REACHED",
   "ENROLLMENT_DATE_LOCKED",
   "LEGACY_PAYMENT_HISTORY_REQUIRES_REVIEW",
+  "PAYMENT_SETTINGS_CONFLICT",
 
   "MATCH_PLAYER_ID_REQUIRED",
   "MATCH_PLAYER_NOT_FOUND",

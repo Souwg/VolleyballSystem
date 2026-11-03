@@ -47,6 +47,7 @@ from src.api.sports import (
 from src.api.season_service import (
     get_active_season_for_club,
     get_team_operation_error,
+    lock_team_lifecycle,
     resolve_season_for_read,
 )
 from src.api.team_player_status import TEAM_PLAYER_STATUS_ACTIVE
@@ -654,6 +655,16 @@ def create_match():
             "No tienes acceso a este equipo",
             "FORBIDDEN",
             403
+        )
+
+    # Serializa con transition_season: valida el lifecycle ya bloqueado.
+    team = lock_team_lifecycle(team.id, user.club_id)
+
+    if not team:
+        return error_response(
+            "Equipo no encontrado",
+            "TEAM_NOT_FOUND",
+            404
         )
 
     assignment_error = get_team_assignment_error(user, team)
