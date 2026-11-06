@@ -5,6 +5,7 @@ from sqlalchemy import func
 from src.api.api_blueprint import api
 from src.api.coach_access import get_team_access_resolver
 from src.api.models import db, Category, Team, TeamPlayer
+from src.api.request_validation import text_field
 from src.api.season_service import (
     get_active_season_for_club,
     resolve_season_for_read,
@@ -34,8 +35,8 @@ def create_category():
 
     body = request.get_json() or {}
 
-    name = body.get("name")
-    description = body.get("description")
+    name = text_field(body, "name")
+    description = text_field(body, "description")
 
     if name:
         name = " ".join(name.strip().split())
@@ -283,8 +284,8 @@ def update_category(category_id):
 
     body = request.get_json() or {}
 
-    name = body.get("name")
-    description = body.get("description")
+    name = text_field(body, "name")
+    description = text_field(body, "description")
 
     if name:
         name = " ".join(str(name).strip().split())

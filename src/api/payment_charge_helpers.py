@@ -6,6 +6,20 @@ from src.api.models import db, PlayerPayment
 from src.api.utils import error_response
 
 
+_AMOUNT_TYPE = PlayerPayment.__table__.c.amount.type
+
+# Mayor monto que admiten los cargos (Numeric(10, 2)). Cuotas y tarifas se
+# validan contra él porque terminan convertidas en cargos.
+MAX_MONEY_AMOUNT = (
+    Decimal(10) ** (_AMOUNT_TYPE.precision - _AMOUNT_TYPE.scale)
+    - Decimal(1).scaleb(-_AMOUNT_TYPE.scale)
+)
+
+
+def exceeds_max_money(value):
+    return Decimal(str(value)) > MAX_MONEY_AMOUNT
+
+
 def parse_money(value, field_name="Monto"):
     try:
         amount = Decimal(str(value))
@@ -13,6 +27,13 @@ def parse_money(value, field_name="Monto"):
         if not amount.is_finite():
             return None, error_response(
                 f"{field_name} debe ser un número válido",
+                "INVALID_AMOUNT",
+                400
+            )
+
+        if amount > MAX_MONEY_AMOUNT:
+            return None, error_response(
+                f"{field_name} supera el máximo permitido",
                 "INVALID_AMOUNT",
                 400
             )
@@ -31,6 +52,14 @@ def parse_money(value, field_name="Monto"):
     if amount < 0:
         return None, error_response(
             f"{field_name} no puede ser negativo",
+            "INVALID_AMOUNT",
+            400
+        )
+
+    # Un monto justo bajo el máximo puede superarlo al redondear.
+    if amount > MAX_MONEY_AMOUNT:
+        return None, error_response(
+            f"{field_name} supera el máximo permitido",
             "INVALID_AMOUNT",
             400
         )

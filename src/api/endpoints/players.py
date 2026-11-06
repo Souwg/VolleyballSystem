@@ -1,11 +1,8 @@
-import os
-import uuid
 from datetime import datetime
 
 from flask import jsonify, request
 from flask_jwt_extended import jwt_required
 from sqlalchemy.exc import IntegrityError
-from werkzeug.utils import secure_filename
 
 from src.api.api_blueprint import api
 from src.api.coach_access import (
@@ -34,11 +31,17 @@ from src.api.models import (
     TournamentPlayer,
     TrainingPlayer,
 )
-from src.api.upload_utils import allowed_image_file
+from src.api.upload_utils import (
+    MAX_PLAYER_IMAGE_SIZE,
+    discard_uploaded_image,
+    get_uploaded_image,
+    save_uploaded_image,
+)
 from src.api.onboarding_service import (
     finish_club_onboarding_if_complete,
     is_club_onboarding_complete,
 )
+from src.api.request_validation import text_field
 from src.api.season_service import (
     get_active_season_for_club,
     get_team_membership_operation_error,
@@ -53,7 +56,6 @@ from src.api.team_player_status import (
 from src.api.utils import error_response, get_current_user
 
 
-MAX_PLAYER_IMAGE_SIZE = 8 * 1024 * 1024
 MAX_PLAYER_IMAGE_SIZE_MB = MAX_PLAYER_IMAGE_SIZE // (1024 * 1024)
 
 
@@ -177,11 +179,11 @@ def create_player():
     if finance_error:
         return error_response(*finance_error)
 
-    first_name = body.get("first_name")
-    last_name = body.get("last_name")
+    first_name = text_field(body, "first_name")
+    last_name = text_field(body, "last_name")
     player_number = body.get("player_number")
     sex = body.get("sex")
-    birth_date = body.get("birth_date")
+    birth_date = text_field(body, "birth_date")
     status = body.get("status", "active")
     team_id = body.get("team_id")
     representative_name = body.get("representative_name")
@@ -194,7 +196,9 @@ def create_player():
         representative_phone = str(representative_phone).strip()
 
     sport_adapter = get_club_sport_adapter(user.club)
-    main_position = (body.get("main_position") or "").strip().lower() or None
+    main_position = (
+        text_field(body, "main_position") or ""
+    ).strip().lower() or None
 
     if main_position and not sport_adapter.has_position(main_position):
         return error_response(
@@ -219,7 +223,10 @@ def create_player():
             400
         )
 
-    if status not in VALID_TEAM_PLAYER_STATUSES:
+    if (
+        not isinstance(status, str)
+        or status not in VALID_TEAM_PLAYER_STATUSES
+    ):
         return error_response(
             "Estado del jugador inválido",
             "INVALID_PLAYER_STATUS",
@@ -406,63 +413,32 @@ def upload_player_image(player_id):
     if profile_error:
         return error_response(*profile_error)
 
-    if "image" not in request.files:
-        return error_response(
-            "Debes seleccionar una imagen",
-            "IMAGE_REQUIRED",
-            400
-        )
-
-    image = request.files["image"]
-
-    if image.filename == "":
-        return error_response(
-            "Debes seleccionar una imagen",
-            "IMAGE_REQUIRED",
-            400
-        )
-
-    if not allowed_image_file(image.filename):
-        return error_response(
-            "Formato inválido. Usa PNG, JPG o WEBP",
-            "INVALID_IMAGE_FORMAT",
-            400
-        )
-
-    image.seek(0, os.SEEK_END)
-    image_size = image.tell()
-    image.seek(0)
-
-    if image_size > MAX_PLAYER_IMAGE_SIZE:
-        return error_response(
-            (
-                "La imagen no puede pesar más de "
-                f"{MAX_PLAYER_IMAGE_SIZE_MB} MB"
-            ),
-            "IMAGE_TOO_LARGE",
-            400
-        )
-
-    original_filename = secure_filename(image.filename)
-    extension = original_filename.rsplit(".", 1)[1].lower()
-    filename = f"{player.id}-{uuid.uuid4().hex}.{extension}"
-
-    upload_folder = os.path.abspath(
-        os.path.join(
-            os.path.dirname(__file__),
-            "../../../public/uploads/players"
+    image, extension, image_error = get_uploaded_image(
+        MAX_PLAYER_IMAGE_SIZE,
+        (
+            "La imagen no puede pesar más de "
+            f"{MAX_PLAYER_IMAGE_SIZE_MB} MB"
         )
     )
 
-    os.makedirs(upload_folder, exist_ok=True)
+    if image_error:
+        return error_response(*image_error)
 
-    file_path = os.path.join(upload_folder, filename)
-    image.save(file_path)
-
-    image_url = f"/uploads/players/{filename}"
+    image_url, file_path = save_uploaded_image(
+        image,
+        "players",
+        player.id,
+        extension
+    )
 
     player.image_url = image_url
-    db.session.commit()
+
+    try:
+        db.session.commit()
+    except Exception:
+        db.session.rollback()
+        discard_uploaded_image(file_path)
+        raise
 
     return jsonify({
         "image_url": image_url,
@@ -904,16 +880,18 @@ def update_player(player_id):
     if finance_error:
         return error_response(*finance_error)
 
-    first_name = body.get("first_name")
-    last_name = body.get("last_name")
+    first_name = text_field(body, "first_name")
+    last_name = text_field(body, "last_name")
     sex = body.get("sex")
-    birth_date = body.get("birth_date")
+    birth_date = text_field(body, "birth_date")
     team_id = body.get("team_id")
     representative_name = body.get("representative_name")
     representative_phone = body.get("representative_phone")
 
     sport_adapter = get_club_sport_adapter(player.club)
-    main_position = (body.get("main_position") or "").strip().lower() or None
+    main_position = (
+        text_field(body, "main_position") or ""
+    ).strip().lower() or None
 
     if main_position and not sport_adapter.has_position(main_position):
         return error_response(
@@ -1112,7 +1090,10 @@ def update_player_status(player_id):
             400
         )
 
-    if status not in VALID_TEAM_PLAYER_STATUSES:
+    if (
+        not isinstance(status, str)
+        or status not in VALID_TEAM_PLAYER_STATUSES
+    ):
         return error_response(
             "Estado del jugador inválido",
             "INVALID_PLAYER_STATUS",

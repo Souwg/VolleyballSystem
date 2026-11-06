@@ -673,8 +673,17 @@ def test_post_locks_team_season_and_coach_before_creating_assignment(
     assert locks == [(Team, False), (Season, True), (User, True)]
 
 
-@pytest.mark.parametrize("body", [{}, {"user_id": ""}, {"user_id": 5}, []])
-def test_post_requires_valid_user_id(client, world, auth_headers, body):
+@pytest.mark.parametrize(
+    ("body", "code"),
+    [
+        ({}, "COACH_ID_REQUIRED"),
+        ({"user_id": ""}, "COACH_ID_REQUIRED"),
+        # La validación central de entrada responde antes que la ruta.
+        ({"user_id": 5}, "INVALID_FIELD_TYPE"),
+        ([], "INVALID_JSON_BODY"),
+    ],
+)
+def test_post_requires_valid_user_id(client, world, auth_headers, body, code):
     response = client.post(
         f"/api/teams/{world.team_a.id}/coaches",
         headers=auth_headers(world.owner_a),
@@ -682,7 +691,8 @@ def test_post_requires_valid_user_id(client, world, auth_headers, body):
     )
 
     assert response.status_code == 400
-    assert response.get_json()["code"] == "COACH_ID_REQUIRED"
+    assert response.get_json()["code"] == code
+    assert TeamCoachAssignment.query.count() == 0
 
 
 def test_post_hides_users_of_other_clubs_and_system_admin(

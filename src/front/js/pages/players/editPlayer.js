@@ -216,6 +216,12 @@ export const EditPlayer = () => {
                 </p>
               )}
 
+              {errors.INVALID_IMAGE_FORMAT && (
+                <p className="form-error">
+                  {errorMessages.INVALID_IMAGE_FORMAT}
+                </p>
+              )}
+
               <label className="button button-secondary player-photo-button">
                 Cambiar foto
                 <input

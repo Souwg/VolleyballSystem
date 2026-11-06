@@ -31,6 +31,7 @@ from src.api.models import (
     User,
     db,
 )
+from src.api.rate_limit import rate_limiter
 
 
 POSITIONS = [
@@ -47,7 +48,8 @@ POSITIONS = [
 
 @pytest.fixture(scope="session")
 def app():
-    flask_app.config.update(TESTING=True)
+    # Los tests que prueban el límite de intentos lo activan de forma explícita.
+    flask_app.config.update(TESTING=True, RATE_LIMIT_ENABLED=False)
 
     with flask_app.app_context():
         assert db.engine.url.get_backend_name() == "sqlite"
@@ -68,6 +70,8 @@ def app():
 
 @pytest.fixture(autouse=True)
 def isolated_database(app):
+    rate_limiter.clear()
+
     with app.app_context():
         db.session.remove()
         db.drop_all()

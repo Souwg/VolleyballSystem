@@ -1,6 +1,11 @@
 from dataclasses import dataclass
 
 
+# Las stats resumen se guardan en columnas Integer.
+MAX_SUMMARY_STAT_VALUE = 2 ** 31 - 1
+INVALID_SUMMARY_STAT_VALUE = "INVALID_SUMMARY_STAT_VALUE"
+
+
 @dataclass(frozen=True)
 class SportCapabilities:
     supports_positions: bool
@@ -180,17 +185,34 @@ class SportAdapter:
 
     def validate_summary_stats(self, payload):
         groups = self._get_valid_summary_stat_groups()
+        stats = {}
 
-        def to_int(value):
-            try:
-                return max(0, int(value))
-            except:
-                return 0
+        for field in self.get_summary_stat_fields():
+            # Un campo ausente es una stat no registrada.
+            if field not in payload:
+                stats[field] = 0
+                continue
 
-        stats = {
-            field: to_int(payload.get(field))
-            for field in self.get_summary_stat_fields()
-        }
+            value = payload[field]
+
+            # Además de enteros se aceptan dígitos en texto ("2"), contrato
+            # histórico del endpoint. Nada inválido se convierte en 0.
+            if (
+                isinstance(value, str)
+                and value.isascii()
+                and value.isdigit()
+                and len(value) <= len(str(MAX_SUMMARY_STAT_VALUE))
+            ):
+                value = int(value)
+
+            if (
+                isinstance(value, bool)
+                or not isinstance(value, int)
+                or not 0 <= value <= MAX_SUMMARY_STAT_VALUE
+            ):
+                return None, INVALID_SUMMARY_STAT_VALUE
+
+            stats[field] = value
 
         for group in groups:
             if stats[group.total_field] != sum(

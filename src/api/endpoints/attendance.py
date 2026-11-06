@@ -18,6 +18,7 @@ from src.api.models import (
     TrainingPlayer,
     TrainingSession,
 )
+from src.api.request_validation import InputValidationError
 from src.api.season_service import get_team_operation_error
 from src.api.training_audit_service import (
     TRAINING_AUDIT_ACTIONS,
@@ -174,6 +175,9 @@ def save_attendance(training_id):
         Attendance.query.filter_by(session_id=training.id).delete()
         db.session.add_all(validated_attendance)
         db.session.commit()
+    except InputValidationError:
+        db.session.rollback()
+        raise
     except Exception:
         db.session.rollback()
         return error_response(
@@ -374,6 +378,9 @@ def correct_training_attendance(training_id):
 
     try:
         db.session.commit()
+    except InputValidationError:
+        db.session.rollback()
+        raise
     except Exception:
         db.session.rollback()
         return error_response(

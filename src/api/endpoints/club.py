@@ -1,10 +1,7 @@
 import math
-import os
-import uuid
 
 from flask import jsonify, request
 from flask_jwt_extended import jwt_required
-from werkzeug.utils import secure_filename
 
 from src.api.api_blueprint import api
 from src.api.coach_access import COACH_ACCESS_MODES, get_coach_access_readiness
@@ -18,12 +15,18 @@ from src.api.models import (
     RefreshToken,
 )
 from src.api.onboarding_service import finish_club_onboarding_if_complete
+from src.api.payment_charge_helpers import exceeds_max_money
+from src.api.request_validation import text_field
 from src.api.season_service import get_active_season_for_club
-from src.api.upload_utils import allowed_image_file
+from src.api.upload_utils import (
+    MAX_CLUB_IMAGE_SIZE,
+    discard_uploaded_image,
+    get_uploaded_image,
+    save_uploaded_image,
+)
 from src.api.utils import error_response, generate_temp_password, get_current_user
 
 
-MAX_CLUB_IMAGE_SIZE = 2 * 1024 * 1024
 CLUB_USER_ROLES = ["coach", "staff"]
 
 
@@ -99,8 +102,8 @@ def create_club_user():
 
     body = request.get_json() or {}
 
-    full_name = body.get("full_name")
-    email = body.get("email")
+    full_name = text_field(body, "full_name")
+    email = text_field(body, "email")
 
     if email:
         email = email.strip().lower()
@@ -392,57 +395,31 @@ def upload_club_image():
             404
         )
 
-    if "image" not in request.files:
-        return error_response(
-            "Debes seleccionar una imagen",
-            "IMAGE_REQUIRED",
-            400
-        )
-
-    image = request.files["image"]
-
-    if image.filename == "":
-        return error_response(
-            "Debes seleccionar una imagen",
-            "IMAGE_REQUIRED",
-            400
-        )
-
-    if not allowed_image_file(image.filename):
-        return error_response(
-            "Formato inválido. Usa PNG, JPG o WEBP",
-            "INVALID_IMAGE_FORMAT",
-            400
-        )
-
-    image.seek(0, os.SEEK_END)
-    image_size = image.tell()
-    image.seek(0)
-
-    if image_size > MAX_CLUB_IMAGE_SIZE:
-        return error_response(
-            "La imagen no puede pesar más de 2MB",
-            "IMAGE_TOO_LARGE",
-            400
-        )
-
-    original_filename = secure_filename(image.filename)
-    extension = original_filename.rsplit(".", 1)[1].lower()
-    filename = f"{club.id}-{uuid.uuid4().hex}.{extension}"
-
-    upload_folder = os.path.abspath(
-        os.path.join(
-            os.path.dirname(__file__),
-            "../../../public/uploads/clubs"
-        )
+    image, extension, image_error = get_uploaded_image(
+        MAX_CLUB_IMAGE_SIZE,
+        "La imagen no puede pesar más de 2MB"
     )
 
-    os.makedirs(upload_folder, exist_ok=True)
+    if image_error:
+        return error_response(*image_error)
 
-    file_path = os.path.join(upload_folder, filename)
-    image.save(file_path)
+    image_url, file_path = save_uploaded_image(
+        image,
+        "clubs",
+        club.id,
+        extension
+    )
 
-    image_url = f"/uploads/clubs/{filename}"
+    # El logo queda vinculado al subirlo, igual que la foto de una jugadora:
+    # un archivo guardado nunca queda sin club que lo use.
+    club.image_url = image_url
+
+    try:
+        db.session.commit()
+    except Exception:
+        db.session.rollback()
+        discard_uploaded_image(file_path)
+        raise
 
     return jsonify({
         "image_url": image_url
@@ -553,6 +530,13 @@ def update_club():
                 400
             )
 
+        if exceeds_max_money(default_enrollment_fee):
+            return error_response(
+                "El monto de inscripción supera el máximo permitido",
+                "INVALID_DEFAULT_ENROLLMENT_FEE",
+                400
+            )
+
         club.default_enrollment_fee = default_enrollment_fee
 
 
@@ -576,6 +560,13 @@ def update_club():
         if default_monthly_fee < 0:
             return error_response(
                 "El monto de mensualidad no puede ser negativo",
+                "INVALID_DEFAULT_MONTHLY_FEE",
+                400
+            )
+
+        if exceeds_max_money(default_monthly_fee):
+            return error_response(
+                "El monto de mensualidad supera el máximo permitido",
                 "INVALID_DEFAULT_MONTHLY_FEE",
                 400
             )

@@ -30,6 +30,7 @@ from src.api.finance_access import (
     serialize_club_for_user,
     serialize_user_for_viewer,
 )
+from src.api.request_validation import InputValidationError
 from src.api.utils import error_response, generate_temp_password, get_current_user
 
 
@@ -387,6 +388,9 @@ def create_client():
 
         db.session.commit()
 
+    except InputValidationError:
+        db.session.rollback()
+        raise
     except Exception as error:
         db.session.rollback()
         current_app.logger.exception(

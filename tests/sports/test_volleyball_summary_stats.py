@@ -175,8 +175,6 @@ def test_summary_normalization_preserves_historical_contract():
     stats, error = VolleyballAdapter().validate_summary_stats({
         "attacks_total": "2",
         "attacks_positive": "2",
-        "receptions_total": "not-a-number",
-        "defenses_total": -4,
         "sets_total": large_value,
         "sets_positive": large_value,
         "unknown_field": 17,
@@ -187,10 +185,22 @@ def test_summary_normalization_preserves_historical_contract():
     assert stats["attacks_positive"] == 2
     assert stats["attacks_neutral"] == 0
     assert stats["receptions_total"] == 0
-    assert stats["defenses_total"] == 0
     assert stats["sets_total"] == large_value
     assert stats["sets_positive"] == large_value
     assert "unknown_field" not in stats
+
+
+@pytest.mark.parametrize(
+    "value",
+    [-4, "not-a-number", "-5", "2.0", 1.5, 2.0, True, None, [], {}, 2 ** 31],
+)
+def test_summary_invalid_values_are_rejected_instead_of_zeroed(value):
+    stats, error = VolleyballAdapter().validate_summary_stats({
+        "receptions_total": value,
+    })
+
+    assert stats is None
+    assert error == "INVALID_SUMMARY_STAT_VALUE"
 
 
 def test_summary_endpoint_uses_alternate_adapter_metadata(

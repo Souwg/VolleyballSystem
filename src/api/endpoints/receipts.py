@@ -6,6 +6,12 @@ from itsdangerous import BadSignature, SignatureExpired
 
 from src.api.api_blueprint import api
 from src.api.models import db, PaymentReceipt, PaymentReceiptShareEvent
+from src.api.rate_limit import (
+    PUBLIC_RECEIPT_RULE,
+    client_ip,
+    limited_response,
+    record_attempt,
+)
 from src.api.receipt_service import (
     RECEIPT_LINK_MAX_AGE,
     PaymentReceiptIssueError,
@@ -200,33 +206,44 @@ def repair_payment_receipt_pdf(receipt_id):
     }), 200
 
 
+def _public_receipt_not_found():
+    # Solo los enlaces inválidos consumen el límite de la IP.
+    record_attempt(PUBLIC_RECEIPT_RULE, client_ip())
+    return error_response("Recibo no encontrado", "RECEIPT_NOT_FOUND", 404)
+
+
 @api.route("/payment-receipts/public/<string:token>", methods=["GET"])
 def get_public_payment_receipt(token):
+    limited = limited_response(PUBLIC_RECEIPT_RULE, client_ip())
+
+    if limited:
+        return limited
+
     try:
         receipt_id = get_receipt_link_serializer().loads(
             token,
             max_age=RECEIPT_LINK_MAX_AGE
         )
     except (SignatureExpired, BadSignature):
-        return error_response("Recibo no encontrado", "RECEIPT_NOT_FOUND", 404)
+        return _public_receipt_not_found()
 
     if not isinstance(receipt_id, str):
-        return error_response("Recibo no encontrado", "RECEIPT_NOT_FOUND", 404)
+        return _public_receipt_not_found()
 
     receipt = PaymentReceipt.query.get(receipt_id)
 
     if not receipt or receipt.status != "issued":
-        return error_response("Recibo no encontrado", "RECEIPT_NOT_FOUND", 404)
+        return _public_receipt_not_found()
 
     receipt_pdf_path = get_receipt_pdf_path(receipt) if receipt else None
 
     if not receipt_pdf_path or not os.path.isfile(receipt_pdf_path):
-        return error_response("Recibo no encontrado", "RECEIPT_NOT_FOUND", 404)
+        return _public_receipt_not_found()
 
     try:
         response = send_file(receipt_pdf_path, mimetype="application/pdf")
     except FileNotFoundError:
-        return error_response("Recibo no encontrado", "RECEIPT_NOT_FOUND", 404)
+        return _public_receipt_not_found()
 
     response.cache_control.no_store = True
     return response

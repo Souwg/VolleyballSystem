@@ -8,6 +8,7 @@ from sqlalchemy.exc import IntegrityError
 
 from src.api.api_blueprint import api
 from src.api.models import db, Club, Player, PlayerPayment
+from src.api.payment_charge_helpers import exceeds_max_money
 from src.api.payment_service import (
     VALID_PAYMENT_METHODS,
     add_months,
@@ -420,6 +421,13 @@ def update_player_payment_settings(player_id):
     ):
         return error_response(
             "Los montos deben ser numéricos",
+            "INVALID_PAYMENT_AMOUNT",
+            400
+        )
+
+    if exceeds_max_money(enrollment_fee) or exceeds_max_money(monthly_fee):
+        return error_response(
+            "Los montos superan el máximo permitido",
             "INVALID_PAYMENT_AMOUNT",
             400
         )
@@ -903,6 +911,13 @@ def update_payment(payment_id):
         if parsed_amount < 0:
             return error_response(
                 "El monto no puede ser negativo",
+                "INVALID_PAYMENT_AMOUNT",
+                400
+            )
+
+        if exceeds_max_money(parsed_amount):
+            return error_response(
+                "El monto supera el máximo permitido",
                 "INVALID_PAYMENT_AMOUNT",
                 400
             )

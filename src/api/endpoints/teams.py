@@ -18,6 +18,7 @@ from src.api.models import (
     TrainingSession,
 )
 from src.api.onboarding_service import finish_club_onboarding_if_complete
+from src.api.request_validation import text_field
 from src.api.season_service import (
     get_season_structure_operation_error,
     get_team_membership_operation_error,
@@ -65,7 +66,7 @@ def create_team(category_id):
 
     body = request.get_json() or {}
 
-    name = body.get("name")
+    name = text_field(body, "name")
     gender = body.get("gender")
     season_id = body.get("season_id")
 

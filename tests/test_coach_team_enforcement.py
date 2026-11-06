@@ -5,6 +5,7 @@ from datetime import date, datetime
 from types import SimpleNamespace
 
 import pytest
+from PIL import Image
 from werkzeug.datastructures import FileStorage
 
 from src.api.models import (
@@ -752,11 +753,17 @@ def saved_files(monkeypatch):
     return saved
 
 
+def _png_bytes():
+    buffer = io.BytesIO()
+    Image.new("RGB", (2, 2)).save(buffer, format="PNG")
+    return buffer.getvalue()
+
+
 def _upload(client, auth_headers, user, player):
     return client.post(
         f"/api/players/{player.id}/upload-image",
         headers=auth_headers(user),
-        data={"image": (io.BytesIO(b"imagen"), "foto.png")},
+        data={"image": (io.BytesIO(_png_bytes()), "foto.png")},
         content_type="multipart/form-data",
     )
 

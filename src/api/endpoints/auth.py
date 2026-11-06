@@ -25,11 +25,79 @@ from src.api.models import (
     TokenBlockedList,
     User,
 )
+from src.api.rate_limit import (
+    FORGOT_PASSWORD_RULE,
+    LOGIN_RULE,
+    RESET_PASSWORD_RULE,
+    client_ip,
+    limited_response,
+    record_attempt,
+    reset_attempts,
+)
+from src.api.request_validation import text_field
 from src.api.utils import ensure_club_access, error_response, get_current_user
+
+
+# bcrypt solo usa los primeros 72 bytes. Las versiones anteriores truncaban en
+# silencio; la 5.x lanza ValueError, así que la comparación trunca igual que
+# antes y las contraseñas nuevas más largas se rechazan.
+BCRYPT_MAX_PASSWORD_BYTES = 72
+
+_dummy_password_hash = None
 
 
 def hash_reset_token(token):
     return hashlib.sha256(token.encode("utf-8")).hexdigest()
+
+
+def password_matches(user, password):
+    """
+    Compara la contraseña con el mismo costo exista o no la cuenta, para que el
+    tiempo de respuesta no revele qué emails están registrados.
+    """
+    global _dummy_password_hash
+
+    if user is None:
+        if _dummy_password_hash is None:
+            _dummy_password_hash = bcrypt.generate_password_hash(
+                secrets.token_urlsafe(16)
+            ).decode("utf-8")
+
+        bcrypt.check_password_hash(
+            _dummy_password_hash,
+            password.encode("utf-8")[:BCRYPT_MAX_PASSWORD_BYTES]
+        )
+        return False
+
+    return bcrypt.check_password_hash(
+        user.password,
+        password.encode("utf-8")[:BCRYPT_MAX_PASSWORD_BYTES]
+    )
+
+
+def new_password_error(new_password):
+    if not new_password:
+        return (
+            "Nueva contraseña requerida",
+            "PASSWORD_REQUIRED",
+            400
+        )
+
+    if len(new_password) < 8:
+        return (
+            "Debe tener al menos 8 caracteres",
+            "PASSWORD_TOO_SHORT",
+            400
+        )
+
+    if len(new_password.encode("utf-8")) > BCRYPT_MAX_PASSWORD_BYTES:
+        return (
+            "La contraseña es demasiado larga",
+            "PASSWORD_TOO_LONG",
+            400
+        )
+
+    return None
 
 
 @api.route('/login', methods=['POST'])
@@ -66,27 +134,31 @@ def login():
             400
         )
 
+    attempt_key = (client_ip(), email)
+    limited = limited_response(LOGIN_RULE, *attempt_key)
+
+    if limited:
+        return limited
+
     user = User.query.filter_by(email=email).first()
 
-    if not user:
+    # El estado de la cuenta solo se revela a quien ya probó la contraseña.
+    if not password_matches(user, password):
+        record_attempt(LOGIN_RULE, *attempt_key)
+
         return error_response(
             "Email o contraseña incorrectos",
             "INVALID_CREDENTIALS",
             401
         )
+
+    reset_attempts(LOGIN_RULE, *attempt_key)
 
     if not user.is_active:
         return error_response(
             "Tu cuenta está desactivada. Contacta al administrador.",
             "ACCOUNT_DISABLED",
             403
-        )
-
-    if not bcrypt.check_password_hash(user.password, password):
-        return error_response(
-            "Email o contraseña incorrectos",
-            "INVALID_CREDENTIALS",
-            401
         )
 
     ensure_club_access(user)
@@ -147,6 +219,15 @@ def forgot_password():
             400
         )
 
+    attempt_key = (client_ip(), email)
+    limited = limited_response(FORGOT_PASSWORD_RULE, *attempt_key)
+
+    if limited:
+        return limited
+
+    # Cuenta toda solicitud, exista o no el email, para no revelarlo.
+    record_attempt(FORGOT_PASSWORD_RULE, *attempt_key)
+
     user = User.query.filter_by(email=email).first()
 
     generic_response = {
@@ -197,12 +278,8 @@ def forgot_password():
             exc_info=error
         )
 
-        return error_response(
-            "No pudimos enviar el correo de recuperación",
-            "PASSWORD_RESET_EMAIL_FAILED",
-            500
-        )
-
+    # Mismo resultado aunque el envío falle: un error distinto solo para
+    # cuentas activas revelaría cuáles existen. El fallo queda en el log.
     return jsonify(generic_response), 200
 
 @api.route("/auth/reset-password", methods=["POST"])
@@ -210,7 +287,7 @@ def reset_password():
     body = request.get_json() or {}
 
     token = body.get("token")
-    new_password = body.get("new_password")
+    new_password = text_field(body, "new_password")
 
     if not token:
         return error_response(
@@ -219,19 +296,15 @@ def reset_password():
             400
         )
 
-    if not new_password:
-        return error_response(
-            "Nueva contraseña requerida",
-            "PASSWORD_REQUIRED",
-            400
-        )
+    password_error = new_password_error(new_password)
 
-    if len(str(new_password)) < 8:
-        return error_response(
-            "Debe tener al menos 8 caracteres",
-            "PASSWORD_TOO_SHORT",
-            400
-        )
+    if password_error:
+        return error_response(*password_error)
+
+    limited = limited_response(RESET_PASSWORD_RULE, client_ip())
+
+    if limited:
+        return limited
 
     token_hash = hash_reset_token(str(token))
 
@@ -241,6 +314,8 @@ def reset_password():
     ).first()
 
     if not reset_token:
+        record_attempt(RESET_PASSWORD_RULE, client_ip())
+
         return error_response(
             "El enlace no es válido o ya fue usado",
             "RESET_TOKEN_INVALID",
@@ -392,21 +467,11 @@ def set_password():
 
     body = request.get_json() or {}
 
-    new_password = body.get("new_password")
+    new_password = text_field(body, "new_password")
+    password_error = new_password_error(new_password)
 
-    if not new_password:
-        return error_response(
-            "Nueva contraseña requerida",
-            "PASSWORD_REQUIRED",
-            400
-        )
-
-    if len(new_password) < 8:
-        return error_response(
-            "Debe tener al menos 8 caracteres",
-            "PASSWORD_TOO_SHORT",
-            400
-        )
+    if password_error:
+        return error_response(*password_error)
 
     user.password = bcrypt.generate_password_hash(new_password).decode("utf-8")
     user.first_login = False

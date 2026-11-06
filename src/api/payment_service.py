@@ -5,6 +5,7 @@ from datetime import datetime, timedelta
 from sqlalchemy.exc import IntegrityError
 
 from src.api.models import db, Player, PlayerPayment
+from src.api.payment_charge_helpers import exceeds_max_money
 from src.api.time_utils import get_club_today
 
 
@@ -220,6 +221,7 @@ def get_player_monthly_configuration_issue(
         if (
             not math.isfinite(normalized_monthly_fee)
             or normalized_monthly_fee <= 0
+            or exceeds_max_money(normalized_monthly_fee)
         ):
             reason = "invalid_monthly_fee"
         elif not player.enrollment_date:
@@ -906,7 +908,11 @@ def sync_club_monthly_payments(
 
         monthly_fee = float(monthly_fee or 0)
 
-        if not math.isfinite(monthly_fee) or monthly_fee <= 0:
+        if (
+            not math.isfinite(monthly_fee)
+            or monthly_fee <= 0
+            or exceeds_max_money(monthly_fee)
+        ):
             continue
 
         created_count += sync_player_monthly_payments(

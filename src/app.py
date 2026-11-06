@@ -5,6 +5,8 @@ from flask import Flask, request, jsonify, send_from_directory
 from flask_migrate import Migrate
 from flask_jwt_extended import JWTManager, get_jwt
 from flask_cors import CORS
+from werkzeug.exceptions import HTTPException
+from werkzeug.middleware.proxy_fix import ProxyFix
 from src.api.extensions import bcrypt
 
 load_dotenv()
@@ -16,6 +18,13 @@ from src.api.models import db, User, TokenBlockedList
 from src.api.routes import api
 from src.api.admin import is_flask_admin_enabled, setup_admin
 from src.api.commands import setup_commands
+from src.api.request_validation import (
+    ApiRequest,
+    InputValidationError,
+    register_column_limit_guard,
+    validate_json_body,
+)
+from src.api.upload_utils import MAX_UPLOAD_REQUEST_SIZE
 
 # -------------------------------------------------------------------
 # CREATE APP
@@ -44,6 +53,19 @@ else:
 
 app = Flask(__name__)
 app.url_map.strict_slashes = False
+app.request_class = ApiRequest
+
+# Tope de cualquier request: la imagen más grande admitida (jugadora) más
+# margen para multipart. El logo del club comparte este tope y conserva su
+# propio límite, menor.
+app.config["MAX_CONTENT_LENGTH"] = MAX_UPLOAD_REQUEST_SIZE
+
+# Proxies de confianza que añaden X-Forwarded-For delante de la app. Con 0 la
+# IP del cliente es la de la conexión directa (ver .env.example).
+trusted_proxy_count = int(os.getenv("TRUSTED_PROXY_COUNT") or 0)
+
+if trusted_proxy_count > 0:
+    app.wsgi_app = ProxyFix(app.wsgi_app, x_for=trusted_proxy_count)
 
 bcrypt.init_app(app)  
 # -------------------------------------------------------------------
@@ -102,6 +124,7 @@ app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 
 MIGRATE = Migrate(app, db, compare_type=True)
 db.init_app(app)
+register_column_limit_guard(db.session)
 
 # -------------------------------------------------------------------
 # BLUEPRINTS & ADMIN
@@ -113,6 +136,7 @@ if is_flask_admin_enabled():
 
 setup_commands(app)
 app.register_blueprint(api, url_prefix='/api')
+app.before_request(validate_json_body)
 
 
 @app.route('/api/<path:path>', methods=['GET', 'POST'])
@@ -129,6 +153,65 @@ def api_not_found(path):
 @app.errorhandler(APIException)
 def handle_invalid_usage(error):
     return jsonify(error.to_dict()), error.status_code
+
+@app.errorhandler(InputValidationError)
+def handle_input_validation_error(error):
+    db.session.rollback()
+    return jsonify(error.to_dict()), error.status_code
+
+# -------------------------------------------------------------------
+# HTTP ERRORS (Werkzeug)
+# -------------------------------------------------------------------
+HTTP_ERRORS = {
+    400: ("BAD_REQUEST", "La solicitud no es válida."),
+    401: ("UNAUTHORIZED", "Debes iniciar sesión para continuar."),
+    403: ("FORBIDDEN", "No tienes permisos para realizar esta acción."),
+    404: ("NOT_FOUND", "Recurso no encontrado"),
+    405: ("METHOD_NOT_ALLOWED", "Método no permitido para este recurso."),
+    413: (
+        "PAYLOAD_TOO_LARGE",
+        "La solicitud supera el tamaño máximo permitido."
+    ),
+    415: (
+        "UNSUPPORTED_MEDIA_TYPE",
+        "El contenido de la solicitud debe enviarse como JSON."
+    ),
+    429: (
+        "RATE_LIMITED",
+        "Demasiados intentos. Espera unos minutos e inténtalo de nuevo."
+    ),
+}
+
+
+@app.errorhandler(HTTPException)
+def handle_http_exception(error):
+    """
+    Los errores HTTP de Werkzeug (JSON malformado, 404, 405, 413...)
+    conservan su estado y responden con el contrato JSON del API.
+    """
+
+    if error.code is None or error.code >= 500:
+        return handle_unexpected_error(error)
+
+    db.session.rollback()
+
+    code, message = HTTP_ERRORS.get(
+        error.code,
+        ("HTTP_ERROR", "No se pudo procesar la solicitud.")
+    )
+    response = jsonify({
+        "error": True,
+        "message": message,
+        "code": code
+    })
+    response.status_code = error.code
+
+    # Conserva cabeceras como Allow (405) o Retry-After (429).
+    for header, value in error.get_headers():
+        if header.lower() != "content-type":
+            response.headers[header] = value
+
+    return response
 
 # -------------------------------------------------------------------
 # GLOBAL EXCEPTION HANDLER (Production Safety Net)
@@ -166,6 +249,7 @@ def serve_any_other_file(path):
     receipts_dir = os.path.realpath(
         os.path.join(static_file_dir, 'uploads', 'receipts')
     )
+    uploads_dir = os.path.realpath(os.path.join(static_file_dir, 'uploads'))
     requested_file = os.path.realpath(os.path.join(static_file_dir, path))
 
     if (
@@ -194,6 +278,11 @@ def serve_any_other_file(path):
         path = 'index.html'
     response = send_from_directory(static_file_dir, path)
     response.cache_control.max_age = 0
+
+    # Lo subido por usuarios se sirve solo con el tipo de su extensión.
+    if requested_file.lower().startswith(uploads_dir.lower() + os.sep):
+        response.headers["X-Content-Type-Options"] = "nosniff"
+
     return response
 
 # -------------------------------------------------------------------

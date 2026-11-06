@@ -1,5 +1,20 @@
 import os
+import re
+from html import escape
+
 import resend
+
+
+def _html(value):
+    """Escapa un valor dinámico antes de interpolarlo en el HTML del correo."""
+    return escape(str(value), quote=True)
+
+
+def _single_line(value):
+    """Texto apto para cabeceras: sin saltos de línea ni caracteres de control."""
+    return " ".join(
+        re.sub(r"[\x00-\x1f\x7f\x85\u2028\u2029]", " ", str(value)).split()
+    )
 
 
 def send_password_reset_email(
@@ -19,7 +34,8 @@ def send_password_reset_email(
 
     resend.api_key = api_key
 
-    safe_name = recipient_name or "usuario"
+    safe_name = _html(recipient_name or "usuario")
+    safe_reset_url = _html(reset_url)
 
     html_content = f"""
     <!DOCTYPE html>
@@ -114,7 +130,7 @@ def send_password_reset_email(
                           "
                         >
                           <a
-                            href="{reset_url}"
+                            href="{safe_reset_url}"
                             style="
                               display: inline-block;
                               padding: 13px 22px;
@@ -175,7 +191,7 @@ def send_password_reset_email(
     """
 
     resend.Emails.send({
-        "from": f"{from_name} <{from_email}>",
+        "from": f"{_single_line(from_name)} <{from_email}>",
         "to": [recipient_email],
         "subject": "Restablece tu contraseña de SportFlow",
         "html": html_content,
@@ -200,8 +216,12 @@ def send_welcome_email(
 
     resend.api_key = api_key
 
-    safe_name = recipient_name or "usuario"
-    safe_club_name = club_name or "tu club"
+    club_name = _single_line(club_name or "") or "tu club"
+    safe_name = _html(recipient_name or "usuario")
+    safe_club_name = _html(club_name)
+    safe_recipient_email = _html(recipient_email)
+    safe_temporary_password = _html(temporary_password)
+    safe_login_url = _html(login_url)
 
     html_content = f"""
     <!DOCTYPE html>
@@ -319,7 +339,7 @@ def send_welcome_email(
                             font-size: 14px;
                           ">
                             <strong>Correo:</strong>
-                            {recipient_email}
+                            {safe_recipient_email}
                           </p>
 
                           <p style="
@@ -337,7 +357,7 @@ def send_welcome_email(
                               font-family: monospace;
                               color: #0f172a;
                             ">
-                              {temporary_password}
+                              {safe_temporary_password}
                             </span>
                           </p>
                         </td>
@@ -358,7 +378,7 @@ def send_welcome_email(
                           "
                         >
                           <a
-                            href="{login_url}"
+                            href="{safe_login_url}"
                             style="
                               display: inline-block;
                               padding: 13px 22px;
@@ -429,8 +449,8 @@ def send_welcome_email(
     """
 
     resend.Emails.send({
-        "from": f"{from_name} <{from_email}>",
+        "from": f"{_single_line(from_name)} <{from_email}>",
         "to": [recipient_email],
-        "subject": f"Bienvenido a SportFlow — {safe_club_name}",
+        "subject": f"Bienvenido a SportFlow — {club_name}",
         "html": html_content,
     })

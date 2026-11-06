@@ -33,6 +33,22 @@ export const errorMessages = {
   NETWORK_ERROR: "Error de conexión. Intenta nuevamente.",
   SESSION_EXPIRED: "Tu sesión expiró. Inicia sesión nuevamente.",
 
+  // REQUEST / VALIDACIÓN GENERAL
+  BAD_REQUEST: "La solicitud no es válida.",
+  UNAUTHORIZED: "Debes iniciar sesión para continuar.",
+  NOT_FOUND: "Recurso no encontrado",
+  METHOD_NOT_ALLOWED: "Esta acción no está disponible.",
+  PAYLOAD_TOO_LARGE: "La información enviada supera el tamaño permitido.",
+  UNSUPPORTED_MEDIA_TYPE: "La información enviada no tiene un formato válido.",
+  HTTP_ERROR: "No se pudo procesar la solicitud.",
+  INVALID_JSON_BODY: "La información enviada no tiene un formato válido.",
+  INVALID_FIELD_TYPE: "Uno de los campos tiene un formato inválido.",
+  FIELD_TOO_LONG: "Uno de los textos supera la longitud máxima permitida.",
+  NUMBER_OUT_OF_RANGE:
+    "Uno de los valores numéricos está fuera del rango permitido.",
+  RATE_LIMITED:
+    "Demasiados intentos. Espera unos minutos e inténtalo de nuevo.",
+
   // CLIENTS / GENERAL FORM
   FULL_NAME_REQUIRED: "El nombre es obligatorio",
   EMAIL_REQUIRED: "El email es obligatorio",
@@ -70,6 +86,7 @@ export const errorMessages = {
   // LOGIN / PASSWORD
   PASSWORD_REQUIRED: "La contraseña es obligatoria",
   PASSWORD_TOO_SHORT: "Debe tener al menos 8 caracteres",
+  PASSWORD_TOO_LONG: "La contraseña es demasiado larga",
   CONFIRM_PASSWORD_REQUIRED: "Confirma tu contraseña",
   PASSWORDS_NOT_MATCH: "Las contraseñas no coinciden",
   FIRST_LOGIN_ALREADY_COMPLETED:
@@ -290,6 +307,8 @@ export const errorMessages = {
   INVALID_RECEPTION_STATS: "Las recepciones no cuadran",
   INVALID_SERVE_STATS: "Los saques no cuadran",
   INVALID_BLOCK_STATS: "Los bloqueos no cuadran",
+  INVALID_SUMMARY_STAT_VALUE:
+    "Las estadísticas deben ser números enteros iguales o mayores que 0",
   INVALID_POSITION: "Posición inválida",
   POSITION_REQUIRED: "Define la posición de las jugadoras que van a jugar",
 

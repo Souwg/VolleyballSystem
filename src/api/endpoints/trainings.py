@@ -10,6 +10,7 @@ from src.api.coach_access import (
     get_team_assignment_error,
 )
 from src.api.models import db, Team, TrainingAuditEvent, TrainingSession
+from src.api.request_validation import InputValidationError, text_field
 from src.api.season_service import (
     get_active_season_for_club,
     get_team_operation_error,
@@ -268,7 +269,7 @@ def create_training():
     date = body.get("date")
     start_time = body.get("start_time")
     end_time = body.get("end_time")
-    location = body.get("location")
+    location = text_field(body, "location")
 
     # ✅ VALIDACIONES VAN AQUÍ
     if not team_id:
@@ -775,6 +776,9 @@ def correct_training_metadata(training_id):
 
     try:
         db.session.commit()
+    except InputValidationError:
+        db.session.rollback()
+        raise
     except Exception:
         db.session.rollback()
         return error_response(
@@ -869,6 +873,9 @@ def reactivate_training(training_id):
 
     try:
         db.session.commit()
+    except InputValidationError:
+        db.session.rollback()
+        raise
     except Exception:
         db.session.rollback()
         return error_response(

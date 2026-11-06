@@ -1462,13 +1462,20 @@ def update_match_status(match_id):
     body = request.get_json() or {}
     players = body.get("players")
 
-    if not players:
+    if not isinstance(players, list) or not players:
         return error_response("Lista requerida", "MATCH_STATUS_REQUIRED", 400)
 
     planned_updates = []
     has_any_real_change = False
 
     for item in players:
+        if not isinstance(item, dict):
+            return error_response(
+                "Estado inválido",
+                "INVALID_MATCH_STATUS",
+                400
+            )
+
         match_player_id = item.get("match_player_id")
         status = item.get("attendance_status")
         position_was_provided = "position" in item
@@ -1882,6 +1889,16 @@ def save_starting_lineup(match_id):
         return error_response(
             "Debes seleccionar las jugadoras iniciales",
             "STARTING_LINEUP_REQUIRED",
+            400
+        )
+
+    if not isinstance(players, list) or not all(
+        isinstance(match_player_id, str)
+        for match_player_id in players
+    ):
+        return error_response(
+            "Una o más jugadoras no pertenecen a este partido",
+            "INVALID_STARTING_LINEUP",
             400
         )
 
