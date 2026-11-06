@@ -206,6 +206,8 @@ export const errorMessages = {
   INVALID_TOURNAMENT_DATE_RANGE:
     "La fecha de finalización no puede ser anterior a la fecha de inicio",
   INVALID_TOURNAMENT_STATUS: "Estado de torneo inválido",
+  TOURNAMENT_HAS_PENDING_CHARGES:
+    "El torneo tiene cargos de inscripción pendientes. Cóbralos o cancélalos antes de cancelar el torneo.",
   INVALID_AMOUNT: "Ingresa un monto válido",
   TOURNAMENT_TEAM_NOT_FOUND: "Participación de torneo no encontrada",
   TEAM_ALREADY_IN_TOURNAMENT: "Este equipo ya está inscrito en el torneo",

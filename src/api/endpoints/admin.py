@@ -429,10 +429,10 @@ def create_client():
             "el correo de bienvenida."
         )
 
+        # Solo el id opaco: ni el email ni la contraseña temporal van al log.
         current_app.logger.exception(
-            "No se pudo enviar el correo de bienvenida "
-            "al cliente %s",
-            new_user.email,
+            "No se pudo enviar el correo de bienvenida al usuario %s",
+            new_user.id,
             exc_info=error
         )
 

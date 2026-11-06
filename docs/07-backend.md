@@ -185,6 +185,47 @@ El backend implementa diferentes mecanismos de seguridad:
 - Validación de permisos.
 - Protección de rutas privadas.
 
+### Recibos privados
+
+- Los PDF nuevos se guardan en `PRIVATE_RECEIPT_ROOT`, fuera de `public/`
+  (por defecto `instance/receipts` del proyecto). La app no arranca si esa
+  ruta queda dentro de `public/`.
+- Solo se entregan por dos endpoints: `GET /api/payment-receipts/<id>/pdf`
+  (JWT, permiso de finanzas y recibo del club) y el enlace público firmado
+  `GET /api/payment-receipts/public/<token>`.
+- Los PDF emitidos antes siguen en `public/uploads/receipts` y no se mueven:
+  los endpoints los leen como respaldo y Flask rechaza cualquier acceso
+  estático a esa carpeta (mayúsculas, `//`, `./`, `..`, separadores
+  codificados y la identidad del directorio).
+- Si Nginx sirve `/uploads` directamente debe excluir `/uploads/receipts`;
+  esa configuración no está en el repositorio y no se ha verificado.
+
+### Cabeceras HTTP y CORS
+
+- Todas las respuestas llevan `X-Content-Type-Options: nosniff`,
+  `Referrer-Policy: same-origin` y una CSP mínima
+  (`frame-ancestors 'none'; base-uri 'self'; form-action 'self'`).
+- Una CSP completa queda pendiente: la SPA usa `style-loader` (estilos
+  inline), Bootstrap y Popper desde jsDelivr, Font Awesome desde cdnjs,
+  Google Fonts e imágenes `blob:`, y el origen de la API depende de
+  `REACT_APP_BACKEND_URL`, que debe confirmarse en producción.
+- HSTS se configura donde termina HTTPS (Nginx/Cloudflare), no en Flask.
+- CORS solo acepta los orígenes de `CORS_ALLOWED_ORIGINS` o, sin esa
+  variable, el de `FRONTEND_URL`. No se habilitan credenciales: el JWT viaja
+  en `Authorization`. Si la SPA se sirve desde más de un origen sin
+  redirección (por ejemplo con y sin `www`) y llama a la API en otro, todos
+  esos orígenes deben figurar en `CORS_ALLOWED_ORIGINS`.
+
+### Logs
+
+- Los registros con traceback conservan la clase, el contexto SQL sin valores
+  y los frames, pero no el mensaje de la excepción (puede traer datos del
+  usuario). Las sentencias SQL se registran sin parámetros
+  (`hide_parameters`).
+- Los logs de acceso del servidor (Gunicorn/Nginx) pueden incluir la URL del
+  enlace público de recibos y del restablecimiento de contraseña, que llevan
+  un token: su configuración está fuera del repositorio.
+
 ---
 
 ## 11. Buenas prácticas

@@ -23,6 +23,7 @@ from src.api.season_service import (
     get_season_structure_operation_error,
     get_team_membership_operation_error,
     lock_active_season_for_operation,
+    lock_team_lifecycle,
     resolve_season_for_read,
 )
 from src.api.utils import error_response, get_current_user
@@ -282,9 +283,27 @@ def update_team(team_id):
             403
         )
 
+    # Con la fila del equipo bloqueada, editarlo y archivarlo no se solapan.
+    team = lock_team_lifecycle(team.id, user.club_id, exclusive=True)
+
+    if not team:
+        return error_response(
+            "Equipo no encontrado",
+            "TEAM_NOT_FOUND",
+            404
+        )
+
     season_error = get_season_structure_operation_error(team.season)
     if season_error:
         return error_response(*season_error)
+
+    # Un equipo archivado queda congelado: se consulta, pero no se edita.
+    if team.status == "archived":
+        return error_response(
+            "El equipo está archivado y no admite cambios",
+            "TEAM_ARCHIVED",
+            409
+        )
 
     body = request.get_json() or {}
 

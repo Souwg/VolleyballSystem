@@ -844,7 +844,7 @@ def test_coach_cannot_reach_payments_or_receipts(
 def test_owner_and_staff_keep_receipts(
     client, world, auth_headers, match_factory, monkeypatch, user_key
 ):
-    # El recibo real escribe un PDF en public/uploads: aquí no se genera el archivo.
+    # El recibo real genera un PDF: aquí no se genera el archivo.
     monkeypatch.setattr(
         receipt_service,
         "write_receipt_pdf_atomic",

@@ -873,7 +873,7 @@ def test_delete_only_closes_the_requested_relation(client, world, auth_headers):
 
 @pytest.mark.parametrize(
     "scenario",
-    ["team_archived", "season_closed", "coach_inactive", "role_changed"],
+    ["team_archived", "coach_inactive", "role_changed"],
 )
 def test_delete_is_allowed_in_any_administrative_state(
     client, world, auth_headers, scenario
@@ -883,8 +883,6 @@ def test_delete_is_allowed_in_any_administrative_state(
 
     if scenario == "team_archived":
         world.team_a.status = "archived"
-    elif scenario == "season_closed":
-        world.season_a.status = "closed"
     elif scenario == "coach_inactive":
         coach.is_active = False
     else:
@@ -900,6 +898,23 @@ def test_delete_is_allowed_in_any_administrative_state(
     assert response.get_json()["removed"] is True
     db.session.expire_all()
     assert db.session.get(TeamCoachAssignment, assignment.id).removed_at
+
+
+def test_delete_in_closed_season_keeps_history(client, world, auth_headers):
+    # Una temporada cerrada es historial: su cuerpo técnico no se modifica.
+    coach = _coach(world, "Historial")
+    assignment = _assignment(world, coach=coach)
+    world.season_a.status = "closed"
+    db.session.commit()
+
+    response = _delete(
+        client, auth_headers, world.owner_a, world.team_a, coach.id
+    )
+
+    assert response.status_code == 409
+    assert response.get_json()["code"] == "SEASON_CLOSED"
+    db.session.expire_all()
+    assert db.session.get(TeamCoachAssignment, assignment.id).removed_at is None
 
 
 def test_reassign_creates_new_row_and_keeps_history(

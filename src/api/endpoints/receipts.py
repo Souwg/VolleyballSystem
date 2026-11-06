@@ -1,5 +1,3 @@
-import os
-
 from flask import jsonify, request, send_file, url_for
 from flask_jwt_extended import jwt_required
 from itsdangerous import BadSignature, SignatureExpired
@@ -206,6 +204,52 @@ def repair_payment_receipt_pdf(receipt_id):
     }), 200
 
 
+@api.route("/payment-receipts/<string:receipt_id>/pdf", methods=["GET"])
+@jwt_required()
+def download_payment_receipt_pdf(receipt_id):
+    user, user_error = _get_receipt_sharing_user()
+
+    if user_error:
+        return user_error
+
+    receipt = _get_receipt_for_club(receipt_id, user.club_id)
+
+    if not receipt:
+        return error_response(
+            "Recibo no encontrado",
+            "RECEIPT_NOT_FOUND",
+            404
+        )
+
+    try:
+        ensure_receipt_pdf(receipt)
+    except PaymentReceiptPdfError as error:
+        db.session.rollback()
+        return error_response(
+            error.message,
+            error.code,
+            error.status_code
+        )
+
+    receipt_pdf_path = get_receipt_pdf_path(receipt)
+
+    if not receipt_pdf_path:
+        return error_response(
+            "Recibo no encontrado",
+            "RECEIPT_NOT_FOUND",
+            404
+        )
+
+    response = send_file(
+        receipt_pdf_path,
+        mimetype="application/pdf",
+        download_name=f"{receipt.receipt_number}.pdf"
+    )
+    response.cache_control.no_store = True
+    response.cache_control.private = True
+    return response
+
+
 def _public_receipt_not_found():
     # Solo los enlaces inválidos consumen el límite de la IP.
     record_attempt(PUBLIC_RECEIPT_RULE, client_ip())
@@ -235,9 +279,9 @@ def get_public_payment_receipt(token):
     if not receipt or receipt.status != "issued":
         return _public_receipt_not_found()
 
-    receipt_pdf_path = get_receipt_pdf_path(receipt) if receipt else None
+    receipt_pdf_path = get_receipt_pdf_path(receipt)
 
-    if not receipt_pdf_path or not os.path.isfile(receipt_pdf_path):
+    if not receipt_pdf_path:
         return _public_receipt_not_found()
 
     try:

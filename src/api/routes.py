@@ -2,9 +2,6 @@
 This module takes care of starting the API Server, Loading the DB and Adding the endpoints
 """
 from src.api.api_blueprint import api
-from flask_cors import CORS
-
-CORS(api)
 
 from src.api.endpoints import categories as _categories
 from src.api.endpoints import teams as _teams

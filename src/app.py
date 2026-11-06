@@ -1,6 +1,8 @@
 import os
+import posixpath
 from dotenv import load_dotenv
 from datetime import timedelta
+from urllib.parse import urlsplit
 from flask import Flask, request, jsonify, send_from_directory
 from flask_migrate import Migrate
 from flask_jwt_extended import JWTManager, get_jwt
@@ -18,6 +20,7 @@ from src.api.models import db, User, TokenBlockedList
 from src.api.routes import api
 from src.api.admin import is_flask_admin_enabled, setup_admin
 from src.api.commands import setup_commands
+from src.api.log_safety import ExceptionMessageRedactor
 from src.api.request_validation import (
     ApiRequest,
     InputValidationError,
@@ -54,6 +57,9 @@ else:
 app = Flask(__name__)
 app.url_map.strict_slashes = False
 app.request_class = ApiRequest
+# Los logs con traceback conservan clase, contexto y frames, sin el mensaje
+# de la excepción (puede traer valores del usuario). Ver log_safety.
+app.logger.addFilter(ExceptionMessageRedactor())
 
 # Tope de cualquier request: la imagen más grande admitida (jugadora) más
 # margen para multipart. El logo del club comparte este tope y conserva su
@@ -67,11 +73,62 @@ trusted_proxy_count = int(os.getenv("TRUSTED_PROXY_COUNT") or 0)
 if trusted_proxy_count > 0:
     app.wsgi_app = ProxyFix(app.wsgi_app, x_for=trusted_proxy_count)
 
+# Los PDF de recibos se guardan fuera de public/ y solo se entregan por la API.
+# En producción debe apuntar a un volumen persistente (ver .env.example).
+project_root = os.path.realpath(
+    os.path.join(os.path.dirname(os.path.realpath(__file__)), "..")
+)
+private_receipt_root = os.path.realpath(os.path.join(
+    project_root,
+    (os.getenv("PRIVATE_RECEIPT_ROOT") or "").strip()
+    or os.path.join("instance", "receipts")
+))
+public_root = os.path.realpath(static_file_dir)
+
+if os.path.commonpath([private_receipt_root, public_root]) == public_root:
+    raise RuntimeError("PRIVATE_RECEIPT_ROOT no puede estar dentro de public/")
+
+app.config["PRIVATE_RECEIPT_ROOT"] = private_receipt_root
+
+if ENV != "development" and not (os.getenv("PRIVATE_RECEIPT_ROOT") or "").strip():
+    app.logger.warning(
+        "PRIVATE_RECEIPT_ROOT no está definido: los recibos se guardan en %s",
+        private_receipt_root
+    )
+
 bcrypt.init_app(app)  
 # -------------------------------------------------------------------
-# CORS — THIS FIXES YOUR ERROR
+# CORS
 # -------------------------------------------------------------------
-CORS(app, resources={r"/api/*": {"origins": "*"}}, supports_credentials=True)
+def parse_allowed_origins(value):
+    origins = []
+
+    for entry in (value or "").split(","):
+        parts = urlsplit(entry.strip())
+
+        if (
+            parts.scheme.lower() in ("http", "https")
+            and parts.netloc
+            and "@" not in parts.netloc
+        ):
+            origins.append(
+                f"{parts.scheme.lower()}://{parts.netloc.lower()}"
+            )
+
+    return origins
+
+
+# Solo orígenes explícitos: CORS_ALLOWED_ORIGINS (separados por coma) o, sin
+# esa variable, el origen de FRONTEND_URL. El JWT viaja en la cabecera
+# Authorization, así que no se habilitan credenciales (cookies).
+cors_allowed_origins = parse_allowed_origins(
+    os.getenv("CORS_ALLOWED_ORIGINS") or os.getenv("FRONTEND_URL")
+)
+CORS(
+    app,
+    resources={r"/api/*": {"origins": cors_allowed_origins}},
+    supports_credentials=False
+)
 
 # -------------------------------------------------------------------
 # JWT CONFIG
@@ -121,6 +178,8 @@ else:
     app.config['SQLALCHEMY_DATABASE_URI'] = "sqlite:////tmp/test.db"
 
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
+# Los errores SQL no incluyen los valores enlazados (emails, contraseñas...).
+app.config['SQLALCHEMY_ENGINE_OPTIONS'] = {"hide_parameters": True}
 
 MIGRATE = Migrate(app, db, compare_type=True)
 db.init_app(app)
@@ -226,14 +285,43 @@ def handle_unexpected_error(error):
     # Muy importante: si algo falló en medio de una transacción
     db.session.rollback()
 
-    # Log interno (para que en consola / docker logs sí veas el error real)
-    app.logger.exception("Unhandled exception:", exc_info=error)
+    # Log interno sin cuerpo, cabeceras ni la URL concreta (puede llevar
+    # tokens): bastan el método y la ruta registrada.
+    route = request.url_rule.rule if request.url_rule else "sin ruta"
+    app.logger.exception(
+        "Unhandled exception en %s %s",
+        request.method,
+        route,
+        exc_info=error
+    )
 
     return jsonify({
         "error": True,
         "message": "Ocurrió un error interno",
         "code": "INTERNAL_ERROR"
     }), 500
+
+# -------------------------------------------------------------------
+# SECURITY HEADERS
+# -------------------------------------------------------------------
+# CSP mínima que no rompe la SPA: sin framing ni <base>/<form> hacia otros
+# orígenes. Una política completa (script/style/connect) necesita conocer los
+# orígenes reales de producción y queda pendiente.
+SECURITY_HEADERS = {
+    "X-Content-Type-Options": "nosniff",
+    "Referrer-Policy": "same-origin",
+    "Content-Security-Policy": (
+        "frame-ancestors 'none'; base-uri 'self'; form-action 'self'"
+    ),
+}
+
+
+@app.after_request
+def set_security_headers(response):
+    for header, value in SECURITY_HEADERS.items():
+        response.headers.setdefault(header, value)
+
+    return response
 
 # -------------------------------------------------------------------
 # SITEMAP & STATIC
@@ -244,18 +332,58 @@ def sitemap():
         return generate_sitemap(app)
     return send_from_directory(static_file_dir, 'index.html')
 
-@app.route('/<path:path>', methods=['GET'])
-def serve_any_other_file(path):
+def is_private_upload_path(path):
+    """
+    Los recibos legacy de public/uploads/receipts nunca se sirven como
+    estáticos. Además de la ruta normalizada sin distinguir mayúsculas, se
+    compara la identidad de cada directorio con la carpeta de recibos: en un
+    sistema de archivos que no distingue mayúsculas o que normaliza Unicode,
+    una variante del nombre resuelve al mismo directorio sin coincidir como texto.
+    """
+    normalized = posixpath.normpath("/" + path.replace("\\", "/")).casefold()
+
+    if (
+        normalized == "/uploads/receipts"
+        or normalized.startswith("/uploads/receipts/")
+    ):
+        return True
+
     receipts_dir = os.path.realpath(
         os.path.join(static_file_dir, 'uploads', 'receipts')
     )
-    uploads_dir = os.path.realpath(os.path.join(static_file_dir, 'uploads'))
     requested_file = os.path.realpath(os.path.join(static_file_dir, path))
 
     if (
-        requested_file == receipts_dir
-        or requested_file.startswith(receipts_dir + os.sep)
+        requested_file.casefold() == receipts_dir.casefold()
+        or requested_file.casefold().startswith(
+            receipts_dir.casefold() + os.sep
+        )
     ):
+        return True
+
+    if not os.path.isdir(receipts_dir):
+        return False
+
+    probe = requested_file
+
+    while True:
+        try:
+            if os.path.samefile(probe, receipts_dir):
+                return True
+        except OSError:
+            pass
+
+        parent = os.path.dirname(probe)
+
+        if parent == probe:
+            return False
+
+        probe = parent
+
+
+@app.route('/<path:path>', methods=['GET'])
+def serve_any_other_file(path):
+    if is_private_upload_path(path):
         return jsonify({
             "error": True,
             "message": "Recibo no encontrado",
@@ -278,11 +406,6 @@ def serve_any_other_file(path):
         path = 'index.html'
     response = send_from_directory(static_file_dir, path)
     response.cache_control.max_age = 0
-
-    # Lo subido por usuarios se sirve solo con el tipo de su extensión.
-    if requested_file.lower().startswith(uploads_dir.lower() + os.sep):
-        response.headers["X-Content-Type-Options"] = "nosniff"
-
     return response
 
 # -------------------------------------------------------------------

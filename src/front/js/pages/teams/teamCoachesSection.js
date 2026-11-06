@@ -48,7 +48,7 @@ const getLifecycleNotice = (team) => {
   }
 
   if (team.season_status === "closed") {
-    return "Este equipo pertenece a una temporada cerrada: no admite nuevas asignaciones.";
+    return "Este equipo pertenece a una temporada cerrada: su cuerpo técnico se conserva como historial y no admite cambios.";
   }
 
   if (team.season_status === "planned") {
@@ -89,6 +89,8 @@ export const TeamCoachesSection = ({ team, onTeamChanged, onCoachesChange }) => 
   const canAssign =
     team.status === "active" &&
     ["active", "planned"].includes(team.season_status);
+  // Una temporada cerrada es historial: su cuerpo técnico no se modifica.
+  const canRemove = team.season_status !== "closed";
   // Una asignación solo da operación en team_assigned y con el equipo operativo.
   const canOperateTeam =
     usesTeamScope &&
@@ -199,6 +201,10 @@ export const TeamCoachesSection = ({ team, onTeamChanged, onCoachesChange }) => 
 
     if (!result.ok) {
       setErrorCode(result.code || "NETWORK_ERROR");
+
+      if (STALE_TEAM_ERRORS.includes(result.code)) {
+        await onTeamChanged();
+      }
     }
 
     await loadCoaches();
@@ -311,17 +317,19 @@ export const TeamCoachesSection = ({ team, onTeamChanged, onCoachesChange }) => 
                         {status.label}
                       </span>
 
-                      <Button
-                        type="button"
-                        variant="secondary"
-                        aria-label={`Retirar a ${coach.full_name} de este equipo`}
-                        disabled={removingCoachId !== null}
-                        onClick={() => handleRemove(coach)}
-                      >
-                        {removingCoachId === coach.user_id
-                          ? "Retirando..."
-                          : "Retirar"}
-                      </Button>
+                      {canRemove && (
+                        <Button
+                          type="button"
+                          variant="secondary"
+                          aria-label={`Retirar a ${coach.full_name} de este equipo`}
+                          disabled={removingCoachId !== null}
+                          onClick={() => handleRemove(coach)}
+                        >
+                          {removingCoachId === coach.user_id
+                            ? "Retirando..."
+                            : "Retirar"}
+                        </Button>
+                      )}
                     </div>
                   </div>
                 );

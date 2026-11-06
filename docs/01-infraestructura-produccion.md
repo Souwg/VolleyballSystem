@@ -301,6 +301,15 @@ ventana pequeña de inconsistencia entre ambos componentes.
 
 ## 11. Persistencia de archivos subidos
 
+> Los PDF de recibos nuevos ya no se guardan en `public/uploads/receipts`, sino
+> en `PRIVATE_RECEIPT_ROOT` (ver `docs/07-backend.md`). Antes de desplegar esa
+> versión hay que montar esa ruta como volumen persistente fuera de `public/` e
+> incluirla en los respaldos: el script actual solo archiva
+> `/opt/sportflow/uploads`. Sin el volumen, los PDF nuevos se pierden al
+> recrear el contenedor; la descarga autenticada y la reparación los
+> regeneran desde el snapshot, pero el enlace público responde 404 hasta
+> entonces. Los recibos anteriores siguen en `uploads/receipts`.
+
 SportFlow permite subir archivos que deben permanecer disponibles aunque el contenedor de la aplicación sea reconstruido o recreado durante un despliegue.
 
 Entre estos archivos se encuentran:

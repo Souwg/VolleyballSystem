@@ -274,7 +274,8 @@ def forgot_password():
         db.session.commit()
 
         current_app.logger.exception(
-            "No se pudo enviar el correo de recuperación",
+            "No se pudo enviar el correo de recuperación al usuario %s",
+            user.id,
             exc_info=error
         )
 

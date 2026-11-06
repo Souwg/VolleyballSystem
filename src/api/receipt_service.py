@@ -144,6 +144,12 @@ def get_receipt_link_serializer():
 
 
 def get_receipts_folder():
+    """Almacenamiento privado (fuera de public/) donde se escriben los PDF."""
+    return current_app.config["PRIVATE_RECEIPT_ROOT"]
+
+
+def get_legacy_receipts_folder():
+    """PDF emitidos antes del almacenamiento privado: solo se leen vía API."""
     return os.path.abspath(os.path.join(
         os.path.dirname(__file__),
         "../../public/uploads/receipts"
@@ -168,6 +174,8 @@ def _get_receipt_pdf_location(receipt, require_pdf_url=True):
             409
         )
 
+    # pdf_url es la referencia lógica que guarda la base desde siempre; no es
+    # una ruta servible: el archivo solo se entrega por los endpoints de recibos.
     pdf_url = f"/uploads/receipts/{filename}"
 
     if require_pdf_url and receipt.pdf_url != pdf_url:
@@ -193,13 +201,36 @@ def _get_receipt_pdf_location(receipt, require_pdf_url=True):
     return pdf_url, path
 
 
+def _get_legacy_receipt_pdf_path(receipt):
+    try:
+        pdf_url, _ = _get_receipt_pdf_location(receipt)
+    except PaymentReceiptPdfError:
+        return None
+
+    folder = os.path.realpath(get_legacy_receipts_folder())
+    path = os.path.join(folder, os.path.basename(pdf_url))
+
+    if (
+        os.path.islink(path)
+        or not os.path.isfile(path)
+        or os.path.dirname(os.path.realpath(path)) != folder
+    ):
+        return None
+
+    return path
+
+
 def get_receipt_pdf_path(receipt):
+    """PDF existente del recibo: almacenamiento privado primero, legacy después."""
     try:
         _, path = _get_receipt_pdf_location(receipt)
     except PaymentReceiptPdfError:
         return None
 
-    return path
+    if os.path.isfile(path) and not os.path.islink(path):
+        return path
+
+    return _get_legacy_receipt_pdf_path(receipt)
 
 
 def _warn_unsafe_logo(receipt, reason):
@@ -396,7 +427,7 @@ def write_receipt_pdf_atomic(receipt, allow_replace=False):
         require_pdf_url=False
     )
     receipts_folder = os.path.dirname(final_path)
-    os.makedirs(receipts_folder, exist_ok=True)
+    os.makedirs(receipts_folder, mode=0o700, exist_ok=True)
 
     if os.path.lexists(final_path):
         if os.path.islink(final_path) or not os.path.isfile(final_path):
@@ -478,7 +509,8 @@ def ensure_receipt_pdf(receipt):
     """Restaura desde el snapshot un PDF ausente sin modificar el Receipt."""
     _, final_path = _get_receipt_pdf_location(receipt)
 
-    if os.path.isfile(final_path):
+    # Un PDF legacy sigue siendo válido: no se regenera ni se mueve.
+    if os.path.isfile(final_path) or _get_legacy_receipt_pdf_path(receipt):
         return False
 
     if os.path.lexists(final_path):

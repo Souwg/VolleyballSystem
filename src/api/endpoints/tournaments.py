@@ -17,6 +17,7 @@ from src.api.coach_access import (
 )
 from src.api.finance_access import (
     FINANCE_DEPENDENCY_ERROR,
+    can_access_finance,
     can_configure_sports_finance,
     charge_blocks_roster_change,
     get_finance_access_error,
@@ -54,6 +55,16 @@ VALID_TOURNAMENT_STATUSES = [
     "completed",
     "cancelled"
 ]
+# Cancelar no toca cargos: los pagados y sus recibos se conservan. Mientras no
+# exista una regla para los pendientes, deben resolverse antes de cancelar.
+TOURNAMENT_PENDING_CHARGES_ERROR = (
+    (
+        "El torneo tiene cargos de inscripción pendientes. Cóbralos o "
+        "cancélalos antes de cancelar el torneo."
+    ),
+    "TOURNAMENT_HAS_PENDING_CHARGES",
+    409
+)
 
 def _tournament_payload(tournament, user):
     return {
@@ -93,6 +104,37 @@ def _get_tournament_team_for_update(tournament_team_id):
     return TournamentTeam.query.filter_by(
         id=tournament_team_id
     ).populate_existing().with_for_update().first()
+
+
+def _lock_tournament(tournament_id):
+    # Primer lock de todo flujo que cambie el torneo o sus filas hijas (mismo
+    # orden que _get_tournament_team_for_update). FOR NO KEY UPDATE no frena las
+    # FK que lo referencian, pero sí a quien lo complete, cancele o inscriba.
+    return Tournament.query.filter_by(
+        id=tournament_id
+    ).populate_existing().with_for_update(key_share=True).first()
+
+
+def _cancel_tournament_charges_error(tournament, user):
+    pending_charge = PlayerPayment.query.join(
+        TournamentTeam,
+        PlayerPayment.tournament_team_id == TournamentTeam.id
+    ).filter(
+        TournamentTeam.tournament_id == tournament.id,
+        PlayerPayment.club_id == tournament.club_id,
+        PlayerPayment.payment_type == "tournament",
+        PlayerPayment.match_id.is_(None),
+        PlayerPayment.status.in_(["pending", "overdue"])
+    ).first()
+
+    if not pending_charge:
+        return None
+
+    # Un coach no ve finanzas: recibe el aviso genérico de dependencias.
+    if not can_access_finance(user):
+        return FINANCE_DEPENDENCY_ERROR
+
+    return TOURNAMENT_PENDING_CHARGES_ERROR
 
 
 def _get_registration_charges_for_update(club_id, tournament_team_id):
@@ -581,6 +623,8 @@ def transition_tournament_status(tournament_id, target_status):
     if entity_error:
         return error_response(*entity_error)
 
+    tournament = _lock_tournament(tournament.id)
+
     if tournament.status == target_status:
         return jsonify({
             "message": (
@@ -597,6 +641,12 @@ def transition_tournament_status(tournament_id, target_status):
             "INVALID_TOURNAMENT_STATUS",
             409
         )
+
+    if target_status == "cancelled":
+        charges_error = _cancel_tournament_charges_error(tournament, user)
+
+        if charges_error:
+            return error_response(*charges_error)
 
     updated_count = Tournament.query.filter(
         Tournament.id == tournament.id,
@@ -692,6 +742,10 @@ def add_team_to_tournament(tournament_id):
             "FORBIDDEN",
             403
         )
+
+    # El estado se lee ya bloqueado: completar o cancelar en paralelo espera a
+    # esta inscripción, o esta ve el torneo cerrado y no inscribe.
+    tournament = _lock_tournament(tournament.id)
 
     season_error = get_season_operation_error(tournament.season)
 

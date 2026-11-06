@@ -96,3 +96,6 @@ htmlcov/
 *.dump
 *.bak
 *.backup
+
+# private local storage (receipt PDFs live outside public/)
+/instance/

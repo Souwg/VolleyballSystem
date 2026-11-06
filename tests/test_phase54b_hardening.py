@@ -642,7 +642,8 @@ def test_uploaded_files_are_served_with_nosniff(client, tmp_path, monkeypatch):
     assert upload.status_code == 200
     assert upload.headers["Content-Type"] == "image/png"
     assert upload.headers["X-Content-Type-Options"] == "nosniff"
-    assert "X-Content-Type-Options" not in page.headers
+    # Desde SEC-010 la cabecera es global, no solo de los uploads.
+    assert page.headers["X-Content-Type-Options"] == "nosniff"
 
 
 # =====================================================

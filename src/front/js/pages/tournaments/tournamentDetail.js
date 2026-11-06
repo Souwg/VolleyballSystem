@@ -317,6 +317,8 @@ export const TournamentDetail = () => {
 
       {(errors.INVALID_TOURNAMENT_STATUS ||
         errors.TOURNAMENT_NOT_ACTIVE ||
+        errors.TOURNAMENT_HAS_PENDING_CHARGES ||
+        errors.FINANCE_DEPENDENCY ||
         errors.FORBIDDEN ||
         errors.NETWORK_ERROR) && (
         <p className="form-error">

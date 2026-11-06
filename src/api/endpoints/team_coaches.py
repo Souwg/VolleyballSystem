@@ -7,6 +7,7 @@ from sqlalchemy.exc import IntegrityError
 from src.api.api_blueprint import api
 from src.api.models import db, Team, TeamCoachAssignment, User
 from src.api.season_service import (
+    get_season_operation_error,
     get_team_membership_operation_error,
     lock_team_lifecycle,
 )
@@ -204,10 +205,24 @@ def assign_team_coach(team_id):
 @api.route("/teams/<string:team_id>/coaches/<string:user_id>", methods=["DELETE"])
 @jwt_required()
 def remove_team_coach(team_id, user_id):
-    _, team, error = _owner_team_or_error(team_id)
+    user, team, error = _owner_team_or_error(team_id)
 
     if error:
         return error
+
+    team = _lock_team_lifecycle(team.id, user.club_id)
+
+    if not team:
+        return error_response(
+            "Equipo no encontrado",
+            "TEAM_NOT_FOUND",
+            404,
+        )
+
+    # Una temporada cerrada es historial: su cuerpo técnico ya no se modifica.
+    # Un equipo archivado de una temporada abierta sí admite retirar coaches.
+    if team.season and team.season.status == "closed":
+        return error_response(*get_season_operation_error(team.season))
 
     assignment = _open_assignment(
         team.id,

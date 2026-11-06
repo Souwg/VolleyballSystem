@@ -1,4 +1,5 @@
 import os
+import shutil
 import tempfile
 import uuid
 from datetime import date
@@ -11,9 +12,15 @@ TEST_DB_PATH = os.path.join(
     tempfile.gettempdir(),
     f"sportflow_pytest_{uuid.uuid4().hex}.db",
 )
+TEST_RECEIPTS_DIR = os.path.join(
+    tempfile.gettempdir(),
+    f"sportflow_pytest_receipts_{uuid.uuid4().hex}",
+)
 os.environ["APP_ENV"] = "development"
 os.environ["DATABASE_URL"] = f"sqlite:///{TEST_DB_PATH}"
 os.environ["TOKEN_SECRET"] = "sportflow-pytest-secret-123456789"
+os.environ["PRIVATE_RECEIPT_ROOT"] = TEST_RECEIPTS_DIR
+os.environ["CORS_ALLOWED_ORIGINS"] = "http://localhost:3000"
 
 from flask_jwt_extended import create_access_token
 
@@ -66,6 +73,8 @@ def app():
         os.remove(TEST_DB_PATH)
     except FileNotFoundError:
         pass
+
+    shutil.rmtree(TEST_RECEIPTS_DIR, ignore_errors=True)
 
 
 @pytest.fixture(autouse=True)
