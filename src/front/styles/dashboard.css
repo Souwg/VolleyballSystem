@@ -1,6 +1,7 @@
 .dashboard-page {
   width: 100%;
   min-width: 0;
+  --color-muted: #475569;
 }
 
 .dashboard-header {
@@ -78,6 +79,16 @@
   outline-offset: 3px;
 }
 
+.dashboard-section-heading > .dashboard-link,
+.dashboard-panel-heading > .dashboard-link,
+.dashboard-attention-list .dashboard-link,
+.dashboard-organization-list .dashboard-link {
+  min-height: 44px;
+  display: inline-flex;
+  align-items: center;
+  flex-shrink: 0;
+}
+
 .dashboard-link-primary {
   width: 100%;
   min-height: 44px;
@@ -146,7 +157,6 @@
 
 .dashboard-attention-card {
   padding: 4px 16px;
-  border-left: 4px solid var(--color-warning);
   box-shadow: none;
 }
 
@@ -178,13 +188,52 @@
 .dashboard-attention-list li > div {
   min-width: 0;
   display: flex;
-  align-items: baseline;
-  gap: 8px;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 4px;
 }
 
 .dashboard-attention-list li > div strong {
-  color: var(--color-warning-dark, #92400e);
   font-size: var(--font-size-lg);
+}
+
+.dashboard-attention-list li {
+  padding-left: 10px;
+  border-left: 3px solid transparent;
+}
+
+.dashboard-attention-list li.dashboard-attention-urgent {
+  border-left-color: #dc2626;
+}
+
+.dashboard-attention-list li.dashboard-attention-pending {
+  border-left-color: var(--color-warning);
+}
+
+.dashboard-attention-list li.dashboard-attention-info {
+  border-left-color: var(--color-primary);
+}
+
+.dashboard-attention-urgent > div strong {
+  color: #b91c1c;
+}
+
+.dashboard-attention-pending > div strong {
+  color: var(--color-warning-dark, #92400e);
+}
+
+.dashboard-attention-info > div strong {
+  color: var(--color-primary);
+}
+
+.dashboard-attention-priority {
+  padding: 2px 6px;
+  border-radius: 999px;
+  background: var(--color-surface-soft);
+  color: var(--color-muted);
+  font-size: var(--font-size-xs);
+  font-weight: var(--font-weight-bold);
+  line-height: 1.3;
 }
 
 .dashboard-attention-list li > div span,
@@ -192,6 +241,12 @@
   color: var(--color-text);
   font-size: var(--font-size-sm);
   line-height: 1.4;
+}
+
+.dashboard-attention-list li > div .dashboard-attention-priority {
+  color: var(--color-muted);
+  font-size: var(--font-size-xs);
+  line-height: 1.3;
 }
 
 .dashboard-finance-grid {
@@ -285,6 +340,13 @@
   font-size: var(--font-size-sm);
 }
 
+.dashboard-record-main .dashboard-activity-type {
+  color: var(--color-primary);
+  font-weight: var(--font-weight-bold);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
 .dashboard-badge,
 .dashboard-kicker {
   display: inline-flex;
@@ -302,7 +364,7 @@
 }
 
 .dashboard-live-card {
-  margin-bottom: 12px;
+  margin-top: 12px;
   padding: 18px;
   display: flex;
   flex-direction: column;
@@ -310,6 +372,28 @@
   gap: 16px;
   border: 2px solid var(--color-primary);
   box-shadow: none;
+}
+
+.dashboard-setup-card {
+  padding: 18px;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 14px;
+  border-color: rgba(30, 58, 138, 0.28);
+  box-shadow: none;
+}
+
+.dashboard-setup-card p {
+  margin: 0;
+  color: var(--color-text);
+  font-size: var(--font-size-sm);
+  line-height: 1.5;
+}
+
+.dashboard-setup-card .dashboard-link-primary,
+.dashboard-error .dashboard-link-primary {
+  width: 100%;
 }
 
 .dashboard-live-card > div {
@@ -413,6 +497,20 @@
   margin: 0;
 }
 
+@media (max-width: 479px) {
+  .dashboard-attention-list li,
+  .dashboard-organization-list li {
+    align-items: flex-start;
+    flex-direction: column;
+    gap: 2px;
+  }
+
+  .dashboard-attention-list .dashboard-link,
+  .dashboard-organization-list .dashboard-link {
+    width: 100%;
+  }
+}
+
 @media (max-width: 359px) {
   .dashboard-today,
   .dashboard-finance-grid {
@@ -466,6 +564,11 @@
     width: auto;
     flex-shrink: 0;
   }
+
+  .dashboard-setup-card .dashboard-link-primary,
+  .dashboard-error .dashboard-link-primary {
+    width: auto;
+  }
 }
 
 @media (min-width: 768px) {
@@ -474,7 +577,7 @@
   }
 
   .dashboard-finance-grid {
-    grid-template-columns: repeat(4, minmax(0, 1fr));
+    grid-template-columns: repeat(3, minmax(0, 1fr));
     gap: 12px;
   }
 

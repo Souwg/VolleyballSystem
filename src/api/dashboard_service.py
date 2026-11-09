@@ -789,6 +789,71 @@ def _get_sports_structure(club_id, season_id, team_ids=None):
     }
 
 
+def _get_setup_continuation(club_id, season_id):
+    """Return the next structural task for an Owner, without onboarding state."""
+    category = Category.query.filter(
+        Category.club_id == club_id,
+    ).order_by(
+        Category.created_at.asc(),
+        Category.id.asc(),
+    ).first()
+
+    if not category:
+        return {
+            "step": "category",
+            "title": "Termina de preparar tu club",
+            "message": (
+                "Completa la estructura inicial para empezar a organizar "
+                "tus equipos y deportistas."
+            ),
+            "action_label": "Crear categoría",
+            "action_path": "/categories",
+        }
+
+    teams_query = Team.query.filter(
+        Team.club_id == club_id,
+        Team.season_id == season_id,
+        Team.status == "active",
+    )
+    first_team = teams_query.order_by(
+        Team.created_at.asc(),
+        Team.id.asc(),
+    ).first()
+
+    if not first_team:
+        return {
+            "step": "team",
+            "title": "Termina de preparar tu club",
+            "message": (
+                "Ya tienes una categoría. Crea el primer equipo para "
+                "continuar con la estructura deportiva."
+            ),
+            "action_label": "Crear equipo",
+            "action_path": f"/categories/{category.id}",
+        }
+
+    open_membership_exists = exists().where(and_(
+        TeamPlayer.team_id == Team.id,
+        TeamPlayer.left_at.is_(None),
+    ))
+    populated_team = teams_query.filter(open_membership_exists).first()
+
+    if populated_team:
+        return None
+
+    return {
+        "step": "player",
+        "title": "Termina de preparar tu club",
+        "message": (
+            "Tu primer equipo está listo. Agrega deportistas para empezar "
+            "a organizar su actividad."
+        ),
+        "action_label": "Agregar deportistas",
+        "action_path": f"/teams/{first_team.id}",
+        "team_id": first_team.id,
+    }
+
+
 def _get_last_official_match(club_id, today, team_ids=None):
     row = db.session.query(
         MatchSession.id,
@@ -1213,6 +1278,10 @@ def build_club_dashboard(user, club, as_of=None, active_season_id=None):
 
     if user.role == "club_owner":
         response["sections"] = {
+            "setup_continuation": _get_setup_continuation(
+                club.id,
+                active_season_id,
+            ),
             "today": {
                 **sports_today,
                 "paid_today_count": financial_summary["paid_today_count"],

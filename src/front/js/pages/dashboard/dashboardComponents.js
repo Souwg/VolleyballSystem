@@ -29,7 +29,7 @@ export const DashboardLink = ({ to, children, className = "" }) => (
 );
 
 export const DashboardEmpty = ({ title = "Todo al día", children }) => (
-  <div className="dashboard-empty" role="status">
+  <div className="dashboard-empty">
     <strong>{title}</strong>
     {children && <span>{children}</span>}
   </div>
@@ -47,12 +47,16 @@ export const DashboardToday = ({ items }) => (
   </div>
 );
 
-export const DashboardAttention = ({ items, emptyMessage }) => {
+export const DashboardAttention = ({
+  items,
+  emptyMessage,
+  emptyTitle = "Todo al día",
+}) => {
   const activeItems = items.filter((item) => Number(item.count || 0) > 0);
 
   if (activeItems.length === 0) {
     return (
-      <DashboardEmpty>
+      <DashboardEmpty title={emptyTitle}>
         {emptyMessage || "No hay acciones pendientes en este momento."}
       </DashboardEmpty>
     );
@@ -62,12 +66,27 @@ export const DashboardAttention = ({ items, emptyMessage }) => {
     <Card className="dashboard-attention-card">
       <ul className="dashboard-attention-list">
         {activeItems.map((item) => (
-          <li key={item.label}>
+          <li
+            className={`dashboard-attention-${item.tone || "pending"}`}
+            key={item.label}
+          >
             <div>
-              <strong>{item.count}</strong>
-              <span>{item.label}</span>
+              <span className="dashboard-attention-priority">
+                {item.tone === "urgent"
+                  ? "Urgente"
+                  : item.tone === "info"
+                  ? "Informativo"
+                  : "Pendiente"}
+              </span>
+              <span>
+                <strong>{item.count}</strong> {item.label}
+              </span>
             </div>
-            {item.to && <DashboardLink to={item.to}>Revisar</DashboardLink>}
+            {item.to && (
+              <DashboardLink to={item.to}>
+                {item.actionLabel || item.label}
+              </DashboardLink>
+            )}
           </li>
         ))}
       </ul>
@@ -80,19 +99,13 @@ export const DashboardFinanceSummary = ({ finance, currencyCode }) => {
     {
       label: "Deuda total",
       value: finance?.outstanding_amount,
-      detail: `${finance?.outstanding_count || 0} obligaciones`,
+      detail: `${finance?.outstanding_count || 0} cargos pendientes`,
     },
     {
       label: "Vencido",
       value: finance?.overdue_amount,
       detail: `${finance?.overdue_count || 0} pagos`,
       tone: "warning",
-    },
-    {
-      label: "Cobrado hoy",
-      value: finance?.paid_today_amount,
-      detail: `${finance?.paid_today_count || 0} pagos`,
-      tone: "success",
     },
     {
       label: "Cobrado este mes",
