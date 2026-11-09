@@ -456,6 +456,7 @@ def test_planned_season_team_is_readable_and_accepts_owner_roster_preparation(
 def test_dashboard_and_onboarding_ignore_archived_team(
     client, world, auth_headers
 ):
+    world.club_a.onboarding_finished_at = None
     world.club_a.location = "Cancha"
     _archive(client, world, auth_headers)
 

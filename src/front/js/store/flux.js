@@ -59,6 +59,7 @@ const getState = ({ getStore, getActions, setStore }) => {
       token: null,
       onboardingStatus: null,
       onboardingStep: null,
+      onboardingJustFinished: false,
       club: null,
       dashboardData: null,
       dashboardStats: null,
@@ -96,6 +97,7 @@ const getState = ({ getStore, getActions, setStore }) => {
           user: null,
           onboardingStatus: null,
           onboardingStep: null,
+          onboardingJustFinished: false,
           club: null,
           dashboardData: null,
           dashboardStats: null,
@@ -124,6 +126,7 @@ const getState = ({ getStore, getActions, setStore }) => {
             user: data.user,
             token: data.token,
             firstLogin: data.first_login,
+            onboardingJustFinished: false,
             dashboardData: null,
             dashboardStats: null,
             nextMatch: null,
@@ -209,6 +212,8 @@ const getState = ({ getStore, getActions, setStore }) => {
           token: null,
           user: null,
           onboardingStatus: null,
+          onboardingStep: null,
+          onboardingJustFinished: false,
           dashboardData: null,
           dashboardStats: null,
           nextMatch: null,
@@ -292,6 +297,7 @@ const getState = ({ getStore, getActions, setStore }) => {
           setStore({
             onboardingStatus: data.status,
             onboardingStep: data.step,
+            onboardingJustFinished: true,
           });
           applyClubToSession(data.club);
 
@@ -299,6 +305,10 @@ const getState = ({ getStore, getActions, setStore }) => {
         } catch (error) {
           return networkError("Error finishing onboarding:", error);
         }
+      },
+
+      dismissOnboardingCompletion: () => {
+        setStore({ onboardingJustFinished: false });
       },
 
       syncCoachAccess: async () => {
@@ -1136,7 +1146,6 @@ const getState = ({ getStore, getActions, setStore }) => {
           const actions = getActions();
 
           await actions.getPlayers();
-          await actions.getOnboardingStatus();
 
           return successResponse(result.data);
         } catch (error) {

@@ -1,4 +1,4 @@
-from flask import jsonify, url_for
+from flask import jsonify, request, url_for
 from flask_jwt_extended import get_jwt_identity
 from src.api.models import User
 import secrets
@@ -76,7 +76,32 @@ def get_current_user(*, allow_first_login=False):
             payload={"error": True, "code": "FIRST_LOGIN_REQUIRED"}
         )
 
+    ensure_onboarding_access(user)
+
     return user
+
+
+def ensure_onboarding_access(user):
+    """Bloquea la operación del equipo mientras el Owner configura el club."""
+    if user.role not in ("coach", "staff"):
+        return
+
+    allowed_endpoints = {
+        "api.logout",
+        "api.finish_onboarding",
+        "api.onboarding_status",
+        "api.set_password",
+    }
+
+    if request.endpoint in allowed_endpoints:
+        return
+
+    if user.club and user.club.onboarding_finished_at is None:
+        raise APIException(
+            "El dueño del club debe completar la configuración inicial.",
+            status_code=403,
+            payload={"error": True, "code": "CLUB_SETUP_PENDING"}
+        )
 
 
 def ensure_club_access(user):

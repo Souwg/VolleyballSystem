@@ -429,6 +429,7 @@ def test_dashboard_treats_closed_membership_as_no_current_team(
 
 
 def test_onboarding_counts_only_open_memberships(world):
+    world.club_a.onboarding_finished_at = None
     world.club_a.location = "Cancha principal"
     for membership in TeamPlayer.query.filter_by(team_id=world.team_a.id).all():
         membership.left_at = datetime(2026, 6, 30)

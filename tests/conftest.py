@@ -2,7 +2,7 @@ import os
 import shutil
 import tempfile
 import uuid
-from datetime import date
+from datetime import date, datetime
 from types import SimpleNamespace
 
 import pytest
@@ -120,6 +120,7 @@ def _new_club(sport, suffix):
         currency_code="USD",
         access_status="active",
         coach_access_mode="club_wide",
+        onboarding_finished_at=datetime(2026, 1, 1),
     )
     owner = User(
         id=owner_id,

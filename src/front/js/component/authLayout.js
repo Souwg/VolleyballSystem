@@ -10,6 +10,8 @@ export const AuthLayout = ({
   subtitle,
   children,
   variant = "center",
+  titleRef,
+  titleTabIndex,
 }) => {
   return (
     <div
@@ -59,7 +61,9 @@ export const AuthLayout = ({
             />
           </div>
 
-          <h2>{title}</h2>
+          <h2 ref={titleRef} tabIndex={titleTabIndex}>
+            {title}
+          </h2>
           {subtitle && <p className="auth-subtitle">{subtitle}</p>}
           {children}
         </div>

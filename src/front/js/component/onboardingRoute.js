@@ -27,7 +27,10 @@ export const OnboardingRoute = ({ children }) => {
     );
   }
 
-  if (store.onboardingStatus === "completed") {
+  if (
+    store.onboardingStatus === "completed" &&
+    !store.onboardingJustFinished
+  ) {
     return <Navigate to="/dashboard" replace />;
   }
 

@@ -556,6 +556,8 @@ def test_mode_does_not_override_lifecycle(client, world, auth_headers, mode):
 
 
 def test_club_that_never_finished_stays_pending(client, world, auth_headers):
+    world.club_a.onboarding_finished_at = None
+    db.session.commit()
     assert _status(client, auth_headers, world.owner_a)["status"] == "pending"
 
     world.club_a.location = "Cancha"
@@ -569,6 +571,8 @@ def test_club_that_never_finished_stays_pending(client, world, auth_headers):
 
 
 def test_completing_location_last_persists_finish(client, world, auth_headers):
+    world.club_a.onboarding_finished_at = None
+    db.session.commit()
     response = client.put(
         "/api/club",
         headers=auth_headers(world.owner_a),
@@ -581,6 +585,7 @@ def test_completing_location_last_persists_finish(client, world, auth_headers):
 
 
 def test_incomplete_update_does_not_persist_finish(client, world, auth_headers):
+    world.club_a.onboarding_finished_at = None
     world.team_a.status = "archived"
     db.session.commit()
 
@@ -596,6 +601,7 @@ def test_incomplete_update_does_not_persist_finish(client, world, auth_headers):
 
 
 def test_first_new_player_persists_finish(client, world, auth_headers):
+    world.club_a.onboarding_finished_at = None
     world.club_a.location = "Cancha"
     empty = _team(world, "Primer equipo")
     TeamPlayer.query.filter_by(team_id=world.team_a.id).delete()
@@ -619,6 +625,7 @@ def test_first_new_player_persists_finish(client, world, auth_headers):
 
 
 def test_first_existing_player_persists_finish(client, world, auth_headers):
+    world.club_a.onboarding_finished_at = None
     world.club_a.location = "Cancha"
     player = world.players_a[0]
     TeamPlayer.query.filter_by(team_id=world.team_a.id).delete()
@@ -636,6 +643,7 @@ def test_first_existing_player_persists_finish(client, world, auth_headers):
 
 
 def test_reactivating_team_can_finish(client, world, auth_headers):
+    world.club_a.onboarding_finished_at = None
     world.club_a.location = "Cancha"
     world.team_a.status = "archived"
     db.session.commit()
@@ -723,6 +731,9 @@ def test_finished_club_keeps_coach_player_creation(
 
 
 def test_skip_persists_and_is_idempotent(client, world, auth_headers):
+    world.club_a.onboarding_finished_at = None
+    world.club_b.onboarding_finished_at = None
+    db.session.commit()
     assert _status(client, auth_headers, world.owner_a)["status"] == "pending"
 
     first = client.post(
@@ -754,6 +765,8 @@ def test_skip_persists_and_is_idempotent(client, world, auth_headers):
 
 @pytest.mark.parametrize("user_key", ["coach_a", "staff_a", "system_admin"])
 def test_only_owner_can_skip_onboarding(client, world, auth_headers, user_key):
+    world.club_a.onboarding_finished_at = None
+    db.session.commit()
     response = client.post(
         "/api/onboarding/finish",
         headers=auth_headers(getattr(world, user_key)),
