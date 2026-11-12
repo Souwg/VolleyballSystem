@@ -1,5 +1,5 @@
-import React, { useContext, useEffect, useState } from "react";
-import { useNavigate, useParams } from "react-router-dom";
+import React, { useContext, useEffect, useRef, useState } from "react";
+import { Link, useNavigate, useParams } from "react-router-dom";
 import { Context } from "../../store/appContext";
 import { PageHeader } from "../../component/ui/pageHeader";
 import { Input } from "../../component/ui/input";
@@ -7,7 +7,10 @@ import { FormField } from "../../component/ui/formField";
 import { Select } from "../../component/ui/select";
 import { Button } from "../../component/ui/button";
 import { Card } from "../../component/ui/card";
-import { AssignedBadge } from "../../component/ui/readOnlyNotice";
+import {
+  AssignedBadge,
+  ReadOnlyNotice,
+} from "../../component/ui/readOnlyNotice";
 import { isScopedCoach } from "../../utils/coachAccess";
 import { validateTeam } from "../../utils/validators";
 import { errorMessages } from "../../utils/errorMessages";
@@ -23,10 +26,13 @@ export const CategoryDetail = () => {
   const { store, actions } = useContext(Context);
   const { category_id } = useParams();
   const navigate = useNavigate();
+  const returnFocusRef = useRef(null);
 
   const [category, setCategory] = useState(null);
   const [teams, setTeams] = useState([]);
   const [loadingCategory, setLoadingCategory] = useState(true);
+  const [loadError, setLoadError] = useState(null);
+  const [categorySeason, setCategorySeason] = useState(null);
 
   const [showForm, setShowForm] = useState(false);
   const [teamName, setTeamName] = useState("");
@@ -40,13 +46,18 @@ export const CategoryDetail = () => {
   const [loadingEditTeam, setLoadingEditTeam] = useState(false);
   const {
     loadingSeasons,
+    reloadSeasons,
     seasonId,
     seasons,
     selectedSeason,
+    seasonError,
     selectSeason,
   } = useSeasonSelection();
-  const readOnlySeason = selectedSeason?.status !== "active";
   const canManageStructure = store.user?.role === "club_owner";
+  const contextSeason = selectedSeason || categorySeason;
+  const canPrepareTeams = ["active", "planned"].includes(
+    contextSeason?.status,
+  );
   const showAssignment = isScopedCoach(store);
   // Mis equipos primero; los demás siguen visibles para consulta.
   const orderedTeams = showAssignment
@@ -84,12 +95,16 @@ export const CategoryDetail = () => {
         }
 
         setCategory(result.data.category);
+        setCategorySeason(result.data.season || null);
         setTeams(nextTeams);
+        setLoadError(null);
         return;
       }
 
       setCategory(null);
+      setCategorySeason(null);
       setTeams([]);
+      setLoadError(result.code || "HTTP_ERROR");
     } finally {
       setLoadingCategory(false);
     }
@@ -99,11 +114,11 @@ export const CategoryDetail = () => {
   }, [category_id, seasonId]);
 
   useEffect(() => {
-    if (readOnlySeason) {
+    if (!canPrepareTeams) {
       setShowForm(false);
       setEditingTeamId(null);
     }
-  }, [readOnlySeason]);
+  }, [canPrepareTeams]);
 
   const handleCreateTeam = async (e) => {
     e.preventDefault();
@@ -127,6 +142,9 @@ export const CategoryDetail = () => {
     const result = await actions.createTeamInCategory(category_id, {
       name: teamName.trim(),
       gender: teamGender,
+      ...(contextSeason?.status === "planned"
+        ? { season_id: contextSeason.id }
+        : {}),
     });
 
     if (!result.ok) {
@@ -135,10 +153,7 @@ export const CategoryDetail = () => {
       return;
     }
 
-    setTeamName("");
-    setTeamGender("");
-    setShowForm(false);
-    setErrors({});
+    closeCreateForm();
 
     await loadCategoryDetail();
 
@@ -150,9 +165,11 @@ export const CategoryDetail = () => {
     setTeamName("");
     setTeamGender("");
     setErrors({});
+    window.requestAnimationFrame(() => returnFocusRef.current?.focus());
   };
 
   const openEditTeam = (team) => {
+    returnFocusRef.current = document.activeElement;
     setShowForm(false);
     setEditingTeamId(team.id);
     setEditTeamName(team.name || "");
@@ -165,6 +182,7 @@ export const CategoryDetail = () => {
     setEditTeamName("");
     setEditTeamGender("");
     setErrors({});
+    window.requestAnimationFrame(() => returnFocusRef.current?.focus());
   };
 
   const handleUpdateTeam = async (e) => {
@@ -204,56 +222,116 @@ export const CategoryDetail = () => {
   };
 
   if (loadingCategory) {
-    return <p>Cargando categoría...</p>;
+    return <p role="status">Cargando categoría...</p>;
   }
 
   if (!category) {
-    return <p>Categoría no encontrada.</p>;
+    return (
+      <Card className="page-error-state" role="alert">
+        <p>
+          {loadError === "CATEGORY_NOT_FOUND"
+            ? "Categoría no encontrada."
+            : errorMessages[loadError] || "No se pudo cargar la categoría."}
+        </p>
+        <Button variant="secondary" onClick={loadCategoryDetail}>
+          Volver a intentar
+        </Button>
+      </Card>
+    );
   }
+
+  const teamGeneralErrorCode = Object.keys(errors).find(
+    (code) =>
+      ![
+        "TEAM_NAME_REQUIRED",
+        "TEAM_ALREADY_EXISTS",
+        "INVALID_TEAM_GENDER",
+        "TEAM_GENDER_HAS_PLAYERS",
+      ].includes(code),
+  );
 
   return (
     <>
+      <nav className="breadcrumbs" aria-label="Migas de pan">
+        <Link to={`/categories${seasonId ? `?season=${seasonId}` : ""}`}>
+          Categorías
+        </Link>
+        <span aria-hidden="true">/</span>
+        <span aria-current="page">{category.name}</span>
+      </nav>
       <PageHeader
         variant="detail"
         eyebrow="Categoría"
         title={category.name}
-        subtitle={`${teams.length} ${
-          teams.length === 1 ? "equipo" : "equipos"
-        } dentro de esta categoría`}
+        subtitle={
+          contextSeason
+            ? `Equipos en ${contextSeason.name} · ${
+                contextSeason.status === "active"
+                  ? "Activa"
+                  : contextSeason.status === "planned"
+                  ? "Planificada"
+                  : "Cerrada"
+              }`
+            : "Sin temporada activa para mostrar equipos"
+        }
         onBack={() =>
           navigate(`/categories${seasonId ? `?season=${seasonId}` : ""}`)
         }
         actions={
           canManageStructure &&
           !showForm &&
-          !readOnlySeason &&
+          canPrepareTeams &&
           !editingTeamId && (
             <Button
               onClick={() => {
+                returnFocusRef.current = document.activeElement;
                 setShowForm(true);
                 setEditingTeamId(null);
                 setErrors({});
               }}
             >
-              + Crear equipo
+              + Crear equipo{contextSeason ? ` en ${contextSeason.name}` : ""}
             </Button>
           )
         }
       />
+      {category.description && (
+        <p className="category-detail-description">{category.description}</p>
+      )}
       <SeasonSelector
         loading={loadingSeasons}
+        error={seasonError}
         onChange={selectSeason}
+        onRetry={reloadSeasons}
         seasons={seasons}
         selectedSeason={selectedSeason}
       />
+      {contextSeason?.status === "planned" && (
+        <div className="season-structure-notice" role="note">
+          Preparación · {contextSeason.name} — Planificada. Puedes crear y editar equipos antes de activarla.
+        </div>
+      )}
+      {contextSeason?.status === "closed" && (
+        <ReadOnlyNotice>
+          Histórico · {contextSeason.name} — Cerrada. Esta información es de solo consulta.
+        </ReadOnlyNotice>
+      )}
       <div className="team-detail-page">
         {showForm && (
           <Card>
             <h4>Nuevo equipo</h4>
+              <div className="team-form-context">
+                <span>Categoría: {category.name}</span>
+                <span>
+                  Temporada: {contextSeason?.name || "Sin temporada"} — {contextSeason?.status === "planned" ? "Planificada" : "Activa"}
+                </span>
+              </div>
 
             <form onSubmit={handleCreateTeam} className="form">
               <FormField
                 label="Nombre del equipo"
+                htmlFor="team-name"
+                errorId="team-name-error"
                 error={
                   errors.TEAM_NAME_REQUIRED
                     ? errorMessages.TEAM_NAME_REQUIRED
@@ -264,7 +342,14 @@ export const CategoryDetail = () => {
               >
                 <Input
                   type="text"
-                  placeholder="Ej: Iniciación A, U14 Femenino..."
+                  id="team-name"
+                  autoFocus
+                  aria-describedby={
+                    errors.TEAM_NAME_REQUIRED || errors.TEAM_ALREADY_EXISTS
+                      ? "team-name-error"
+                      : undefined
+                  }
+                  placeholder="Ej: A"
                   value={teamName}
                   className={
                     errors.TEAM_NAME_REQUIRED || errors.TEAM_ALREADY_EXISTS
@@ -282,8 +367,17 @@ export const CategoryDetail = () => {
                 />
               </FormField>
 
+              {teamGeneralErrorCode && (
+                <p className="form-error" role="alert">
+                  {errorMessages[teamGeneralErrorCode] ||
+                    "No se pudo crear el equipo."}
+                </p>
+              )}
+
               <FormField
-                label="Género del equipo"
+                label="Rama"
+                htmlFor="team-gender"
+                errorId="team-gender-error"
                 error={
                   errors.INVALID_TEAM_GENDER
                     ? errorMessages.INVALID_TEAM_GENDER
@@ -292,6 +386,10 @@ export const CategoryDetail = () => {
               >
                 <Select
                   value={teamGender}
+                  id="team-gender"
+                  aria-describedby={
+                    errors.INVALID_TEAM_GENDER ? "team-gender-error" : undefined
+                  }
                   className={errors.INVALID_TEAM_GENDER ? "input-error" : ""}
                   onChange={(e) => {
                     setTeamGender(e.target.value);
@@ -301,10 +399,10 @@ export const CategoryDetail = () => {
                     }));
                   }}
                 >
-                  <option value="">Selecciona el género</option>
-                  <option value="female">Femenino</option>
-                  <option value="male">Masculino</option>
-                  <option value="mixed">Mixto</option>
+                  <option value="">Selecciona la rama</option>
+                  <option value="female">Femenina</option>
+                  <option value="male">Masculina</option>
+                  <option value="mixed">Mixta</option>
                 </Select>
               </FormField>
 
@@ -328,10 +426,18 @@ export const CategoryDetail = () => {
         {editingTeamId && (
           <Card>
             <h4>Editar equipo</h4>
+              <div className="team-form-context">
+                <span>Categoría: {category.name}</span>
+                <span>
+                  Temporada: {contextSeason?.name || "Sin temporada"} — {contextSeason?.status === "planned" ? "Planificada" : "Activa"}
+                </span>
+              </div>
 
             <form onSubmit={handleUpdateTeam} className="form">
               <FormField
                 label="Nombre del equipo"
+                htmlFor="edit-team-name"
+                errorId="edit-team-name-error"
                 error={
                   errors.TEAM_NAME_REQUIRED
                     ? errorMessages.TEAM_NAME_REQUIRED
@@ -342,7 +448,14 @@ export const CategoryDetail = () => {
               >
                 <Input
                   type="text"
-                  placeholder="Ej: Iniciación A, U14 Femenino..."
+                  id="edit-team-name"
+                  autoFocus
+                  aria-describedby={
+                    errors.TEAM_NAME_REQUIRED || errors.TEAM_ALREADY_EXISTS
+                      ? "edit-team-name-error"
+                      : undefined
+                  }
+                  placeholder="Ej: A"
                   value={editTeamName}
                   className={
                     errors.TEAM_NAME_REQUIRED || errors.TEAM_ALREADY_EXISTS
@@ -361,7 +474,9 @@ export const CategoryDetail = () => {
               </FormField>
 
               <FormField
-                label="Género del equipo"
+                label="Rama"
+                htmlFor="edit-team-gender"
+                errorId="edit-team-gender-error"
                 error={
                   errors.INVALID_TEAM_GENDER
                     ? errorMessages.INVALID_TEAM_GENDER
@@ -372,6 +487,12 @@ export const CategoryDetail = () => {
               >
                 <Select
                   value={editTeamGender}
+                  id="edit-team-gender"
+                  aria-describedby={
+                    errors.INVALID_TEAM_GENDER || errors.TEAM_GENDER_HAS_PLAYERS
+                      ? "edit-team-gender-error"
+                      : undefined
+                  }
                   className={
                     errors.INVALID_TEAM_GENDER || errors.TEAM_GENDER_HAS_PLAYERS
                       ? "input-error"
@@ -386,12 +507,19 @@ export const CategoryDetail = () => {
                     }));
                   }}
                 >
-                  <option value="">Selecciona el género</option>
-                  <option value="female">Femenino</option>
-                  <option value="male">Masculino</option>
-                  <option value="mixed">Mixto</option>
+                  <option value="">Selecciona la rama</option>
+                  <option value="female">Femenina</option>
+                  <option value="male">Masculina</option>
+                  <option value="mixed">Mixta</option>
                 </Select>
               </FormField>
+
+              {teamGeneralErrorCode && (
+                <p className="form-error" role="alert">
+                  {errorMessages[teamGeneralErrorCode] ||
+                    "No se pudo actualizar el equipo."}
+                </p>
+              )}
 
               <div className="form-actions">
                 <Button
@@ -415,9 +543,27 @@ export const CategoryDetail = () => {
           (teams.length === 0 ? (
             <Card>
               <div className="empty-state">
-                <h4>Aún no tienes equipos</h4>
-                {canManageStructure && (
-                  <p>Crea el primer equipo dentro de {category.name}.</p>
+                <h4>
+                  {contextSeason?.status === "closed"
+                    ? "Sin equipos en esta temporada"
+                    : "Aún no hay equipos"}
+                </h4>
+                {contextSeason?.status === "closed" ? (
+                  <p>No hubo equipos de esta categoría en esta temporada.</p>
+                ) : canManageStructure && canPrepareTeams ? (
+                  <>
+                    <p>Crea el primer equipo dentro de {category.name}.</p>
+                    <Button
+                      onClick={() => {
+                        returnFocusRef.current = document.activeElement;
+                        setShowForm(true);
+                      }}
+                    >
+                      Crear equipo
+                    </Button>
+                  </>
+                ) : (
+                  <p>No hay equipos para mostrar en este contexto.</p>
                 )}
               </div>
             </Card>
@@ -426,38 +572,35 @@ export const CategoryDetail = () => {
               {orderedTeams.map((team) => (
                 <Card
                   key={team.id}
-                  className="team-card card-interactive category-card"
-                  onClick={() => navigate(`/teams/${team.id}`)}
+                  className="team-card team-card-shell category-card"
                 >
-                  <div className="category-card-header">
-                    <h3 className="team-card-title">{team.name}</h3>
+                  <Link
+                    className={`team-card-link ${canManageStructure ? "has-card-action" : ""}`}
+                    to={`/teams/${team.id}${seasonId ? `?season=${seasonId}` : ""}`}
+                  >
+                    <div className="category-card-header">
+                      <h3 className="team-card-title">{team.name}</h3>
+                      {showAssignment && team.is_assigned && <AssignedBadge />}
+                    </div>
 
-                    {showAssignment && team.is_assigned && <AssignedBadge />}
+                    <p className="team-meta">
+                      {contextSeason?.name || "Sin temporada"} · {contextSeason?.status === "planned" ? "Planificada" : contextSeason?.status === "closed" ? "Cerrada" : "Activa"} · Rama {team.gender === "female" ? "femenina" : team.gender === "male" ? "masculina" : "mixta"} · {team.total_players || 0} deportistas
+                      {team.status === "archived" ? " · Archivado" : ""}
+                    </p>
+                  </Link>
 
-                    {canManageStructure && !readOnlySeason && team.status !== "archived" && (
+                    {canManageStructure && canPrepareTeams && team.status !== "archived" && (
                       <button
                         type="button"
                         className="category-edit-button"
                         aria-label={`Editar equipo ${team.name}`}
                         onClick={(e) => {
-                          e.stopPropagation();
                           openEditTeam(team);
                         }}
                       >
                         <Pencil size={16} />
                       </button>
                     )}
-                  </div>
-
-                  <p className="team-meta">
-                    {team.gender === "female"
-                      ? "Femenino"
-                      : team.gender === "male"
-                      ? "Masculino"
-                      : "Mixto"}{" "}
-                    · {team.total_players || 0} deportistas
-                    {team.status === "archived" ? " · Archivado" : ""}
-                  </p>
                 </Card>
               ))}
             </div>

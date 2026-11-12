@@ -129,7 +129,7 @@ export const errorMessages = {
   // TEAMS
   TEAM_NAME_REQUIRED: "Ingresa un nombre para el equipo",
   TEAM_ALREADY_EXISTS: "Ya existe un equipo con ese nombre",
-  INVALID_TEAM_GENDER: "Selecciona el género",
+  INVALID_TEAM_GENDER: "Selecciona la rama",
   TEAM_ID_REQUIRED: "Selecciona un equipo",
   TEAM_NOT_FOUND: "Equipo no encontrado",
   TEAM_HAS_PLAYERS: "No puedes eliminar este equipo porque tiene jugadores.",
@@ -138,7 +138,7 @@ export const errorMessages = {
   TEAM_HAS_TRAININGS:
     "No puedes eliminar este equipo porque tiene entrenamientos históricos.",
   TEAM_GENDER_HAS_PLAYERS:
-    "No puedes cambiar el género del equipo porque tiene deportistas incompatibles.",
+    "No puedes cambiar la rama del equipo porque tiene deportistas incompatibles.",
 
   // PLAYERS
   FIRST_NAME_REQUIRED: "Ingresa el nombre",

@@ -435,14 +435,6 @@ class Season(db.Model):
 class Category(db.Model):
     __tablename__ = "categories"
 
-    __table_args__ = (
-        db.UniqueConstraint(
-            "name",
-            "club_id",
-            name="unique_category_per_club"
-        ),
-    )
-
     id = db.Column(db.String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
 
     name = db.Column(db.String(120), nullable=False)
@@ -456,6 +448,20 @@ class Category(db.Model):
     )
 
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
+
+    __table_args__ = (
+        db.UniqueConstraint(
+            "name",
+            "club_id",
+            name="unique_category_per_club"
+        ),
+        db.Index(
+            "uq_categories_club_lower_name",
+            club_id,
+            db.func.lower(name),
+            unique=True,
+        ),
+    )
 
     club = db.relationship(
         "Club",
@@ -476,31 +482,6 @@ class Category(db.Model):
 
 class Team(db.Model):
     __tablename__ = "teams"
-
-    __table_args__ = (
-        db.UniqueConstraint(
-            "name",
-            "gender",
-            "category_id",
-            "club_id",
-            "season_id",
-            name="unique_team_gender_per_category"
-        ),
-        db.UniqueConstraint(
-            "id",
-            "club_id",
-            name="uq_teams_id_club_id"
-        ),
-        db.ForeignKeyConstraint(
-            ["season_id", "club_id"],
-            ["seasons.id", "seasons.club_id"],
-            name="fk_teams_season_club"
-        ),
-        db.CheckConstraint(
-            "status IN ('active', 'archived')",
-            name="ck_teams_status"
-        ),
-    )
 
     id = db.Column(db.String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
 
@@ -532,6 +513,40 @@ class Team(db.Model):
     )
 
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
+
+    __table_args__ = (
+        db.UniqueConstraint(
+            "name",
+            "gender",
+            "category_id",
+            "club_id",
+            "season_id",
+            name="unique_team_gender_per_category"
+        ),
+        db.UniqueConstraint(
+            "id",
+            "club_id",
+            name="uq_teams_id_club_id"
+        ),
+        db.ForeignKeyConstraint(
+            ["season_id", "club_id"],
+            ["seasons.id", "seasons.club_id"],
+            name="fk_teams_season_club"
+        ),
+        db.CheckConstraint(
+            "status IN ('active', 'archived')",
+            name="ck_teams_status"
+        ),
+        db.Index(
+            "uq_teams_scope_lower_name",
+            club_id,
+            season_id,
+            category_id,
+            gender,
+            db.func.lower(name),
+            unique=True,
+        ),
+    )
 
     category = db.relationship(
         "Category",

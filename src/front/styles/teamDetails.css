@@ -14,13 +14,46 @@
   display: inline-flex;
   width: fit-content;
   margin-top: 12px;
-  padding: 0;
+  min-height: 44px;
+  padding: 8px 0;
   border: none;
   background: transparent;
   color: var(--color-danger);
   font-size: var(--font-size-sm);
   font-weight: var(--font-weight-semibold);
   cursor: pointer;
+}
+
+.team-context-line,
+.team-status-line {
+  margin: 0;
+  color: var(--color-muted);
+  font-size: var(--font-size-sm);
+}
+
+.team-operation-note {
+  margin: 0;
+  padding: 10px 12px;
+  border-radius: var(--radius-md);
+  background: var(--color-surface-soft);
+  color: var(--color-text);
+  font-size: var(--font-size-sm);
+}
+
+.team-status-line {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+.team-archived-notice {
+  border-color: var(--color-border);
+  background: var(--color-surface-soft);
+}
+
+.lifecycle-error {
+  margin: 0 0 12px;
 }
 
 .player-remove-link:hover {

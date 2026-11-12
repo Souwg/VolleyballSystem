@@ -5,6 +5,7 @@ from sqlalchemy.exc import IntegrityError
 
 from src.api.api_blueprint import api
 from src.api.coach_access import get_team_access_resolver
+from src.api.integrity_errors import violates_named_constraint
 from src.api.models import (
     db,
     Category,
@@ -27,6 +28,12 @@ from src.api.season_service import (
     resolve_season_for_read,
 )
 from src.api.utils import error_response, get_current_user
+
+
+TEAM_UNIQUE_CONSTRAINTS = {
+    "unique_team_gender_per_category",
+    "uq_teams_scope_lower_name",
+}
 
 
 @api.route("/categories/<string:category_id>/teams", methods=["POST"])
@@ -140,8 +147,20 @@ def create_team(category_id):
         season_id=season.id
     )
 
-    db.session.add(team)
-    db.session.commit()
+    try:
+        db.session.add(team)
+        db.session.commit()
+    except IntegrityError as error:
+        db.session.rollback()
+
+        if not violates_named_constraint(error, TEAM_UNIQUE_CONSTRAINTS):
+            raise
+
+        return error_response(
+            "Ya existe este equipo en esa categoría y rama",
+            "TEAM_ALREADY_EXISTS",
+            409
+        )
 
     return jsonify({
         "message": "Equipo creado correctamente",
@@ -240,6 +259,7 @@ def get_team_detail(team_id):
             **team.serialize(),
             **get_team_access_resolver(user)(team),
             "season_status": team.season.status if team.season else None,
+            "season": team.season.serialize() if team.season else None,
         },
         "stats": {
             "total_players": total_players
@@ -362,7 +382,19 @@ def update_team(team_id):
     team.name = name
     team.gender = gender
 
-    db.session.commit()
+    try:
+        db.session.commit()
+    except IntegrityError as error:
+        db.session.rollback()
+
+        if not violates_named_constraint(error, TEAM_UNIQUE_CONSTRAINTS):
+            raise
+
+        return error_response(
+            "Ya existe este equipo en esa categoría y rama",
+            "TEAM_ALREADY_EXISTS",
+            409
+        )
 
     return jsonify({
         "message": "Equipo actualizado correctamente",

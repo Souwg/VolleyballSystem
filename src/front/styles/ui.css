@@ -50,6 +50,38 @@
   width: auto;
   min-width: min(100%, 240px);
 }
+
+.season-load-error {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+  margin: -8px 0 18px;
+  padding: 12px;
+  border: 1px solid var(--color-danger-border);
+  border-radius: var(--radius-md);
+  background: var(--color-danger-soft);
+  color: var(--color-danger);
+  font-size: var(--font-size-sm);
+}
+
+.season-load-error p {
+  margin: 0;
+}
+
+.season-load-error button {
+  min-height: 44px;
+  border: 0;
+  background: transparent;
+  color: var(--color-primary);
+  font-weight: var(--font-weight-semibold);
+  cursor: pointer;
+}
+
+.season-load-error button:focus-visible {
+  outline: 3px solid rgba(30, 58, 138, 0.24);
+  outline-offset: 2px;
+}
 /* ===== EMPTY STATE ===== */
 
 .empty-state {

@@ -1,5 +1,5 @@
 import React, { useEffect, useState, useContext } from "react";
-import { useNavigate } from "react-router-dom";
+import { Link, useNavigate, useSearchParams } from "react-router-dom";
 import { Context } from "../../store/appContext";
 import { useParams } from "react-router-dom";
 import {
@@ -31,10 +31,14 @@ export const TeamDetail = () => {
   const { showToast } = useToast();
   const { team_id } = useParams();
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
+  const seasonId = searchParams.get("season");
+  const seasonQuery = seasonId ? `?season=${seasonId}` : "";
 
   const [team, setTeam] = useState(null);
   const [players, setPlayers] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState(null);
 
   const [firstName, setFirstName] = useState("");
   const [lastName, setLastName] = useState("");
@@ -46,6 +50,7 @@ export const TeamDetail = () => {
   const [updatingStatusPlayerId, setUpdatingStatusPlayerId] = useState(null);
   const [assignedCoachCount, setAssignedCoachCount] = useState(0);
   const [lifecycleAction, setLifecycleAction] = useState(null);
+  const [lifecycleError, setLifecycleError] = useState(null);
   const [deleteBlockedCode, setDeleteBlockedCode] = useState(null);
   const [showForm, setShowForm] = useState(false);
   const [showAddOptions, setShowAddOptions] = useState(false);
@@ -131,12 +136,21 @@ export const TeamDetail = () => {
 
   const loadTeamPlayers = async () => {
     try {
-      const result = await actions.getTeamPlayers(team_id);
+      const [rosterResult, detailResult] = await Promise.all([
+        actions.getTeamPlayers(team_id),
+        actions.getTeamDetail(team_id),
+      ]);
 
-      if (!result.ok) return;
+      if (!rosterResult.ok || !detailResult.ok) {
+        setLoadError(
+          rosterResult.code || detailResult.code || "HTTP_ERROR",
+        );
+        return;
+      }
 
-      setTeam(result.data.team);
-      setPlayers(result.data.players);
+      setTeam({ ...rosterResult.data.team, ...detailResult.data.team });
+      setPlayers(rosterResult.data.players);
+      setLoadError(null);
     } finally {
       setLoading(false);
     }
@@ -234,7 +248,7 @@ export const TeamDetail = () => {
 
       return;
     }
-    navigate("/categories");
+    navigate(`/categories/${team.category_id}${seasonQuery}`);
   };
 
   const handleTeamLifecycle = async (action) => {
@@ -250,11 +264,19 @@ export const TeamDetail = () => {
     if (!confirmed) return;
 
     setLifecycleAction(action);
+    setLifecycleError(null);
 
+    let result;
     if (isArchive) {
-      await actions.archiveTeam(team_id);
+      result = await actions.archiveTeam(team_id);
     } else {
-      await actions.reactivateTeam(team_id);
+      result = await actions.reactivateTeam(team_id);
+    }
+
+    if (!result.ok) {
+      setLifecycleError(result.code || "HTTP_ERROR");
+      setLifecycleAction(null);
+      return;
     }
 
     await loadTeamPlayers();
@@ -286,7 +308,7 @@ export const TeamDetail = () => {
   const handleOpenPlayer = (playerId) => {
     navigate(`/players/${playerId}`, {
       state: {
-        from: `/teams/${team_id}`,
+        from: `/teams/${team_id}${seasonQuery}`,
         fromLabel: team?.name || "Equipo",
       },
     });
@@ -357,11 +379,22 @@ export const TeamDetail = () => {
   }, [team_id]);
 
   if (loading) {
-    return <p>Cargando equipo...</p>;
+    return <p role="status">Cargando equipo...</p>;
   }
 
   if (!team) {
-    return <p>No se pudo cargar el equipo.</p>;
+    return (
+      <Card className="page-error-state" role="alert">
+        <p>
+          {loadError === "TEAM_NOT_FOUND"
+            ? "Equipo no encontrado."
+            : errorMessages[loadError] || "No se pudo cargar el equipo."}
+        </p>
+        <Button variant="secondary" onClick={loadTeamPlayers}>
+          Volver a intentar
+        </Button>
+      </Card>
+    );
   }
 
   const playerCountLabel =
@@ -375,21 +408,38 @@ export const TeamDetail = () => {
   const canManageStructure = store.user?.role === "club_owner";
   const isArchived = team.status === "archived";
   const isClosedSeason = team.season_status === "closed";
+  const seasonStatusLabel =
+    team.season_status === "planned"
+      ? "Planificada"
+      : team.season_status === "closed"
+      ? "Cerrada"
+      : "Activa";
+  const genderLabel =
+    team.gender === "female"
+      ? "femenina"
+      : team.gender === "male"
+      ? "masculina"
+      : "mixta";
 
   return (
     <div className="team-detail-page">
+      <nav className="breadcrumbs" aria-label="Migas de pan">
+        <Link to={`/categories${seasonQuery}`}>Categorías</Link>
+        <span aria-hidden="true">/</span>
+        <Link to={`/categories/${team.category_id}${seasonQuery}`}>
+          {team.category?.name || "Categoría"}
+        </Link>
+        <span aria-hidden="true">/</span>
+        <span aria-current="page">{team.name}</span>
+      </nav>
       <PageHeader
         variant="detail"
         eyebrow="Equipo"
         title={team.name}
-        subtitle={`${
-          team.gender === "female"
-            ? "Femenina"
-            : team.gender === "male"
-            ? "Masculina"
-            : "Mixta"
-        } • ${playerCountLabel}`}
-        onBack={() => navigate(`/categories/${team.category_id}`)}
+        subtitle={`${team.category?.name || "Sin categoría"} · ${
+          team.season?.name || "Sin temporada"
+        } · ${seasonStatusLabel}`}
+        onBack={() => navigate(`/categories/${team.category_id}${seasonQuery}`)}
         actions={
           <div className="team-detail-header-actions">
             {canUpdatePlayerStatus &&
@@ -427,18 +477,32 @@ export const TeamDetail = () => {
           </div>
         }
       />
+      <p className="team-status-line">
+        Rama {genderLabel} · {isArchived ? "Equipo archivado" : "Equipo activo"} · {playerCountLabel}
+      </p>
+      {isArchived && (
+        <ReadOnlyNotice>
+          Equipo archivado. Conserva su histórico y no admite nuevas operaciones.
+        </ReadOnlyNotice>
+      )}
+      {isClosedSeason && (
+        <ReadOnlyNotice>
+          Histórico · {team.season?.name || "Temporada"} — Cerrada. Esta información es de solo consulta.
+        </ReadOnlyNotice>
+      )}
       {!canManage(team) && (
         <ReadOnlyNotice>
           Estás consultando este equipo. Solo quien lo tiene asignado puede
           modificarlo.
         </ReadOnlyNotice>
       )}
-      {canManage(team) && !canManageStructure && (isArchived || isClosedSeason) && (
-        <ReadOnlyNotice>
-          {isArchived
-            ? "Este equipo está archivado: se conserva como histórico y no admite cambios."
-            : "Este equipo pertenece a una temporada cerrada: se conserva como histórico y no admite cambios."}
-        </ReadOnlyNotice>
+      {store.user?.role === "coach" &&
+        canManage(team) &&
+        !isArchived &&
+        !isClosedSeason && (
+        <p className="team-operation-note" role="note">
+          Tienes permiso operativo sobre este equipo.
+        </p>
       )}
       {showAddOptions && (
         <Card className="add-player-options">
@@ -454,10 +518,12 @@ export const TeamDetail = () => {
               setShowForm(true);
             }}
           >
-            Crear deportista nuevo
+            Crear deportista
           </Button>
 
-          <Button onClick={handleLoadExistingPlayers}>Agregar existente</Button>
+          <Button onClick={handleLoadExistingPlayers}>
+            Agregar deportista existente
+          </Button>
 
           <Button variant="secondary" onClick={() => setShowAddOptions(false)}>
             Cancelar
@@ -470,25 +536,26 @@ export const TeamDetail = () => {
 
           <div className="players-list">
             {availablePlayers.map((player) => (
-              <Card
+              <button
+                type="button"
                 key={player.id}
-                className="player-card selectable-player"
+                className="card player-card selectable-player selectable-player-button"
                 onClick={() => {
                   setSelectedExistingPlayer(player);
                   setAvailablePlayers([]);
                 }}
               >
-                <p className="player-name">
+                <span className="player-name">
                   {player.first_name} {player.last_name}
-                </p>
+                </span>
 
                 {player.teams?.length > 0 && (
-                  <p className="player-meta">
+                  <span className="player-meta">
                     Actualmente en:{" "}
                     {player.teams.map((team) => team.name).join(" · ")}
-                  </p>
+                  </span>
                 )}
-              </Card>
+              </button>
             ))}
           </div>
 
@@ -522,10 +589,16 @@ export const TeamDetail = () => {
                   · #{team.player_number}
                 </div>
               ))}
+              <p className="helper-label">
+                Se mantendrá en esos equipos; esta acción solo crea otra pertenencia.
+              </p>
             </div>
           )}
           <FormField
             label="Número en el equipo"
+            helper="Dorsal, si aplica"
+            htmlFor="existing-player-number"
+            errorId="existing-player-number-error"
             error={
               errors.PLAYER_NUMBER_REQUIRED
                 ? errorMessages.PLAYER_NUMBER_REQUIRED
@@ -546,7 +619,13 @@ export const TeamDetail = () => {
           >
             <Input
               type="number"
-              placeholder="número del jugador en este equipo"
+              id="existing-player-number"
+              aria-describedby={
+                Object.keys(errors).length > 0
+                  ? "existing-player-number-error"
+                  : undefined
+              }
+              placeholder="Número del deportista en este equipo"
               value={existingPlayerNumber}
               className={
                 errors.PLAYER_NUMBER_REQUIRED ||
@@ -636,7 +715,9 @@ export const TeamDetail = () => {
                 setExistingPlayerNumber("");
               }}
             >
-              Guardar
+              {selectedExistingPlayer.teams?.length > 0
+                ? "Agregar también a este equipo"
+                : "Agregar a este equipo"}
             </Button>
           </div>
         </Card>
@@ -649,6 +730,8 @@ export const TeamDetail = () => {
           <form onSubmit={registerPlayer} className="form">
             <FormField
               label="Nombre"
+              htmlFor="new-player-first-name"
+              errorId="new-player-first-name-error"
               error={
                 errors.FIRST_NAME_REQUIRED
                   ? errorMessages.FIRST_NAME_REQUIRED
@@ -656,6 +739,13 @@ export const TeamDetail = () => {
               }
             >
               <Input
+                id="new-player-first-name"
+                autoFocus
+                aria-describedby={
+                  errors.FIRST_NAME_REQUIRED
+                    ? "new-player-first-name-error"
+                    : undefined
+                }
                 value={firstName}
                 className={errors.FIRST_NAME_REQUIRED ? "input-error" : ""}
                 placeholder="Nombre"
@@ -670,6 +760,8 @@ export const TeamDetail = () => {
             </FormField>
             <FormField
               label="Apellido"
+              htmlFor="new-player-last-name"
+              errorId="new-player-last-name-error"
               error={
                 errors.LAST_NAME_REQUIRED
                   ? errorMessages.LAST_NAME_REQUIRED
@@ -677,6 +769,12 @@ export const TeamDetail = () => {
               }
             >
               <Input
+                id="new-player-last-name"
+                aria-describedby={
+                  errors.LAST_NAME_REQUIRED
+                    ? "new-player-last-name-error"
+                    : undefined
+                }
                 value={lastName}
                 className={errors.LAST_NAME_REQUIRED ? "input-error" : ""}
                 placeholder="Apellido"
@@ -690,7 +788,10 @@ export const TeamDetail = () => {
               />
             </FormField>
             <FormField
-              label="Número en la categoría"
+              label="Número en el equipo"
+              helper="Dorsal, si aplica"
+              htmlFor="new-player-number"
+              errorId="new-player-number-error"
               error={
                 errors.PLAYER_NUMBER_REQUIRED
                   ? errorMessages.PLAYER_NUMBER_REQUIRED
@@ -703,6 +804,14 @@ export const TeamDetail = () => {
             >
               <Input
                 type="number"
+                id="new-player-number"
+                aria-describedby={
+                  errors.PLAYER_NUMBER_REQUIRED ||
+                  errors.INVALID_PLAYER_NUMBER ||
+                  errors.PLAYER_NUMBER_DUPLICATED
+                    ? "new-player-number-error"
+                    : undefined
+                }
                 min="1"
                 max="99"
                 value={playerNumber}
@@ -713,7 +822,7 @@ export const TeamDetail = () => {
                     ? "input-error"
                     : ""
                 }
-                placeholder="número del jugador en esta categoría"
+                placeholder="Número del deportista en este equipo"
                 onChange={(e) => {
                   const value = e.target.value;
 
@@ -744,6 +853,8 @@ export const TeamDetail = () => {
             {team?.gender === "mixed" && (
               <FormField
                 label="Sexo"
+                htmlFor="new-player-sex"
+                errorId="new-player-sex-error"
                 error={
                   errors.SEX_REQUIRED
                     ? errorMessages.SEX_REQUIRED
@@ -753,6 +864,12 @@ export const TeamDetail = () => {
                 }
               >
                 <Select
+                  id="new-player-sex"
+                  aria-describedby={
+                    errors.SEX_REQUIRED || errors.INVALID_SEX
+                      ? "new-player-sex-error"
+                      : undefined
+                  }
                   value={sex}
                   className={
                     errors.SEX_REQUIRED || errors.INVALID_SEX
@@ -795,20 +912,26 @@ export const TeamDetail = () => {
         </Card>
       )}
 
-      {canManageStructure && (
-        <TeamCoachesSection
-          team={team}
-          onTeamChanged={loadTeamPlayers}
-          onCoachesChange={setAssignedCoachCount}
-        />
-      )}
-
-      {/* LISTA DE JUGADORES */}
       <Card>
-        <h4>Deportistas</h4>
+        <h4>Deportistas del equipo</h4>
 
         {players.length === 0 ? (
-          <p>No hay deportistas registrados en esta categoría.</p>
+          <div className="empty-state">
+            <p>Este equipo aún no tiene deportistas.</p>
+            {canUpdatePlayerStatus && (
+              <Button
+                onClick={() => {
+                  setShowAddOptions(true);
+                  setShowForm(false);
+                  setAvailablePlayers([]);
+                  setSelectedExistingPlayer(null);
+                  setErrors({});
+                }}
+              >
+                Añadir deportista
+              </Button>
+            )}
+          </div>
         ) : (
           <div className="players-list">
             {players.map((player) => (
@@ -819,6 +942,8 @@ export const TeamDetail = () => {
                     <div className="player-edit">
                       <FormField
                         label="Nombre"
+                        htmlFor="edit-player-first-name"
+                        errorId="edit-player-first-name-error"
                         error={
                           errors.FIRST_NAME_REQUIRED
                             ? errorMessages.FIRST_NAME_REQUIRED
@@ -826,6 +951,13 @@ export const TeamDetail = () => {
                         }
                       >
                         <Input
+                          id="edit-player-first-name"
+                          autoFocus
+                          aria-describedby={
+                            errors.FIRST_NAME_REQUIRED
+                              ? "edit-player-first-name-error"
+                              : undefined
+                          }
                           value={editData.first_name}
                           className={
                             errors.FIRST_NAME_REQUIRED ? "input-error" : ""
@@ -845,6 +977,8 @@ export const TeamDetail = () => {
 
                       <FormField
                         label="Apellido"
+                        htmlFor="edit-player-last-name"
+                        errorId="edit-player-last-name-error"
                         error={
                           errors.LAST_NAME_REQUIRED
                             ? errorMessages.LAST_NAME_REQUIRED
@@ -852,6 +986,12 @@ export const TeamDetail = () => {
                         }
                       >
                         <Input
+                          id="edit-player-last-name"
+                          aria-describedby={
+                            errors.LAST_NAME_REQUIRED
+                              ? "edit-player-last-name-error"
+                              : undefined
+                          }
                           value={editData.last_name}
                           className={
                             errors.LAST_NAME_REQUIRED ? "input-error" : ""
@@ -869,7 +1009,10 @@ export const TeamDetail = () => {
                         />
                       </FormField>
                       <FormField
-                        label="Número en la categoría"
+                        label="Número en el equipo"
+                        helper="Dorsal, si aplica"
+                        htmlFor="edit-player-number"
+                        errorId="edit-player-number-error"
                         error={
                           errors.PLAYER_NUMBER_REQUIRED
                             ? errorMessages.PLAYER_NUMBER_REQUIRED
@@ -882,6 +1025,14 @@ export const TeamDetail = () => {
                       >
                         <Input
                           type="number"
+                          id="edit-player-number"
+                          aria-describedby={
+                            errors.PLAYER_NUMBER_REQUIRED ||
+                            errors.INVALID_PLAYER_NUMBER ||
+                            errors.PLAYER_NUMBER_DUPLICATED
+                              ? "edit-player-number-error"
+                              : undefined
+                          }
                           value={editData.player_number}
                           className={
                             errors.PLAYER_NUMBER_REQUIRED ||
@@ -945,20 +1096,31 @@ export const TeamDetail = () => {
                   ) : (
                     //MODO NORMAL
                     <>
-                      <div
-                        className="player-header player-header-clickable"
-                        onClick={() => handleOpenPlayer(player.id)}
-                      >
-                        <div className="player-info">
-                          <p className="player-name">
-                            {player.first_name} {player.last_name}
-                          </p>
+                      <div className="player-header">
+                        <button
+                          type="button"
+                          className="player-profile-link"
+                          onClick={() => handleOpenPlayer(player.id)}
+                        >
+                          <span className="player-info">
+                            <span className="player-name">
+                              {player.first_name} {player.last_name}
+                            </span>
 
-                          <p className="player-meta">
-                            #{player.player_number} ·{" "}
-                            {player.sex === "female" ? "Femenino" : "Masculino"}
-                          </p>
-                        </div>
+                            <span className="player-meta">
+                              #{player.player_number} ·{" "}
+                              {player.sex === "female" ? "Femenino" : "Masculino"}
+                            </span>
+                            {player.is_active === false && (
+                              <span className="status-badge status-muted player-global-status">
+                                Inactivo en el club
+                              </span>
+                            )}
+                          </span>
+                          <span className="player-card-arrow" aria-hidden="true">
+                            →
+                          </span>
+                        </button>
 
                         <div className="player-card-side">
                           {canUpdatePlayerStatus ? (
@@ -992,8 +1154,6 @@ export const TeamDetail = () => {
                                 : "Inactiva"}
                             </span>
                           )}
-
-                          <span className="player-card-arrow">→</span>
                         </div>
                       </div>
 
@@ -1015,6 +1175,13 @@ export const TeamDetail = () => {
         )}
       </Card>
       {canManageStructure && (
+        <TeamCoachesSection
+          team={team}
+          onTeamChanged={loadTeamPlayers}
+          onCoachesChange={setAssignedCoachCount}
+        />
+      )}
+      {canManageStructure && (
         <Card className="team-lifecycle-card">
           <div className="team-lifecycle-header">
             <h4>Estado del equipo</h4>
@@ -1029,6 +1196,12 @@ export const TeamDetail = () => {
 
           {deleteBlockedCode && (
             <p className="form-error">{errorMessages[deleteBlockedCode]}</p>
+          )}
+          {lifecycleError && (
+            <p className="form-error lifecycle-error" role="alert">
+              {errorMessages[lifecycleError] ||
+                "No se pudo actualizar el estado del equipo. Intenta nuevamente."}
+            </p>
           )}
 
           {isClosedSeason ? (

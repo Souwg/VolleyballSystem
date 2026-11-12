@@ -260,8 +260,23 @@ export const TeamCoachesSection = ({ team, onTeamChanged, onCoachesChange }) => 
 
           {showForm && candidates.length > 0 && (
             <form className="team-coaches-form" onSubmit={handleAssign}>
-              <FormField label="Entrenador">
+              <FormField
+                label="Entrenador"
+                htmlFor="team-coach-select"
+                errorId="team-coach-select-error"
+                error={
+                  errorCode === "COACH_ID_REQUIRED"
+                    ? errorMessages.COACH_ID_REQUIRED
+                    : null
+                }
+              >
                 <Select
+                  id="team-coach-select"
+                  aria-describedby={
+                    errorCode === "COACH_ID_REQUIRED"
+                      ? "team-coach-select-error"
+                      : undefined
+                  }
                   value={selectedCoachId}
                   disabled={saving}
                   onChange={(event) => {

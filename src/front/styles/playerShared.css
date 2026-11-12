@@ -60,6 +60,46 @@
   cursor: pointer;
 }
 
+.selectable-player-button,
+.player-profile-link {
+  width: 100%;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+}
+
+.selectable-player-button {
+  padding: 14px;
+}
+
+.selectable-player-button .player-name,
+.selectable-player-button .player-meta,
+.player-profile-link .player-name,
+.player-profile-link .player-meta {
+  display: block;
+}
+
+.selectable-player-button:focus-visible,
+.player-profile-link:focus-visible {
+  outline: 3px solid rgba(30, 58, 138, 0.24);
+  outline-offset: 2px;
+}
+
+.player-profile-link {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  min-width: 0;
+  padding: 0;
+  cursor: pointer;
+}
+
+.player-global-status {
+  margin-top: 8px;
+}
+
 .selectable-player:hover {
   border-color: var(--color-primary);
 }

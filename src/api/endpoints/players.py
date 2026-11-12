@@ -550,6 +550,7 @@ def get_team_players(team_id):
                 if key == "birth_date"
             },
             "main_position": m.player.main_position,
+            "is_active": m.player.is_active,
             "team_id": m.team_id,
             "player_number": m.player_number,
             "status": m.status

@@ -1,5 +1,5 @@
-import React, { useContext, useEffect, useState } from "react";
-import { useNavigate } from "react-router-dom";
+import React, { useContext, useEffect, useRef, useState } from "react";
+import { Link } from "react-router-dom";
 import { Context } from "../../store/appContext";
 import { PageHeader } from "../../component/ui/pageHeader";
 import { Input } from "../../component/ui/input";
@@ -20,7 +20,7 @@ import "../../../styles/teams.css";
 
 export const Categories = () => {
   const { store, actions } = useContext(Context);
-  const navigate = useNavigate();
+  const returnFocusRef = useRef(null);
   const [showForm, setShowForm] = useState(false);
   const [errors, setErrors] = useState({});
   const [loading, setLoading] = useState(false);
@@ -31,14 +31,18 @@ export const Categories = () => {
   const [editCategoryName, setEditCategoryName] = useState("");
   const [editCategoryDescription, setEditCategoryDescription] = useState("");
   const [loadingEdit, setLoadingEdit] = useState(false);
+  const [loadError, setLoadError] = useState(null);
+  const [categoryRetryKey, setCategoryRetryKey] = useState(0);
+  const [deletingCategory, setDeletingCategory] = useState(false);
   const {
     loadingSeasons,
+    reloadSeasons,
     seasonId,
     seasons,
     selectedSeason,
+    seasonError,
     selectSeason,
   } = useSeasonSelection();
-  const readOnlySeason = selectedSeason?.status !== "active";
   const canManageStructure = store.user?.role === "club_owner";
   const showMyTeams = isScopedCoach(store);
   const myTeams = (store.teams || []).filter((team) => team.is_assigned);
@@ -55,19 +59,13 @@ export const Categories = () => {
       }
 
       setLoadingCategories(true);
-      await actions.getCategories({ seasonId });
+      const result = await actions.getCategories({ seasonId });
+      setLoadError(result.ok ? null : result.code || "HTTP_ERROR");
       setLoadingCategories(false);
     };
 
     loadCategories();
-  }, [store.token, seasonId]);
-
-  useEffect(() => {
-    if (readOnlySeason) {
-      setShowForm(false);
-      setEditingCategoryId(null);
-    }
-  }, [readOnlySeason]);
+  }, [store.token, seasonId, categoryRetryKey]);
 
   const handleCreateCategory = async (e) => {
     e.preventDefault();
@@ -87,10 +85,13 @@ export const Categories = () => {
 
     setLoading(true);
 
-    const result = await actions.createCategory({
-      name: categoryName.trim(),
-      description: categoryDescription.trim(),
-    });
+    const result = await actions.createCategory(
+      {
+        name: categoryName.trim(),
+        description: categoryDescription.trim(),
+      },
+      { seasonId },
+    );
 
     setLoading(false);
 
@@ -99,13 +100,11 @@ export const Categories = () => {
       return;
     }
 
-    setCategoryName("");
-    setCategoryDescription("");
-    setShowForm(false);
-    setErrors({});
+    closeCreateForm();
   };
 
   const openCreateForm = () => {
+    returnFocusRef.current = document.activeElement;
     setShowForm(true);
     setEditingCategoryId(null);
     setErrors({});
@@ -116,9 +115,11 @@ export const Categories = () => {
     setCategoryName("");
     setCategoryDescription("");
     setErrors({});
+    window.requestAnimationFrame(() => returnFocusRef.current?.focus());
   };
 
   const openEditCategory = (category) => {
+    returnFocusRef.current = document.activeElement;
     setShowForm(false);
     setEditingCategoryId(category.id);
     setEditCategoryName(category.name || "");
@@ -131,6 +132,7 @@ export const Categories = () => {
     setEditCategoryName("");
     setEditCategoryDescription("");
     setErrors({});
+    window.requestAnimationFrame(() => returnFocusRef.current?.focus());
   };
 
   const handleUpdateCategory = async (e) => {
@@ -151,10 +153,14 @@ export const Categories = () => {
 
     setLoadingEdit(true);
 
-    const result = await actions.updateCategory(editingCategoryId, {
-      name: editCategoryName.trim(),
-      description: editCategoryDescription.trim(),
-    });
+    const result = await actions.updateCategory(
+      editingCategoryId,
+      {
+        name: editCategoryName.trim(),
+        description: editCategoryDescription.trim(),
+      },
+      { seasonId },
+    );
 
     setLoadingEdit(false);
 
@@ -166,8 +172,41 @@ export const Categories = () => {
     closeEditCategory();
   };
 
+  const editingCategory = store.categories?.find(
+    (category) => category.id === editingCategoryId,
+  );
+  const categoryNameChanged =
+    editingCategory &&
+    editCategoryName.trim() !== (editingCategory.name || "").trim();
+  const categoryGeneralErrorCode = Object.keys(errors).find(
+    (code) => !["CATEGORY_NAME_REQUIRED", "CATEGORY_ALREADY_EXISTS"].includes(code),
+  );
+
+  const handleDeleteCategory = async () => {
+    if (!editingCategory?.can_delete || deletingCategory) return;
+
+    const confirmed = window.confirm(
+      `¿Eliminar la categoría ${editingCategory.name}?\n\nSolo se eliminará porque nunca ha tenido equipos.`,
+    );
+    if (!confirmed) return;
+
+    setDeletingCategory(true);
+    setErrors({});
+    const result = await actions.deleteCategory(editingCategory.id, {
+      seasonId,
+    });
+    setDeletingCategory(false);
+
+    if (!result.ok) {
+      setErrors({ [result.code || "HTTP_ERROR"]: true });
+      return;
+    }
+
+    closeEditCategory();
+  };
+
   if (loadingCategories) {
-    return <p>Cargando categorías...</p>;
+    return <p role="status">Cargando categorías...</p>;
   }
 
   return (
@@ -177,11 +216,10 @@ export const Categories = () => {
         icon={Layers}
         eyebrow="Estructura deportiva"
         title="Categorías y equipos"
-        subtitle="Organiza el club por edades, niveles, géneros o grupos de entrenamiento."
+        subtitle="Las categorías organizan permanentemente la estructura del club."
         actions={
           canManageStructure &&
           !showForm &&
-          !readOnlySeason &&
           !editingCategoryId && (
             <Button onClick={openCreateForm}>+ Crear categoría</Button>
           )
@@ -189,10 +227,33 @@ export const Categories = () => {
       />
       <SeasonSelector
         loading={loadingSeasons}
+        error={seasonError}
         onChange={selectSeason}
+        onRetry={reloadSeasons}
         seasons={seasons}
         selectedSeason={selectedSeason}
       />
+      {!seasonError && selectedSeason && (
+        <p className="season-context-copy">
+          Mostrando equipos y deportistas de: <strong>{selectedSeason.name}</strong>
+        </p>
+      )}
+      {!seasonError && !loadingSeasons && !selectedSeason && (
+        <p className="season-context-copy">
+          Las categorías siguen disponibles, pero no hay una temporada activa para mostrar conteos deportivos.
+        </p>
+      )}
+      {loadError && (
+        <Card className="page-error-state" role="alert">
+          <p>{errorMessages[loadError] || "No se pudieron cargar las categorías."}</p>
+          <Button
+            variant="secondary"
+            onClick={() => setCategoryRetryKey((current) => current + 1)}
+          >
+            Volver a intentar
+          </Button>
+        </Card>
+      )}
       {showForm && (
         <Card>
           <h4>Nueva categoría</h4>
@@ -200,6 +261,8 @@ export const Categories = () => {
           <form onSubmit={handleCreateCategory} className="form">
             <FormField
               label="Nombre de la categoría"
+              htmlFor="category-name"
+              errorId="category-name-error"
               error={
                 errors.CATEGORY_NAME_REQUIRED
                   ? errorMessages.CATEGORY_NAME_REQUIRED
@@ -210,6 +273,13 @@ export const Categories = () => {
             >
               <Input
                 type="text"
+                id="category-name"
+                autoFocus
+                aria-describedby={
+                  errors.CATEGORY_NAME_REQUIRED || errors.CATEGORY_ALREADY_EXISTS
+                    ? "category-name-error"
+                    : undefined
+                }
                 placeholder="Ej: Iniciación, U12, U14, Juvenil..."
                 value={categoryName}
                 className={
@@ -229,9 +299,10 @@ export const Categories = () => {
               />
             </FormField>
 
-            <FormField label="Descripción opcional">
+            <FormField label="Descripción opcional" htmlFor="category-description">
               <Input
                 type="text"
+                id="category-description"
                 placeholder="Ej: Deportistas que están comenzando"
                 value={categoryDescription}
                 onChange={(e) => {
@@ -239,6 +310,13 @@ export const Categories = () => {
                 }}
               />
             </FormField>
+
+            {categoryGeneralErrorCode && (
+              <p className="form-error" role="alert">
+                {errorMessages[categoryGeneralErrorCode] ||
+                  "No se pudo crear la categoría."}
+              </p>
+            )}
 
             <div className="form-actions">
               <Button
@@ -264,6 +342,8 @@ export const Categories = () => {
           <form onSubmit={handleUpdateCategory} className="form">
             <FormField
               label="Nombre de la categoría"
+              htmlFor="edit-category-name"
+              errorId="edit-category-name-error"
               error={
                 errors.CATEGORY_NAME_REQUIRED
                   ? errorMessages.CATEGORY_NAME_REQUIRED
@@ -274,6 +354,13 @@ export const Categories = () => {
             >
               <Input
                 type="text"
+                id="edit-category-name"
+                autoFocus
+                aria-describedby={
+                  errors.CATEGORY_NAME_REQUIRED || errors.CATEGORY_ALREADY_EXISTS
+                    ? "edit-category-name-error"
+                    : undefined
+                }
                 placeholder="Ej: Iniciación, U12, U14, Juvenil..."
                 value={editCategoryName}
                 className={
@@ -293,9 +380,10 @@ export const Categories = () => {
               />
             </FormField>
 
-            <FormField label="Descripción opcional">
+            <FormField label="Descripción opcional" htmlFor="edit-category-description">
               <Input
                 type="text"
+                id="edit-category-description"
                 placeholder="Ej: Deportistas que están comenzando"
                 value={editCategoryDescription}
                 onChange={(e) => {
@@ -303,6 +391,19 @@ export const Categories = () => {
                 }}
               />
             </FormField>
+
+            {categoryNameChanged && editingCategory?.has_historical_teams && (
+              <p className="category-history-warning" role="note">
+                Este nombre también se mostrará en temporadas anteriores.
+              </p>
+            )}
+
+            {categoryGeneralErrorCode && (
+              <p className="form-error" role="alert">
+                {errorMessages[categoryGeneralErrorCode] ||
+                  "No se pudo actualizar la categoría."}
+              </p>
+            )}
 
             <div className="form-actions">
               <Button
@@ -316,6 +417,17 @@ export const Categories = () => {
               <Button type="submit" disabled={loadingEdit}>
                 {loadingEdit ? "Guardando..." : "Guardar cambios"}
               </Button>
+
+              {editingCategory?.can_delete && (
+                <Button
+                  type="button"
+                  variant="danger"
+                  disabled={deletingCategory}
+                  onClick={handleDeleteCategory}
+                >
+                  {deletingCategory ? "Eliminando..." : "Eliminar categoría"}
+                </Button>
+              )}
             </div>
           </form>
         </Card>
@@ -339,18 +451,22 @@ export const Categories = () => {
               {myTeams.map((team) => (
                 <Card
                   key={team.id}
-                  className="team-card card-interactive category-card"
-                  onClick={() => navigate(`/teams/${team.id}`)}
+                  className="team-card team-card-shell category-card"
                 >
-                  <div className="category-card-header">
-                    <h3 className="team-card-title">{team.name}</h3>
-                    <AssignedBadge />
-                  </div>
+                  <Link
+                    className="team-card-link"
+                    to={`/teams/${team.id}${seasonId ? `?season=${seasonId}` : ""}`}
+                  >
+                    <div className="category-card-header">
+                      <h3 className="team-card-title">{team.name}</h3>
+                      <AssignedBadge />
+                    </div>
 
-                  <p className="team-meta">
-                    {team.category?.name || "Sin categoría"}
-                    {team.status === "archived" ? " · Archivado" : ""}
-                  </p>
+                    <p className="team-meta">
+                      {team.category?.name || "Sin categoría"}
+                      {team.status === "archived" ? " · Archivado" : ""}
+                    </p>
+                  </Link>
                 </Card>
               ))}
             </div>
@@ -360,7 +476,8 @@ export const Categories = () => {
         </section>
       )}
 
-      {!showForm &&
+      {!loadError &&
+        !showForm &&
         !editingCategoryId &&
         (store.categories?.length === 0 ? (
           <Card>
@@ -368,7 +485,9 @@ export const Categories = () => {
               <h4>Aún no tienes categorías</h4>
               {canManageStructure ? (
                 <>
-                  <p>Crea una categoría como Iniciación, U12, U14 o Juvenil.</p>
+                  <p>
+                    Crea una categoría y después podrás organizar sus equipos.
+                  </p>
                   <Button onClick={openCreateForm}>Crear categoría</Button>
                 </>
               ) : (
@@ -381,37 +500,38 @@ export const Categories = () => {
             {store.categories?.map((category) => (
               <Card
                 key={category.id}
-                className="team-card card-interactive category-card"
-                onClick={() =>
-                  navigate(
-                    `/categories/${category.id}${
-                      seasonId ? `?season=${seasonId}` : ""
-                    }`,
-                  )
-                }
+                className="team-card team-card-shell category-card"
               >
-                <div className="category-card-header">
-                  <h3 className="team-card-title">{category.name}</h3>
+                <Link
+                  className={`team-card-link ${canManageStructure ? "has-card-action" : ""}`}
+                  to={`/categories/${category.id}${seasonId ? `?season=${seasonId}` : ""}`}
+                >
+                  <div className="category-card-header">
+                    <h3 className="team-card-title">{category.name}</h3>
+                  </div>
 
-                  {canManageStructure && !readOnlySeason && (
+                  {category.description && (
+                    <p className="category-description">{category.description}</p>
+                  )}
+
+                  <p className="team-meta">
+                    {selectedSeason?.name || "Sin temporada activa"} · {category.total_teams || 0} equipos ·{" "}
+                    {category.total_players || 0} deportistas
+                  </p>
+                </Link>
+
+                  {canManageStructure && (
                     <button
                       type="button"
                       className="category-edit-button"
                       aria-label={`Editar categoría ${category.name}`}
                       onClick={(e) => {
-                        e.stopPropagation();
                         openEditCategory(category);
                       }}
                     >
                       <Pencil size={16} />
                     </button>
                   )}
-                </div>
-
-                <p className="team-meta">
-                  {category.total_teams || 0} equipos ·{" "}
-                  {category.total_players || 0} deportistas
-                </p>
               </Card>
             ))}
           </div>

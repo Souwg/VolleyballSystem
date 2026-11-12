@@ -410,7 +410,7 @@ const getState = ({ getStore, getActions, setStore }) => {
         }
       },
 
-      createCategory: async (categoryData) => {
+      createCategory: async (categoryData, filters = {}) => {
         try {
           const resp = await authFetch("/api/categories", {
             method: "POST",
@@ -426,7 +426,7 @@ const getState = ({ getStore, getActions, setStore }) => {
 
           const actions = getActions();
 
-          await actions.getCategories();
+          await actions.getCategories(filters);
           await actions.getOnboardingStatus();
 
           return successResponse(result.data);
@@ -435,7 +435,7 @@ const getState = ({ getStore, getActions, setStore }) => {
         }
       },
 
-      updateCategory: async (categoryId, categoryData) => {
+      updateCategory: async (categoryId, categoryData, filters = {}) => {
         try {
           const resp = await authFetch(`/api/categories/${categoryId}`, {
             method: "PUT",
@@ -451,12 +451,30 @@ const getState = ({ getStore, getActions, setStore }) => {
 
           const actions = getActions();
 
-          await actions.getCategories();
+          await actions.getCategories(filters);
           await actions.getOnboardingStatus();
 
           return successResponse(result.data);
         } catch (error) {
           return networkError("Error updating category:", error);
+        }
+      },
+
+      deleteCategory: async (categoryId, filters = {}) => {
+        try {
+          const resp = await authFetch(`/api/categories/${categoryId}`, {
+            method: "DELETE",
+          });
+
+          const result = await parseResponse(resp);
+
+          if (!result.ok) return result;
+
+          await getActions().getCategories(filters);
+
+          return successResponse(result.data);
+        } catch (error) {
+          return networkError("Error deleting category:", error);
         }
       },
 

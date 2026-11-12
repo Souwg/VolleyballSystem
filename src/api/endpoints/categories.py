@@ -1,16 +1,58 @@
 from flask import jsonify, request
 from flask_jwt_extended import jwt_required
-from sqlalchemy import func
+from sqlalchemy import case, func
+from sqlalchemy.exc import IntegrityError
 
 from src.api.api_blueprint import api
 from src.api.coach_access import get_team_access_resolver
-from src.api.models import db, Category, Team, TeamPlayer
+from src.api.integrity_errors import violates_named_constraint
+from src.api.models import db, Category, Season, Team, TeamPlayer
 from src.api.request_validation import text_field
 from src.api.season_service import (
     get_active_season_for_club,
     resolve_season_for_read,
 )
 from src.api.utils import error_response, get_current_user
+
+
+CATEGORY_UNIQUE_CONSTRAINTS = {
+    "unique_category_per_club",
+    "uq_categories_club_lower_name",
+}
+
+
+def _category_usage_by_id(club_id):
+    rows = db.session.query(
+        Team.category_id,
+        func.count(Team.id),
+        func.max(case((Season.status == "closed", 1), else_=0)),
+    ).join(
+        Season,
+        (Season.id == Team.season_id) & (Season.club_id == Team.club_id),
+    ).filter(
+        Team.club_id == club_id,
+    ).group_by(Team.category_id).all()
+
+    return {
+        category_id: {
+            "total_teams_all_seasons": total_teams,
+            "has_historical_teams": bool(has_historical_teams),
+            "can_delete": total_teams == 0,
+        }
+        for category_id, total_teams, has_historical_teams in rows
+    }
+
+
+def _serialize_category_with_usage(category, usage_by_id=None):
+    usage = (usage_by_id or {}).get(category.id, {})
+    total_teams = usage.get("total_teams_all_seasons", 0)
+
+    return {
+        **category.serialize(),
+        "total_teams_all_seasons": total_teams,
+        "has_historical_teams": usage.get("has_historical_teams", False),
+        "can_delete": total_teams == 0,
+    }
 
 
 @api.route("/categories", methods=["POST"])
@@ -69,8 +111,23 @@ def create_category():
         club_id=user.club_id
     )
 
-    db.session.add(category)
-    db.session.commit()
+    try:
+        db.session.add(category)
+        db.session.commit()
+    except IntegrityError as error:
+        db.session.rollback()
+
+        if not violates_named_constraint(
+            error,
+            CATEGORY_UNIQUE_CONSTRAINTS,
+        ):
+            raise
+
+        return error_response(
+            "Ya existe una categoría con ese nombre",
+            "CATEGORY_ALREADY_EXISTS",
+            409
+        )
 
     return jsonify({
         "message": "Categoría creada correctamente",
@@ -101,6 +158,7 @@ def get_categories():
     categories = Category.query.filter_by(
         club_id=user.club_id
     ).order_by(Category.name).all()
+    category_usage = _category_usage_by_id(user.club_id)
     requested_season_id = request.args.get("season_id")
     explicit_season = requested_season_id is not None
 
@@ -148,7 +206,7 @@ def get_categories():
             total_players = memberships.count()
 
         result.append({
-            **category.serialize(),
+            **_serialize_category_with_usage(category, category_usage),
             "total_teams": len(teams),
             "total_players": total_players
         })
@@ -240,7 +298,10 @@ def get_category_detail(category_id):
         })
 
     return jsonify({
-        "category": category.serialize(),
+        "category": _serialize_category_with_usage(
+            category,
+            _category_usage_by_id(user.club_id),
+        ),
         "season": season.serialize() if season else None,
         "total_teams": len(serialized_teams),
         "teams": serialized_teams
@@ -316,7 +377,22 @@ def update_category(category_id):
     category.name = name
     category.description = description or None
 
-    db.session.commit()
+    try:
+        db.session.commit()
+    except IntegrityError as error:
+        db.session.rollback()
+
+        if not violates_named_constraint(
+            error,
+            CATEGORY_UNIQUE_CONSTRAINTS,
+        ):
+            raise
+
+        return error_response(
+            "Ya existe una categoría con ese nombre",
+            "CATEGORY_ALREADY_EXISTS",
+            409
+        )
 
     return jsonify({
         "message": "Categoría actualizada correctamente",
@@ -447,7 +523,10 @@ def delete_category(category_id):
             403
         )
 
-    teams_count = Team.query.filter_by(category_id=category.id).count()
+    teams_count = Team.query.filter_by(
+        category_id=category.id,
+        club_id=user.club_id,
+    ).count()
 
     if teams_count > 0:
         return error_response(
