@@ -6,8 +6,8 @@ import { authFetch, parseResponse } from "../utils/authFetch";
 
 
 const STATUS_LABELS = {
-  active: "Activa",
-  planned: "Planificada",
+  active: "Actual",
+  planned: "En preparación",
   closed: "Cerrada",
 };
 
@@ -94,6 +94,7 @@ export const useSeasonSelection = ({ defaultToActive = true } = {}) => {
 
 export const SeasonSelector = ({
   includeAll = false,
+  showContext = true,
   loading,
   onChange,
   onRetry,
@@ -120,13 +121,26 @@ export const SeasonSelector = ({
           </option>
         ))}
       </Select>
+      {selectedSeason?.status === "active" && (
+        <span className="status-badge status-success">Actual</span>
+      )}
       {selectedSeason?.status === "closed" && (
-        <span className="status-badge status-muted">Temporada cerrada</span>
+        <span className="status-badge status-muted">Cerrada · consulta histórica</span>
       )}
       {selectedSeason?.status === "planned" && (
-        <span className="status-badge status-info">Temporada planificada</span>
+        <span className="status-badge status-info">En preparación</span>
       )}
     </div>
+    {showContext && selectedSeason && (
+      <p className="season-context-copy">
+        Mostrando datos de: <strong>{selectedSeason.name}</strong>
+        {selectedSeason.status === "closed"
+          ? ". Esta consulta no cambia la temporada actual."
+          : selectedSeason.status === "planned"
+          ? ". Esta temporada aún está en preparación."
+          : "."}
+      </p>
+    )}
     {error && (
       <div className="season-load-error" role="alert">
         <p>No se pudieron cargar las temporadas.</p>

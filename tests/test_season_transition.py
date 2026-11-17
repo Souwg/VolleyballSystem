@@ -60,7 +60,10 @@ def _create_planned(client, world, auth_headers, user=None, **overrides):
 def _transition(client, world, target, auth_headers, source=None, user=None):
     return client.post(
         f"/api/seasons/{target.id}/transition",
-        json={"source_season_id": (source or world.season_a).id},
+        json={
+            "source_season_id": (source or world.season_a).id,
+            "confirm_activation": True,
+        },
         headers=auth_headers(user or world.owner_a),
     )
 
@@ -508,7 +511,11 @@ def test_transition_rolls_back_both_seasons_on_integrity_conflict(
     _target_team(world, planned, "Future")
 
     def fail_commit():
-        raise IntegrityError("transition", {}, Exception("conflict"))
+        raise IntegrityError(
+            "transition",
+            {},
+            Exception("UNIQUE constraint failed: seasons.club_id"),
+        )
 
     monkeypatch.setattr(db.session, "commit", fail_commit)
     response = _transition(client, world, planned, auth_headers)

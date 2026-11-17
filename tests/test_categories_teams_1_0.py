@@ -260,7 +260,8 @@ def test_categories_teams_frontend_contract_for_flow_copy_and_accessibility():
 
     assert '{ season_id: contextSeason.id }' in category_detail
     assert 'label="Rama"' in category_detail
-    assert "Planificada. Puedes crear y editar equipos" in category_detail
+    assert "Temporada en preparación" in category_detail
+    assert "preparación por el administrador del club" in category_detail
     assert "No hubo equipos de esta categoría en esta temporada." in category_detail
     assert "breadcrumbs" in category_detail
 

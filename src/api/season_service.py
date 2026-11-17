@@ -1,6 +1,16 @@
 from datetime import datetime
 
-from src.api.models import MatchSession, Season, Team, Tournament, TrainingSession
+from src.api.models import (
+    MatchSession,
+    Player,
+    Season,
+    Team,
+    TeamCoachAssignment,
+    TeamPlayer,
+    Tournament,
+    TrainingSession,
+)
+from src.api.team_player_status import VALID_TEAM_PLAYER_STATUSES
 
 
 INITIAL_SEASON_NAME = "Temporada inicial"
@@ -14,6 +24,18 @@ def get_active_season_for_club(club_id):
         club_id=club_id,
         status="active"
     ).first()
+
+
+def lock_club_seasons_for_update(club_id):
+    """Lock every Season for a Club using one deterministic order.
+
+    Season transition and the preparation writes use this same lock first. A
+    preparation request that was waiting for a transition therefore reloads
+    the lifecycle before it can write into the former planned Season.
+    """
+    return Season.query.filter_by(club_id=club_id).order_by(
+        Season.id.asc()
+    ).populate_existing().with_for_update().all()
 
 
 def resolve_season_for_read(
@@ -178,6 +200,219 @@ def get_season_open_activities(season):
         "scheduled_trainings": scheduled_trainings,
         "open_matches": open_matches,
         "active_tournaments": active_tournaments,
+    }
+
+
+def _ranges_overlap(first, second):
+    first_ends_after_second_starts = (
+        first.end_date is None or first.end_date >= second.start_date
+    )
+    second_ends_after_first_starts = (
+        second.end_date is None or second.end_date >= first.start_date
+    )
+    return first_ends_after_second_starts and second_ends_after_first_starts
+
+
+def build_season_activation_preflight(target, source=None):
+    """Build the canonical readiness result used by preflight and transition."""
+    active_teams = Team.query.filter_by(
+        club_id=target.club_id,
+        season_id=target.id,
+        status="active",
+    ).order_by(Team.name.asc()).all()
+    team_ids = [team.id for team in active_teams]
+
+    memberships = []
+    if team_ids:
+        memberships = TeamPlayer.query.join(Player).filter(
+            TeamPlayer.team_id.in_(team_ids),
+            TeamPlayer.left_at.is_(None),
+        ).all()
+
+    memberships_by_team = {team_id: [] for team_id in team_ids}
+    invalid_memberships = []
+    seen_players = set()
+    seen_numbers = set()
+
+    for membership in memberships:
+        memberships_by_team[membership.team_id].append(membership)
+        team = membership.team
+        player = membership.player
+        player_key = (membership.team_id, membership.player_id)
+        number_key = (membership.team_id, membership.player_number)
+        reasons = []
+
+        if not player or player.club_id != target.club_id or not player.is_active:
+            reasons.append("PLAYER_INACTIVE")
+        if (
+            player
+            and team.gender != "mixed"
+            and player.sex != team.gender
+        ):
+            reasons.append("PLAYER_GENDER_MISMATCH")
+        if membership.status not in VALID_TEAM_PLAYER_STATUSES:
+            reasons.append("INVALID_PLAYER_STATUS")
+        if (
+            not isinstance(membership.player_number, int)
+            or membership.player_number < 1
+            or membership.player_number > 99
+        ):
+            reasons.append("INVALID_PLAYER_NUMBER")
+        if player_key in seen_players:
+            reasons.append("PLAYER_ALREADY_IN_TEAM")
+        if number_key in seen_numbers:
+            reasons.append("PLAYER_NUMBER_DUPLICATED")
+
+        seen_players.add(player_key)
+        seen_numbers.add(number_key)
+
+        if reasons:
+            invalid_memberships.append({
+                "membership_id": membership.id,
+                "team_id": membership.team_id,
+                "player_id": membership.player_id,
+                "reasons": reasons,
+            })
+
+    coached_team_ids = set()
+    if team_ids:
+        coached_team_ids = {
+            row[0]
+            for row in TeamCoachAssignment.query.with_entities(
+                TeamCoachAssignment.team_id
+            ).filter(
+                TeamCoachAssignment.club_id == target.club_id,
+                TeamCoachAssignment.team_id.in_(team_ids),
+                TeamCoachAssignment.removed_at.is_(None),
+            ).distinct().all()
+        }
+
+    teams_without_players = sum(
+        not memberships_by_team.get(team.id) for team in active_teams
+    )
+    teams_without_coach = sum(
+        team.id not in coached_team_ids for team in active_teams
+    )
+    activities = (
+        get_season_open_activities(source)
+        if source
+        else {
+            "scheduled_trainings": 0,
+            "open_matches": 0,
+            "active_tournaments": 0,
+        }
+    )
+
+    blockers = []
+    if not active_teams:
+        blockers.append({
+            "code": "SEASON_TEAM_REQUIRED",
+            "message": "Agrega al menos un equipo antes de activar esta temporada.",
+            "count": 0,
+            "action": {
+                "label": "Preparar equipos",
+                "href": f"/categories?season={target.id}",
+            },
+        })
+
+    activity_blockers = (
+        (
+            "SCHEDULED_TRAININGS",
+            "Entrenamientos programados pendientes",
+            "scheduled_trainings",
+            "Ver entrenamientos pendientes",
+            "/trainings",
+        ),
+        (
+            "OPEN_MATCHES",
+            "Partidos abiertos pendientes",
+            "open_matches",
+            "Ver partidos pendientes",
+            "/matches",
+        ),
+        (
+            "ACTIVE_TOURNAMENTS",
+            "Torneos activos pendientes",
+            "active_tournaments",
+            "Ver torneos pendientes",
+            "/tournaments",
+        ),
+    )
+    if source:
+        for code, message, key, label, path in activity_blockers:
+            count = activities[key]
+            if count:
+                blockers.append({
+                    "code": code,
+                    "message": message,
+                    "count": count,
+                    "action": {
+                        "label": label,
+                        "href": f"{path}?season={source.id}",
+                    },
+                })
+
+    if invalid_memberships:
+        blockers.append({
+            "code": "TARGET_ROSTER_INVALID",
+            "message": "El roster preparado contiene datos que deben corregirse.",
+            "count": len(invalid_memberships),
+            "details": invalid_memberships,
+            "action": {
+                "label": "Revisar equipos",
+                "href": f"/categories?season={target.id}",
+            },
+        })
+
+    warnings = []
+    if teams_without_players:
+        warnings.append({
+            "code": "TEAMS_WITHOUT_PLAYERS",
+            "message": "Hay equipos sin deportistas asignados.",
+            "count": teams_without_players,
+        })
+    if teams_without_coach:
+        warnings.append({
+            "code": "TEAMS_WITHOUT_COACH",
+            "message": "Hay equipos sin entrenador asignado.",
+            "count": teams_without_coach,
+            "action": {
+                "label": "Asignar entrenadores",
+                "href": f"/categories?season={target.id}",
+            },
+        })
+
+    other_seasons = Season.query.filter(
+        Season.club_id == target.club_id,
+        Season.id != target.id,
+    ).all()
+    if any(season.name.lower() == target.name.lower() for season in other_seasons):
+        warnings.append({
+            "code": "DUPLICATE_SEASON_NAME",
+            "message": "Ya existe otra temporada con este nombre.",
+            "count": 1,
+        })
+    if any(_ranges_overlap(target, season) for season in other_seasons):
+        warnings.append({
+            "code": "SEASON_DATES_OVERLAP",
+            "message": "Las fechas se solapan con otra temporada.",
+            "count": 1,
+        })
+
+    return {
+        "mode": "transition" if source else "recovery",
+        "source": source.serialize() if source else None,
+        "target": target.serialize(),
+        "can_activate": not blockers,
+        "blockers": blockers,
+        "warnings": warnings,
+        "summary": {
+            "total_teams": len(active_teams),
+            "total_players": len(memberships),
+            "teams_without_players": teams_without_players,
+            "teams_without_coach": teams_without_coach,
+            **activities,
+        },
     }
 
 

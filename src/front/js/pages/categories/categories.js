@@ -226,6 +226,7 @@ export const Categories = () => {
         }
       />
       <SeasonSelector
+        showContext={false}
         loading={loadingSeasons}
         error={seasonError}
         onChange={selectSeason}

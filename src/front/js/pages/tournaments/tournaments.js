@@ -373,7 +373,9 @@ export const Tournaments = () => {
               <h4>No hay datos en esta temporada</h4>
 
               <p>
-                {readOnlySeason
+                {selectedSeason?.status === "planned"
+                  ? "Los torneos se configuran cuando la temporada esté activa."
+                  : readOnlySeason
                   ? "No hay torneos registrados en la temporada seleccionada."
                   : !canCreateTournament
                   ? "Los torneos del club aparecerán aquí cuando se registren."

@@ -1020,7 +1020,10 @@ def test_season_transition_keeps_assignments_and_does_not_copy_them(
     transition = client.post(
         f"/api/seasons/{planned.id}/transition",
         headers=headers,
-        json={"source_season_id": world.season_a.id},
+        json={
+            "source_season_id": world.season_a.id,
+            "confirm_activation": True,
+        },
     )
 
     assert duplicate.status_code == 201

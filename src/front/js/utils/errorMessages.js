@@ -10,6 +10,12 @@ export const errorMessages = {
     "No se pudo completar la transición. Actualiza la página e intenta nuevamente.",
   SEASON_TEAM_REQUIRED:
     "Prepara al menos un equipo antes de activar la temporada.",
+  SEASON_HAS_DEPENDENCIES:
+    "La temporada ya tiene estructura o actividad asociada y no puede eliminarse.",
+  SEASON_ACTIVATION_CONFIRMATION_REQUIRED:
+    "Revisa y confirma la activación antes de continuar.",
+  TARGET_ROSTER_INVALID:
+    "El roster preparado contiene datos que deben corregirse.",
   TEAM_ALREADY_COPIED:
     "Uno de los equipos seleccionados ya existe en la temporada destino.",
   TEAM_SELECTION_REQUIRED: "Selecciona al menos un equipo.",

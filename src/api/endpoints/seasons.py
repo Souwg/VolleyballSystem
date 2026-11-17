@@ -7,9 +7,21 @@ from sqlalchemy.exc import IntegrityError
 
 from src.api.api_blueprint import api
 from src.api.integrity_errors import violates_named_constraint
-from src.api.models import db, Player, Season, Team, TeamPlayer
+from src.api.models import (
+    db,
+    Player,
+    Season,
+    Team,
+    TeamCoachAssignment,
+    TeamPlayer,
+    Tournament,
+)
 from src.api.onboarding_service import finish_club_onboarding_if_complete
-from src.api.season_service import get_season_open_activities
+from src.api.season_service import (
+    build_season_activation_preflight,
+    get_season_open_activities,
+    lock_club_seasons_for_update,
+)
 from src.api.utils import error_response, get_current_user
 from src.api.team_player_status import VALID_TEAM_PLAYER_STATUSES
 
@@ -21,6 +33,15 @@ OPEN_PLAYER_CONSTRAINTS = (
 OPEN_NUMBER_CONSTRAINTS = (
     "uq_team_players_open_number",
     "team_players.team_id, team_players.player_number",
+)
+TEAM_UNIQUE_CONSTRAINTS = (
+    "unique_team_gender_per_category",
+    "uq_teams_scope_lower_name",
+    "teams.name, teams.gender, teams.category_id, teams.club_id, teams.season_id",
+)
+ACTIVE_SEASON_CONSTRAINTS = (
+    "uq_seasons_active_per_club",
+    "unique constraint failed: seasons.club_id",
 )
 
 
@@ -48,6 +69,63 @@ def _club_season_or_error(season_id, user):
     return season, None
 
 
+def _parse_season_fields(body, current=None):
+    name_value = body.get("name", current.name if current else "")
+    name = " ".join(str(name_value or "").strip().split())
+    if not name:
+        return None, error_response(
+            "El nombre de la temporada es obligatorio",
+            "SEASON_NAME_REQUIRED",
+            400,
+        )
+
+    start_value = body.get(
+        "start_date",
+        current.start_date.isoformat() if current and current.start_date else "",
+    )
+    try:
+        start_date = datetime.strptime(str(start_value or ""), "%Y-%m-%d").date()
+    except ValueError:
+        return None, error_response(
+            "La fecha de inicio debe usar el formato YYYY-MM-DD",
+            "INVALID_DATE_FORMAT",
+            400,
+        )
+
+    if "end_date" in body:
+        end_value = body.get("end_date")
+    else:
+        end_value = (
+            current.end_date.isoformat()
+            if current and current.end_date
+            else None
+        )
+
+    end_date = None
+    if end_value:
+        try:
+            end_date = datetime.strptime(str(end_value), "%Y-%m-%d").date()
+        except ValueError:
+            return None, error_response(
+                "La fecha de finalización debe usar el formato YYYY-MM-DD",
+                "INVALID_DATE_FORMAT",
+                400,
+            )
+
+    if end_date and end_date < start_date:
+        return None, error_response(
+            "La fecha de finalización no puede ser anterior al inicio",
+            "INVALID_SEASON_DATE_RANGE",
+            400,
+        )
+
+    return {
+        "name": name,
+        "start_date": start_date,
+        "end_date": end_date,
+    }, None
+
+
 def _season_payload(season, include_teams=False):
     data = season.serialize()
     teams = Team.query.filter_by(
@@ -56,6 +134,48 @@ def _season_payload(season, include_teams=False):
     ).order_by(Team.name).all()
     data["total_teams"] = len(teams)
     data["active_teams"] = sum(team.status == "active" for team in teams)
+    tournament_count = Tournament.query.filter_by(
+        club_id=season.club_id,
+        season_id=season.id,
+    ).count()
+    data["can_delete"] = (
+        season.status == "planned"
+        and not teams
+        and tournament_count == 0
+    )
+
+    if season.status == "active":
+        data["open_activities"] = get_season_open_activities(season)
+
+    if season.status == "planned":
+        active_team_ids = [team.id for team in teams if team.status == "active"]
+        total_players = 0
+        teams_with_players = set()
+        teams_with_coach = set()
+        if active_team_ids:
+            memberships = TeamPlayer.query.with_entities(
+                TeamPlayer.team_id
+            ).filter(
+                TeamPlayer.team_id.in_(active_team_ids),
+                TeamPlayer.left_at.is_(None),
+            ).all()
+            total_players = len(memberships)
+            teams_with_players = {row[0] for row in memberships}
+            teams_with_coach = {
+                row[0]
+                for row in TeamCoachAssignment.query.with_entities(
+                    TeamCoachAssignment.team_id
+                ).filter(
+                    TeamCoachAssignment.club_id == season.club_id,
+                    TeamCoachAssignment.team_id.in_(active_team_ids),
+                    TeamCoachAssignment.removed_at.is_(None),
+                ).distinct().all()
+            }
+        data["preparation"] = {
+            "total_players": total_players,
+            "teams_without_players": len(active_team_ids) - len(teams_with_players),
+            "teams_without_coach": len(active_team_ids) - len(teams_with_coach),
+        }
 
     if include_teams:
         data["teams"] = [
@@ -123,52 +243,13 @@ def create_planned_season():
     if role_error:
         return role_error
 
-    body = request.get_json() or {}
-    name = " ".join(str(body.get("name") or "").strip().split())
-
-    if not name:
-        return error_response(
-            "El nombre de la temporada es obligatorio",
-            "SEASON_NAME_REQUIRED",
-            400,
-        )
-
-    try:
-        start_date = datetime.strptime(
-            str(body.get("start_date") or ""), "%Y-%m-%d"
-        ).date()
-    except ValueError:
-        return error_response(
-            "La fecha de inicio debe usar el formato YYYY-MM-DD",
-            "INVALID_DATE_FORMAT",
-            400,
-        )
-
-    end_date = None
-    if body.get("end_date"):
-        try:
-            end_date = datetime.strptime(
-                str(body["end_date"]), "%Y-%m-%d"
-            ).date()
-        except ValueError:
-            return error_response(
-                "La fecha de finalización debe usar el formato YYYY-MM-DD",
-                "INVALID_DATE_FORMAT",
-                400,
-            )
-
-    if end_date and end_date < start_date:
-        return error_response(
-            "La fecha de finalización no puede ser anterior al inicio",
-            "INVALID_SEASON_DATE_RANGE",
-            400,
-        )
+    fields, field_error = _parse_season_fields(request.get_json() or {})
+    if field_error:
+        return field_error
 
     season = Season(
         club_id=user.club_id,
-        name=name,
-        start_date=start_date,
-        end_date=end_date,
+        **fields,
         status="planned",
         created_by=user.id,
     )
@@ -179,6 +260,111 @@ def create_planned_season():
         "message": "Temporada planificada creada correctamente",
         "season": _season_payload(season),
     }), 201
+
+
+@api.route("/seasons/<string:season_id>", methods=["PATCH"])
+@jwt_required()
+def edit_planned_season(season_id):
+    user = get_current_user()
+    role_error = _owner_or_error(user)
+    if role_error:
+        return role_error
+
+    seasons = lock_club_seasons_for_update(user.club_id)
+    season = next((row for row in seasons if row.id == season_id), None)
+    if not season:
+        return error_response("Temporada no encontrada", "SEASON_NOT_FOUND", 404)
+    if season.status != "planned":
+        return error_response(
+            "Solo una temporada en preparación puede editarse",
+            "SEASON_NOT_PLANNED",
+            409,
+        )
+
+    fields, field_error = _parse_season_fields(
+        request.get_json() or {},
+        current=season,
+    )
+    if field_error:
+        db.session.rollback()
+        return field_error
+
+    season.name = fields["name"]
+    season.start_date = fields["start_date"]
+    season.end_date = fields["end_date"]
+    db.session.commit()
+    return jsonify({
+        "message": "Temporada actualizada correctamente",
+        "season": _season_payload(season),
+    }), 200
+
+
+@api.route("/seasons/<string:season_id>", methods=["DELETE"])
+@jwt_required()
+def delete_empty_planned_season(season_id):
+    user = get_current_user()
+    role_error = _owner_or_error(user)
+    if role_error:
+        return role_error
+
+    seasons = lock_club_seasons_for_update(user.club_id)
+    season = next((row for row in seasons if row.id == season_id), None)
+    if not season:
+        return error_response("Temporada no encontrada", "SEASON_NOT_FOUND", 404)
+    if season.status != "planned":
+        return error_response(
+            "Solo una temporada en preparación puede eliminarse",
+            "SEASON_NOT_PLANNED",
+            409,
+        )
+
+    dependencies = {
+        "teams": Team.query.filter_by(
+            club_id=user.club_id,
+            season_id=season.id,
+        ).count(),
+        "tournaments": Tournament.query.filter_by(
+            club_id=user.club_id,
+            season_id=season.id,
+        ).count(),
+    }
+    if any(dependencies.values()):
+        db.session.rollback()
+        return jsonify({
+            "error": True,
+            "code": "SEASON_HAS_DEPENDENCIES",
+            "message": "La temporada ya tiene estructura o actividad asociada",
+            "details": dependencies,
+        }), 409
+
+    db.session.delete(season)
+    db.session.commit()
+    return jsonify({"message": "Temporada eliminada correctamente"}), 200
+
+
+@api.route("/seasons/<string:target_season_id>/preflight", methods=["GET"])
+@jwt_required()
+def get_season_preflight(target_season_id):
+    user = get_current_user()
+    role_error = _owner_or_error(user)
+    if role_error:
+        return role_error
+
+    target, target_error = _club_season_or_error(target_season_id, user)
+    if target_error:
+        return target_error
+    if target.status != "planned":
+        return error_response(
+            "La temporada destino debe estar en preparación",
+            "SEASON_NOT_PLANNED",
+            409,
+        )
+
+    source = Season.query.filter_by(
+        club_id=user.club_id,
+        status="active",
+    ).first()
+    return jsonify(build_season_activation_preflight(target, source)), 200
 
 
 @api.route(
@@ -192,18 +378,6 @@ def duplicate_season_teams(target_season_id):
 
     if role_error:
         return role_error
-
-    target, target_error = _club_season_or_error(target_season_id, user)
-
-    if target_error:
-        return target_error
-
-    if target.status != "planned":
-        return error_response(
-            "La temporada destino debe estar planificada",
-            "SEASON_NOT_PLANNED",
-            409,
-        )
 
     body = request.get_json() or {}
     source_id = body.get("source_season_id")
@@ -223,15 +397,31 @@ def duplicate_season_teams(target_season_id):
             400,
         )
 
-    source, source_error = _club_season_or_error(source_id, user)
+    seasons = lock_club_seasons_for_update(user.club_id)
+    by_id = {season.id: season for season in seasons}
+    target = by_id.get(target_season_id)
+    source = by_id.get(source_id)
 
-    if source_error:
-        return source_error
+    if not target or not source:
+        return error_response("Temporada no encontrada", "SEASON_NOT_FOUND", 404)
+    if target.status != "planned":
+        return error_response(
+            "La temporada destino debe estar planificada",
+            "SEASON_NOT_PLANNED",
+            409,
+        )
+    if source.status != "active":
+        return error_response(
+            "La temporada de origen ya no es la temporada activa",
+            "SEASON_TRANSITION_CONFLICT",
+            409,
+        )
 
     normalized_ids = list(dict.fromkeys(str(team_id) for team_id in team_ids))
     source_teams = Team.query.filter(
         Team.club_id == user.club_id,
         Team.season_id == source.id,
+        Team.status == "active",
         Team.id.in_(normalized_ids),
     ).all()
 
@@ -273,8 +463,12 @@ def duplicate_season_teams(target_season_id):
 
     try:
         db.session.commit()
-    except IntegrityError:
+    except IntegrityError as error:
         db.session.rollback()
+
+        if not violates_named_constraint(error, TEAM_UNIQUE_CONSTRAINTS):
+            raise
+
         return error_response(
             "Uno de los equipos ya fue preparado en la temporada destino",
             "TEAM_ALREADY_COPIED",
@@ -296,6 +490,9 @@ def copy_team_roster(target_team_id):
     if role_error:
         return role_error
 
+    # Same first lock as transition/structure copy. Lifecycle is re-read after
+    # waiting, so no roster can be inserted into a target that became active.
+    lock_club_seasons_for_update(user.club_id)
     target = db.session.get(Team, target_team_id)
 
     if not target or target.club_id != user.club_id:
@@ -534,30 +731,47 @@ def transition_season(target_season_id):
     if role_error:
         return role_error
 
-    source_season_id = (request.get_json() or {}).get("source_season_id")
-
-    if not source_season_id:
+    body = request.get_json() or {}
+    source_season_id = body.get("source_season_id")
+    if body.get("confirm_activation") is not True:
         return error_response(
-            "La temporada activa de origen es obligatoria",
-            "SOURCE_SEASON_REQUIRED",
+            "Confirma explícitamente la activación de la temporada",
+            "SEASON_ACTIVATION_CONFIRMATION_REQUIRED",
             400,
         )
 
-    seasons = Season.query.filter_by(club_id=user.club_id).with_for_update().all()
+    seasons = lock_club_seasons_for_update(user.club_id)
     by_id = {season.id: season for season in seasons}
-    source = by_id.get(source_season_id)
     target = by_id.get(target_season_id)
+    source = next(
+        (season for season in seasons if season.status == "active"),
+        None,
+    )
 
-    if not source or not target:
+    if not target:
         return error_response(
             "Temporada no encontrada",
             "SEASON_NOT_FOUND",
             404,
         )
 
-    if source.id == target.id or source.status != "active":
+    if source and not source_season_id:
         return error_response(
-            "La temporada de origen debe ser la temporada activa actual",
+            "La temporada activa cambió mientras preparabas la transición",
+            "SEASON_TRANSITION_CONFLICT",
+            409,
+        )
+
+    if source and source_season_id != source.id:
+        return error_response(
+            "La temporada activa cambió mientras preparabas la transición",
+            "SEASON_TRANSITION_CONFLICT",
+            409,
+        )
+
+    if not source and source_season_id:
+        return error_response(
+            "El ciclo de temporadas cambió; vuelve a revisar la activación",
             "SEASON_TRANSITION_CONFLICT",
             409,
         )
@@ -576,18 +790,23 @@ def transition_season(target_season_id):
             409,
         )
 
-    if not Team.query.filter_by(
-        club_id=user.club_id,
-        season_id=target.id,
-        status="active",
-    ).first():
+    preflight = build_season_activation_preflight(target, source)
+    blocker_codes = {blocker["code"] for blocker in preflight["blockers"]}
+    if "SEASON_TEAM_REQUIRED" in blocker_codes:
         return error_response(
             "Prepara al menos un equipo antes de activar la temporada",
             "SEASON_TEAM_REQUIRED",
             409,
         )
 
-    open_activities = get_season_open_activities(source)
+    open_activities = {
+        key: preflight["summary"][key]
+        for key in (
+            "scheduled_trainings",
+            "open_matches",
+            "active_tournaments",
+        )
+    }
     if any(open_activities.values()):
         return jsonify({
             "error": True,
@@ -599,15 +818,28 @@ def transition_season(target_season_id):
             "details": open_activities,
         }), 409
 
-    source.status = "closed"
-    db.session.flush()
+    if "TARGET_ROSTER_INVALID" in blocker_codes:
+        return jsonify({
+            "error": True,
+            "code": "TARGET_ROSTER_INVALID",
+            "message": "El roster preparado contiene datos que deben corregirse",
+            "details": preflight["blockers"],
+        }), 409
+
+    if source:
+        source.status = "closed"
+        db.session.flush()
     target.status = "active"
 
     try:
         finish_club_onboarding_if_complete(target.club)
         db.session.commit()
-    except IntegrityError:
+    except IntegrityError as error:
         db.session.rollback()
+
+        if not violates_named_constraint(error, ACTIVE_SEASON_CONSTRAINTS):
+            raise
+
         return error_response(
             "No se pudo completar la transición de temporada",
             "SEASON_TRANSITION_CONFLICT",
@@ -616,6 +848,7 @@ def transition_season(target_season_id):
 
     return jsonify({
         "message": "Nueva temporada activada correctamente",
-        "source_season": _season_payload(source),
+        "mode": "transition" if source else "recovery",
+        "source_season": _season_payload(source) if source else None,
         "target_season": _season_payload(target),
     }), 200

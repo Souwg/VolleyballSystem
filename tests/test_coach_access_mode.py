@@ -701,7 +701,10 @@ def test_finished_club_survives_season_transition(
     response = client.post(
         f"/api/seasons/{target.id}/transition",
         headers=auth_headers(world.owner_a),
-        json={"source_season_id": world.season_a.id},
+        json={
+            "source_season_id": world.season_a.id,
+            "confirm_activation": True,
+        },
     )
 
     assert response.status_code == 200, response.get_json()

@@ -269,7 +269,10 @@ def test_tournament_after_transition_uses_new_active_season(
     transition = client.post(
         f"/api/seasons/{planned.id}/transition",
         headers=auth_headers(world.owner_a),
-        json={"source_season_id": world.season_a.id},
+        json={
+            "source_season_id": world.season_a.id,
+            "confirm_activation": True,
+        },
     )
     created = client.post(
         "/api/tournaments",

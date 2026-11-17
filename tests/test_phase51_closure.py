@@ -120,7 +120,10 @@ def test_closed_season_training_cannot_be_reactivated(
     transitioned = client.post(
         f"/api/seasons/{target.id}/transition",
         headers=auth_headers(world.owner_a),
-        json={"source_season_id": world.season_a.id},
+        json={
+            "source_season_id": world.season_a.id,
+            "confirm_activation": True,
+        },
     )
     assert transitioned.status_code == 200
 

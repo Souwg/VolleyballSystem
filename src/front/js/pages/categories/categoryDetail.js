@@ -299,6 +299,7 @@ export const CategoryDetail = () => {
         <p className="category-detail-description">{category.description}</p>
       )}
       <SeasonSelector
+        showContext={false}
         loading={loadingSeasons}
         error={seasonError}
         onChange={selectSeason}
@@ -308,7 +309,9 @@ export const CategoryDetail = () => {
       />
       {contextSeason?.status === "planned" && (
         <div className="season-structure-notice" role="note">
-          Preparación · {contextSeason.name} — Planificada. Puedes crear y editar equipos antes de activarla.
+          {canManageStructure
+            ? `Temporada en preparación · ${contextSeason.name}. Puedes crear y editar equipos.`
+            : `Temporada en preparación por el administrador del club · ${contextSeason.name}.`}
         </div>
       )}
       {contextSeason?.status === "closed" && (
