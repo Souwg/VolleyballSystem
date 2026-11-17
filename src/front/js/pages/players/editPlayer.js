@@ -29,7 +29,8 @@ export const EditPlayer = () => {
   const { store, actions } = useContext(Context);
   const { player_id } = useParams();
   const navigate = useNavigate();
-  const canEditPlayer = ["club_owner", "coach"].includes(store.user?.role);
+  const canRequestEdit = ["club_owner", "coach"].includes(store.user?.role);
+  const canEditProfile = store.user?.role === "club_owner";
 
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -50,7 +51,7 @@ export const EditPlayer = () => {
   const loadPlayer = async () => {
     setLoading(true);
 
-    const result = await actions.getPlayerAttendance(player_id);
+    const result = await actions.getPlayerDetail(player_id);
 
     if (result.ok) {
       const currentPlayer = result.data.player;
@@ -70,10 +71,10 @@ export const EditPlayer = () => {
   };
 
   useEffect(() => {
-    if (!canEditPlayer) return;
+    if (!canRequestEdit) return;
 
     loadPlayer();
-  }, [player_id, canEditPlayer]);
+  }, [player_id, canRequestEdit]);
 
   useTeamAccessLost(() => loadPlayer());
 
@@ -110,12 +111,14 @@ export const EditPlayer = () => {
 
     if (saving) return;
 
-    const profileErrors = validatePlayerProfile({
-      first_name: firstName,
-      last_name: lastName,
-      sex,
-      birth_date: birthDate,
-    });
+    const profileErrors = canEditProfile
+      ? validatePlayerProfile({
+          first_name: firstName,
+          last_name: lastName,
+          sex,
+          birth_date: birthDate,
+        })
+      : {};
 
     if (Object.keys(profileErrors).length > 0) {
       setErrors(profileErrors);
@@ -124,6 +127,19 @@ export const EditPlayer = () => {
 
     setErrors({});
     setSaving(true);
+
+    if (!canEditProfile) {
+      const result = await actions.updatePlayer(player_id, {
+        main_position: mainPosition || null,
+      });
+      if (!result.ok) {
+        setErrors({ [result.code]: true });
+        setSaving(false);
+        return;
+      }
+      navigate(`/players/${player_id}`);
+      return;
+    }
 
     let finalImageUrl = imageUrl;
 
@@ -165,12 +181,15 @@ export const EditPlayer = () => {
     navigate(`/players/${player_id}`);
   };
 
-  if (!canEditPlayer || player?.can_edit_profile === false) {
+  if (
+    !canRequestEdit ||
+    (player && !player.can_edit_profile && !player.can_edit_main_position)
+  ) {
     return <Navigate to={`/players/${player_id}`} replace />;
   }
 
   if (loading) {
-    return <p>Cargando jugadora...</p>;
+    return <p role="status">Cargando deportista...</p>;
   }
 
   if (!player) {
@@ -182,13 +201,14 @@ export const EditPlayer = () => {
       <PageHeader
         variant="detail"
         eyebrow="Perfil de deportista"
-        title="Editar perfil"
+        title={canEditProfile ? "Editar perfil" : "Editar posición"}
         subtitle={`${player.first_name} ${player.last_name}`}
         onBack={() => navigate(`/players/${player_id}`)}
       />
 
       <Card>
         <form onSubmit={handleSubmit} className="form">
+          {canEditProfile && <>
           <div className="player-photo-field">
             <div className="player-photo-preview">
               {playerImagePreview || imageUrl ? (
@@ -235,11 +255,15 @@ export const EditPlayer = () => {
           </div>
           <FormField
             label="Nombre"
+            htmlFor="edit-profile-first-name"
+            errorId="edit-profile-first-name-error"
             error={
               errors.FIRST_NAME_REQUIRED && errorMessages.FIRST_NAME_REQUIRED
             }
           >
             <Input
+              id="edit-profile-first-name"
+              aria-describedby={errors.FIRST_NAME_REQUIRED ? "edit-profile-first-name-error" : undefined}
               name="first_name"
               value={firstName}
               onChange={(e) => {
@@ -256,11 +280,15 @@ export const EditPlayer = () => {
 
           <FormField
             label="Apellido"
+            htmlFor="edit-profile-last-name"
+            errorId="edit-profile-last-name-error"
             error={
               errors.LAST_NAME_REQUIRED && errorMessages.LAST_NAME_REQUIRED
             }
           >
             <Input
+              id="edit-profile-last-name"
+              aria-describedby={errors.LAST_NAME_REQUIRED ? "edit-profile-last-name-error" : undefined}
               name="last_name"
               value={lastName}
               onChange={(e) => {
@@ -276,6 +304,8 @@ export const EditPlayer = () => {
           </FormField>
           <FormField
             label="Sexo"
+            htmlFor="edit-profile-sex"
+            errorId="edit-profile-sex-error"
             error={
               errors.SEX_REQUIRED
                 ? errorMessages.SEX_REQUIRED
@@ -287,6 +317,8 @@ export const EditPlayer = () => {
             }
           >
             <Select
+              id="edit-profile-sex"
+              aria-describedby={errors.SEX_REQUIRED || errors.INVALID_SEX || errors.PLAYER_GENDER_MISMATCH ? "edit-profile-sex-error" : undefined}
               value={sex}
               className={
                 errors.SEX_REQUIRED ||
@@ -313,6 +345,8 @@ export const EditPlayer = () => {
           </FormField>
           <FormField
             label="Fecha de nacimiento"
+            htmlFor="edit-profile-birth-date"
+            errorId="edit-profile-birth-date-error"
             error={
               errors.INVALID_DATE_FORMAT
                 ? "Formato de fecha inválido"
@@ -322,6 +356,8 @@ export const EditPlayer = () => {
             }
           >
             <Input
+              id="edit-profile-birth-date"
+              aria-describedby={errors.INVALID_DATE_FORMAT || errors.INVALID_BIRTH_DATE ? "edit-profile-birth-date-error" : undefined}
               type="date"
               value={birthDate}
               className={
@@ -340,12 +376,17 @@ export const EditPlayer = () => {
               }}
             />
           </FormField>
+          </>}
 
           <FormField
             label="Posición principal"
+            htmlFor="edit-profile-main-position"
+            errorId="edit-profile-main-position-error"
             error={errors.INVALID_POSITION ? "Posición inválida" : ""}
           >
             <Select
+              id="edit-profile-main-position"
+              aria-describedby={errors.INVALID_POSITION ? "edit-profile-main-position-error" : undefined}
               value={mainPosition}
               className={errors.INVALID_POSITION ? "input-error" : ""}
               onChange={(e) => {

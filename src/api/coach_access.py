@@ -142,7 +142,10 @@ def _current_team_ids_by_player(player_ids):
 
 
 def get_player_profile_access_resolver(user, players):
-    """Quién puede editar el perfil global y ver el contacto de cada Player."""
+    """Quién puede ver el contacto de cada Player.
+
+    La edición del perfil global se resuelve por separado y es Owner-only.
+    """
     if not user.club_id or user.role not in ["club_owner", "coach"]:
         return lambda player: False
 
@@ -170,7 +173,7 @@ def get_player_profile_access_resolver(user, players):
 
 
 def can_edit_player_profile(user, player):
-    return get_player_profile_access_resolver(user, [player])(player)
+    return user.role == "club_owner" and player.club_id == user.club_id
 
 
 def get_player_profile_error(user, player):
@@ -179,8 +182,8 @@ def get_player_profile_error(user, player):
 
     if user.role == "coach" and user.club_id == player.club_id:
         return (
-            "No tienes asignado ningún equipo actual de esta jugadora",
-            "TEAM_NOT_ASSIGNED",
+            "No tienes permisos para modificar el perfil global",
+            "FORBIDDEN",
             403,
         )
 

@@ -148,7 +148,7 @@ export const errorMessages = {
   INVALID_PLAYER_NUMBER: "El número debe estar entre 1 y 99",
   PLAYER_NUMBER_DUPLICATED: "Ya existe un jugador con ese número",
   PLAYER_INACTIVE:
-    "Esta deportista está desactivada y no puede asignarse a un equipo.",
+    "Este deportista está inactivo en el club y no puede agregarse a un equipo.",
   SEX_REQUIRED: "Selecciona un sexo",
   INVALID_SEX: "Sexo inválido",
   PLAYER_ALREADY_IN_TEAM: "Este jugador ya pertenece al equipo.",
@@ -161,7 +161,14 @@ export const errorMessages = {
     "Una o más jugadoras no están disponibles para una nueva inscripción en el torneo.",
   INVALID_PLAYER_ACTIVE_STATUS: "Estado inválido",
   PLAYER_HAS_HISTORY:
-    "No se puede eliminar esta jugadora porque posee historial registrado. Puedes desactivarla en su lugar.",
+    "No se puede eliminar este perfil porque posee historial registrado. Puedes inactivar al deportista en su lugar.",
+  TEAM_REQUIRED_FOR_SCOPED_COACH:
+    "Debes crear el perfil desde uno de tus equipos asignados.",
+  PLAYER_STATUS_REVIEW_REQUIRED:
+    "Revisa explícitamente la disponibilidad antes de copiar este deportista.",
+  INVALID_PLAYER_SELECTION: "La selección de deportistas no es válida.",
+  SOURCE_TEAM_NOT_ACTIVE:
+    "El equipo origen debe pertenecer a la temporada activa.",
 
   // TRAININGS / ATTENDANCE
   TRAINING_DATE_REQUIRED: "Selecciona una fecha",

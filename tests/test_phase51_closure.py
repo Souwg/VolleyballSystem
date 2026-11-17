@@ -4,7 +4,7 @@ from src.api.models import Season, Team, TeamPlayer, TrainingSession, db
 from src.api.time_utils import get_club_today
 
 
-def test_operational_player_memberships_do_not_mix_seasons(
+def test_global_player_directory_shows_active_and_planned_but_not_closed(
     client, world, auth_headers
 ):
     closed = Season(
@@ -68,8 +68,12 @@ def test_operational_player_memberships_do_not_mix_seasons(
 
     assert response.status_code == 200
     assert response.get_json()["season"]["id"] == world.season_a.id
-    assert {team["id"] for team in row["teams"]} == {world.team_a.id}
-    assert row["team_id"] == world.team_a.id
+    current_team_ids = {world.team_a.id, planned_team.id}
+    listed_team_ids = {team["id"] for team in row["teams"]}
+    assert listed_team_ids == current_team_ids
+    assert closed_team.id not in listed_team_ids
+    # El escalar es legacy y solo representa una de las pertenencias actuales.
+    assert row["team_id"] in current_team_ids
 
     historical = client.get(
         f"/api/players?season_id={closed.id}",

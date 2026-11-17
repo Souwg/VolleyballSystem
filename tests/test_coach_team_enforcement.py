@@ -614,7 +614,7 @@ def _put_profile(client, auth_headers, user, player, **extra):
     )
 
 
-def test_scoped_coach_can_create_player_without_team(
+def test_scoped_coach_cannot_create_player_without_team(
     client, world, auth_headers
 ):
     _scope(world.club_a)
@@ -629,9 +629,9 @@ def test_scoped_coach_can_create_player_without_team(
         },
     )
 
-    assert response.status_code == 201
-    created = db.session.get(Player, response.get_json()["player"]["id"])
-    assert TeamPlayer.query.filter_by(player_id=created.id).count() == 0
+    assert response.status_code == 403
+    assert response.get_json()["code"] == "TEAM_REQUIRED_FOR_SCOPED_COACH"
+    assert Player.query.filter_by(first_name="Sin", last_name="Equipo").first() is None
 
 
 def test_rejected_player_creation_with_team_creates_no_player(
@@ -657,7 +657,7 @@ def test_rejected_player_creation_with_team_creates_no_player(
     assert Player.query.count() == players_before
 
 
-def test_profile_edit_allowed_with_assigned_open_membership(
+def test_profile_edit_rejected_even_with_assigned_open_membership(
     client, world, auth_headers
 ):
     _assign(world)
@@ -667,11 +667,11 @@ def test_profile_edit_allowed_with_assigned_open_membership(
         client, auth_headers, world.coach_a, world.players_a[0]
     )
 
-    assert response.status_code == 200
-    assert db.session.get(Player, world.players_a[0].id).first_name == "Editada"
+    assert response.status_code == 403
+    assert db.session.get(Player, world.players_a[0].id).first_name != "Editada"
 
 
-def test_profile_edit_allowed_for_player_without_open_membership(
+def test_profile_edit_rejected_for_player_without_open_membership(
     client, world, auth_headers
 ):
     _scope(world.club_a)
@@ -682,7 +682,7 @@ def test_profile_edit_allowed_for_player_without_open_membership(
 
     for player in [free, world.players_a[1]]:
         response = _put_profile(client, auth_headers, world.coach_a, player)
-        assert response.status_code == 200
+        assert response.status_code == 403
 
 
 def test_profile_edit_rejected_when_only_unassigned_open_memberships(
@@ -697,7 +697,7 @@ def test_profile_edit_rejected_when_only_unassigned_open_memberships(
     )
 
     assert response.status_code == 403
-    assert response.get_json()["code"] == "TEAM_NOT_ASSIGNED"
+    assert response.get_json()["code"] == "FORBIDDEN"
     assert _sports_state() == before
 
 
@@ -712,15 +712,15 @@ def test_profile_edit_rejected_after_assignment_removed(
     )
 
     assert response.status_code == 403
-    assert response.get_json()["code"] == "TEAM_NOT_ASSIGNED"
+    assert response.get_json()["code"] == "FORBIDDEN"
 
 
-def test_club_wide_coach_and_owner_edit_any_profile(
+def test_only_owner_edits_identity_profile(
     client, world, auth_headers
 ):
     assert _put_profile(
         client, auth_headers, world.coach_a, world.players_a[0]
-    ).status_code == 200
+    ).status_code == 403
 
     _scope(world.club_a)
 
@@ -771,13 +771,13 @@ def _upload(client, auth_headers, user, player):
 @pytest.mark.parametrize(
     ("setup", "expected_status"),
     [
-        ("assigned", 201),
-        ("no_membership", 201),
+        ("assigned", 403),
+        ("no_membership", 403),
         ("unassigned", 403),
         ("removed", 403),
     ],
 )
-def test_scoped_image_upload_follows_profile_rule(
+def test_scoped_coach_cannot_upload_global_player_image(
     client, world, auth_headers, saved_files, setup, expected_status
 ):
     player = world.players_a[0]
@@ -797,19 +797,19 @@ def test_scoped_image_upload_follows_profile_rule(
     assert response.status_code == expected_status
 
     if expected_status == 403:
-        assert response.get_json()["code"] == "TEAM_NOT_ASSIGNED"
+        assert response.get_json()["code"] == "FORBIDDEN"
         assert saved_files == []
         assert db.session.get(Player, player.id).image_url == image_before
     else:
         assert len(saved_files) == 1
 
 
-def test_image_upload_unchanged_for_club_wide_coach_and_owner(
+def test_image_upload_is_owner_only(
     client, world, auth_headers, saved_files
 ):
     assert _upload(
         client, auth_headers, world.coach_a, world.players_a[0]
-    ).status_code == 201
+    ).status_code == 403
 
     _scope(world.club_a)
 
@@ -868,41 +868,38 @@ def _player_in(world, *teams):
     return player
 
 
-# (estados de las memberships abiertas, índices asignados al Coach, permitido)
+# (estados de las pertenencias abiertas, índices asignados al Coach)
 PROFILE_RELEVANCE_CASES = {
-    "closed_only": (["closed"], [], True),
-    "archived_only": (["archived"], [], True),
-    "closed_only_with_historical_assignment": (["closed"], [0], True),
-    "archived_only_with_historical_assignment": (["archived"], [0], True),
-    "active_assigned": (["active"], [0], True),
-    "active_unassigned": (["active"], [], False),
-    "planned_assigned": (["planned"], [0], True),
-    "planned_unassigned": (["planned"], [], False),
-    "closed_plus_current_assigned": (["closed", "active"], [1], True),
+    "closed_only": (["closed"], []),
+    "archived_only": (["archived"], []),
+    "closed_only_with_historical_assignment": (["closed"], [0]),
+    "archived_only_with_historical_assignment": (["archived"], [0]),
+    "active_assigned": (["active"], [0]),
+    "active_unassigned": (["active"], []),
+    "planned_assigned": (["planned"], [0]),
+    "planned_unassigned": (["planned"], []),
+    "closed_plus_current_assigned": (["closed", "active"], [1]),
     "historical_assigned_plus_current_unassigned": (
         ["closed", "active"],
         [0],
-        False,
     ),
     "archived_assigned_plus_current_unassigned": (
         ["archived", "active"],
         [0],
-        False,
     ),
     "historical_assigned_plus_planned_unassigned": (
         ["closed", "planned"],
         [0],
-        False,
     ),
 }
 
 
 @pytest.mark.parametrize("channel", ["profile", "image"])
 @pytest.mark.parametrize("case", sorted(PROFILE_RELEVANCE_CASES))
-def test_only_current_or_future_membership_decides_global_profile_access(
+def test_membership_state_never_grants_global_profile_or_image_access(
     client, world, auth_headers, saved_files, case, channel
 ):
-    states, assigned_indexes, allowed = PROFILE_RELEVANCE_CASES[case]
+    states, assigned_indexes = PROFILE_RELEVANCE_CASES[case]
     teams = [_team_in_state(world, state) for state in states]
     player = _player_in(world, *teams)
 
@@ -920,12 +917,9 @@ def test_only_current_or_future_membership_decides_global_profile_access(
     else:
         response = _upload(client, auth_headers, world.coach_a, player)
 
-    if allowed:
-        assert response.status_code in [200, 201], response.get_json()
-    else:
-        assert response.status_code == 403
-        assert response.get_json()["code"] == "TEAM_NOT_ASSIGNED"
-        assert saved_files == []
+    assert response.status_code == 403
+    assert response.get_json()["code"] == "FORBIDDEN"
+    assert saved_files == []
 
     db.session.expire_all()
     assert sorted(
@@ -934,7 +928,7 @@ def test_only_current_or_future_membership_decides_global_profile_access(
     ) == memberships_before
 
 
-def test_assigned_coach_of_planned_team_edits_profile_but_cannot_operate(
+def test_assigned_coach_of_planned_team_cannot_edit_profile_or_operate(
     client, world, auth_headers
 ):
     team = _team_in_state(world, "planned")
@@ -948,7 +942,8 @@ def test_assigned_coach_of_planned_team_edits_profile_but_cannot_operate(
         client, auth_headers, world.coach_a, player, team, "injured"
     )
 
-    assert profile.status_code == 200
+    assert profile.status_code == 403
+    assert profile.get_json()["code"] == "FORBIDDEN"
     assert training.status_code == 409
     assert training.get_json()["code"] == "ACTIVE_SEASON_REQUIRED"
     assert status.status_code == 403
@@ -966,7 +961,7 @@ def test_relevant_membership_rule_keeps_removed_assignment_rejected(
     response = _put_profile(client, auth_headers, world.coach_a, player)
 
     assert response.status_code == 403
-    assert response.get_json()["code"] == "TEAM_NOT_ASSIGNED"
+    assert response.get_json()["code"] == "FORBIDDEN"
 
 
 # =========================
@@ -1073,14 +1068,15 @@ def test_multi_team_activities_follow_each_coach_assignment(
 
 
 @pytest.mark.parametrize("coach_key", ["pedro", "andrea"])
-def test_one_assigned_membership_is_enough_to_edit_global_profile(
+def test_assigned_membership_does_not_allow_global_profile_edit(
     client, auth_headers, maria, coach_key
 ):
     response = _put_profile(
         client, auth_headers, getattr(maria, coach_key), maria.player
     )
 
-    assert response.status_code == 200
+    assert response.status_code == 403
+    assert response.get_json()["code"] == "FORBIDDEN"
 
 
 def test_multi_team_number_change_requires_that_team_assignment(
@@ -1088,26 +1084,20 @@ def test_multi_team_number_change_requires_that_team_assignment(
 ):
     before = _sports_state()
 
-    other_team = _put_profile(
-        client,
-        auth_headers,
-        maria.pedro,
-        maria.player,
-        team_id=maria.sub_18.id,
-        player_number=55,
+    other_team = client.put(
+        f"/api/players/{maria.player.id}",
+        headers=auth_headers(maria.pedro),
+        json={"team_id": maria.sub_18.id, "player_number": 55},
     )
 
     assert other_team.status_code == 403
     assert other_team.get_json()["code"] == "TEAM_NOT_ASSIGNED"
     assert _sports_state() == before
 
-    own_team = _put_profile(
-        client,
-        auth_headers,
-        maria.pedro,
-        maria.player,
-        team_id=maria.sub_16.id,
-        player_number=55,
+    own_team = client.put(
+        f"/api/players/{maria.player.id}",
+        headers=auth_headers(maria.pedro),
+        json={"team_id": maria.sub_16.id, "player_number": 55},
     )
 
     assert own_team.status_code == 200

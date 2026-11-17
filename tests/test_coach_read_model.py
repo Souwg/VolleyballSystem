@@ -222,8 +222,8 @@ def test_scoped_coach_sees_contact_only_under_the_frozen_rule(
     )
 
     _assert_sensitive(views, visible)
-    assert views["detail"]["can_edit_profile"] is visible
-    assert views["list"]["can_edit_profile"] is visible
+    assert views["detail"]["can_edit_profile"] is False
+    assert views["list"]["can_edit_profile"] is False
 
 
 def test_sports_profile_stays_visible_without_contact(
@@ -331,7 +331,7 @@ def test_legacy_scalar_team_id_does_not_decide_permissions(
     row = next(item for item in rows if item["id"] == player.id)
 
     assert row["team_id"] == unassigned.id
-    assert row["can_edit_profile"] is True
+    assert row["can_edit_profile"] is False
     assert "birth_date" in row
     teams = {team["id"]: team for team in row["teams"]}
     assert teams[assigned.id]["is_assigned"] is True

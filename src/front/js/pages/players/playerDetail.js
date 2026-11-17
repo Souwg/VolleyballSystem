@@ -1,7 +1,10 @@
 import React, { useEffect, useContext, useState } from "react";
-import { useParams, useNavigate, useLocation } from "react-router-dom";
+import { Link, useParams, useNavigate, useLocation } from "react-router-dom";
 import { Context } from "../../store/appContext";
-import { AssignedBadge } from "../../component/ui/readOnlyNotice";
+import {
+  AssignedBadge,
+  ReadOnlyNotice,
+} from "../../component/ui/readOnlyNotice";
 import {
   canManage,
   hasField,
@@ -60,6 +63,21 @@ const formatDate = (date) => {
     month: "short",
     year: "numeric",
   });
+};
+
+const formatMembershipDate = (value) =>
+  value
+    ? new Date(value).toLocaleDateString("es-ES", {
+        day: "2-digit",
+        month: "short",
+        year: "numeric",
+      })
+    : null;
+
+const MEMBERSHIP_STATUS_LABELS = {
+  active: "Disponible para este equipo",
+  injured: "Lesionado/a",
+  inactive: "No disponible para este equipo",
 };
 
 const getPaymentDescription = (payment) => {
@@ -123,6 +141,7 @@ export const PlayerDetail = () => {
     useState([]);
   const [payments, setPayments] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState(null);
   const [editingRepresentative, setEditingRepresentative] = useState(false);
   const [savingRepresentative, setSavingRepresentative] = useState(false);
   const [playerAction, setPlayerAction] = useState(null);
@@ -145,16 +164,15 @@ export const PlayerDetail = () => {
   const canViewPerformance = ["club_owner", "coach", "staff"].includes(
     store.user?.role,
   );
-  const canEditPlayer =
-    ["club_owner", "coach"].includes(store.user?.role) &&
-    player?.can_edit_profile !== false;
+  const canEditPlayer = player?.can_edit_profile === true;
+  const canEditMainPosition = player?.can_edit_main_position === true;
   const canRemoveFromTeam = (team) =>
     ["club_owner", "coach"].includes(store.user?.role) &&
     canManage(team) &&
     (store.user?.role === "club_owner" || team.season_status === "active");
   const showAssignment = isScopedCoach(store);
   const canManagePlayerStatus = store.user?.role === "club_owner";
-  const canDeletePlayer = store.user?.role === "club_owner";
+  const canDeletePlayer = player?.can_delete === true;
 
   useTeamAccessLost(() => loadPlayerData());
 
@@ -169,10 +187,11 @@ export const PlayerDetail = () => {
 
   const loadPlayerData = async () => {
     setLoading(true);
+    setLoadError(null);
 
-    const [playersResult, attendanceResult, performanceResult, paymentsResult] =
+    const [detailResult, attendanceResult, performanceResult, paymentsResult] =
       await Promise.all([
-        canViewSports ? null : actions.getPlayers(),
+        actions.getPlayerDetail(player_id),
         canViewSports ? actions.getPlayerAttendance(player_id) : null,
         canViewPerformance
           ? actions.getPlayerPerformance(player_id, { seasonId })
@@ -180,31 +199,24 @@ export const PlayerDetail = () => {
         canManagePayments ? actions.getPlayerPayments(player_id) : null,
       ]);
 
-    if (playersResult?.ok) {
-      const loadedPlayer = playersResult.data.players.find(
-        (item) => item.id === player_id,
-      );
-
-      if (loadedPlayer) {
-        setPlayer(loadedPlayer);
-        setRepresentativeForm({
-          representative_name: loadedPlayer.representative_name || "",
-          representative_phone: loadedPlayer.representative_phone || "",
-        });
-      }
+    if (!detailResult.ok) {
+      setPlayer(null);
+      setLoadError(detailResult.code || "HTTP_ERROR");
+      setLoading(false);
+      return;
     }
+
+    const loadedPlayer = detailResult.data.player;
+    setPlayer(loadedPlayer);
+    setRepresentativeForm({
+      representative_name: loadedPlayer.representative_name || "",
+      representative_phone: loadedPlayer.representative_phone || "",
+    });
 
     if (attendanceResult?.ok) {
       const data = attendanceResult.data;
-
-      setPlayer(data.player);
       setAttendanceSummary(data.summary);
       setTrainingHistory(data.history || []);
-
-      setRepresentativeForm({
-        representative_name: data.player.representative_name || "",
-        representative_phone: data.player.representative_phone || "",
-      });
     }
 
     if (performanceResult?.ok) {
@@ -223,6 +235,10 @@ export const PlayerDetail = () => {
 
     if (paymentsResult?.ok) {
       setPayments(paymentsResult.data.payments || []);
+      setPlayer((current) => ({
+        ...current,
+        enrollment_date: paymentsResult.data.player?.enrollment_date || null,
+      }));
     }
 
     setLoading(false);
@@ -281,8 +297,8 @@ export const PlayerDetail = () => {
     const nextIsActive = !player.is_active;
     const confirmed = window.confirm(
       nextIsActive
-        ? "¿Reactivar a esta jugadora?\n\nVolverá a estar disponible para nuevas operaciones deportivas según las reglas actuales."
-        : "¿Desactivar a esta jugadora?\n\nLa jugadora permanecerá registrada y conservará su historial, pero dejará de estar disponible para nuevas operaciones deportivas según las reglas actuales.",
+        ? "¿Reactivar a este deportista?\n\nRecuperará la elegibilidad global. Su disponibilidad seguirá dependiendo del estado de cada equipo, pertenencia y temporada."
+        : "¿Inactivar a este deportista?\n\nNo podrá participar en nuevas operaciones deportivas y se detendrán nuevas mensualidades automáticas. Su perfil, histórico y pertenencias a equipos se conservarán.",
     );
 
     if (!confirmed) return;
@@ -310,23 +326,25 @@ export const PlayerDetail = () => {
     if (playerAction) return;
 
     const confirmed = window.confirm(
-      `¿Quitar a esta jugadora del equipo?\n\nContinuará registrada en el club y su historial no se eliminará.`,
+      `¿Quitar a este deportista del equipo?\n\nSe cerrará esta pertenencia. Su perfil y su histórico se conservarán, y sus otros equipos no cambiarán.`,
     );
 
     if (!confirmed) return;
 
-    setPlayerAction(`team-${team.id}`);
+    setPlayerAction(`team-${team.team_id}`);
 
     try {
-      const result = await actions.removePlayerFromTeam(team.id, player.id);
+      const result = await actions.removePlayerFromTeam(team.team_id, player.id);
 
       if (result.ok) {
         setPlayer((current) => ({
           ...current,
-          teams: (current.teams || []).filter((item) => item.id !== team.id),
-          historical_teams: [
+          current_memberships: (current.current_memberships || []).filter(
+            (item) => item.team_id !== team.team_id,
+          ),
+          historical_memberships: [
             { ...team, left_at: new Date().toISOString() },
-            ...(current.historical_teams || []),
+            ...(current.historical_memberships || []),
           ],
         }));
       }
@@ -339,7 +357,7 @@ export const PlayerDetail = () => {
     if (playerAction || !canDeletePlayer) return;
 
     const confirmed = window.confirm(
-      "¿Eliminar esta jugadora del club?\n\nEsta acción solo está disponible si la jugadora no tiene historial que deba conservarse.",
+      "¿Eliminar este perfil del club?\n\nEsta acción es excepcional y solo está disponible porque el perfil no tiene pertenencias ni historial deportivo o financiero.",
     );
 
     if (!confirmed) return;
@@ -365,11 +383,26 @@ export const PlayerDetail = () => {
   };
 
   if (loading) {
-    return <p>Cargando perfil...</p>;
+    return <p role="status">Cargando perfil...</p>;
   }
 
   if (!player) {
-    return <p>No se pudo cargar el deportista.</p>;
+    return (
+      <Card className="page-error-state" role="alert">
+        <p>
+          {loadError === "PLAYER_NOT_FOUND"
+            ? "Deportista no encontrado."
+            : loadError === "FORBIDDEN"
+            ? "No tienes permisos para consultar este deportista."
+            : "No se pudo cargar el perfil del deportista."}
+        </p>
+        {loadError !== "PLAYER_NOT_FOUND" && (
+          <Button type="button" variant="secondary" onClick={loadPlayerData}>
+            Volver a intentar
+          </Button>
+        )}
+      </Card>
+    );
   }
 
   return (
@@ -410,35 +443,54 @@ export const PlayerDetail = () => {
               {player.first_name} {player.last_name}
             </h1>
 
+            <span
+              className={`status-badge player-global-status ${
+                player.is_active ? "status-success" : "status-muted"
+              }`}
+            >
+              {player.is_active ? "Activo en el club" : "Inactivo en el club"}
+            </span>
+
             <p>
-              {player.teams?.length > 0
-                ? player.teams
+              {player.current_memberships?.length > 0
+                ? player.current_memberships
                     .map(
                       (team) =>
                         `${team.category_name || "Sin categoría"} · ${
-                          team.name
+                          team.team_name
                         } · #${team.player_number}`,
                     )
                     .join(" • ")
-                : "Sin equipo asignado"}
+                : "Sin equipo actual"}
             </p>
           </div>
         </div>
 
-        {canEditPlayer && (
+        {(canEditPlayer || canEditMainPosition) && (
           <div className="player-profile-actions">
             <Button
               variant="secondary"
               onClick={() => navigate(`/players/${player_id}/edit`)}
             >
-              Editar perfil
+              {canEditPlayer ? "Editar perfil" : "Editar posición"}
             </Button>
           </div>
         )}
       </section>
 
-      <div className="player-tabs">
+      {player.read_only && (
+        <ReadOnlyNotice>
+          Solo lectura. Puedes consultar el perfil, la trayectoria y la información administrativa permitida.
+        </ReadOnlyNotice>
+      )}
+
+      <div className="player-tabs" role="tablist" aria-label="Secciones del deportista">
         <button
+          type="button"
+          role="tab"
+          id="player-tab-profile"
+          aria-controls="player-panel-profile"
+          aria-selected={activeTab === "profile"}
           className={`player-tab ${activeTab === "profile" ? "active" : ""}`}
           onClick={() => setActiveTab("profile")}
         >
@@ -447,6 +499,11 @@ export const PlayerDetail = () => {
 
         {canViewPerformance && (
           <button
+            type="button"
+            role="tab"
+            id="player-tab-performance"
+            aria-controls="player-panel-performance"
+            aria-selected={activeTab === "performance"}
             className={`player-tab ${
               activeTab === "performance" ? "active" : ""
             }`}
@@ -458,6 +515,11 @@ export const PlayerDetail = () => {
 
         {canManagePayments && (
           <button
+            type="button"
+            role="tab"
+            id="player-tab-payments"
+            aria-controls="player-panel-payments"
+            aria-selected={activeTab === "payments"}
             className={`player-tab ${
               activeTab === "payments" ? "active" : ""
             }`}
@@ -469,12 +531,12 @@ export const PlayerDetail = () => {
       </div>
 
       {activeTab === "profile" && (
-        <>
+        <div role="tabpanel" id="player-panel-profile" aria-labelledby="player-tab-profile">
           <Card className="player-info-card player-global-status-card">
             <div className="player-section-header">
               <div>
-                <span className="player-card-label">Estado del Club</span>
-                <h3>Disponibilidad de la jugadora</h3>
+                <span className="player-card-label">Perfil global</span>
+                <h3>Estado en el club</h3>
               </div>
 
               <span
@@ -482,7 +544,7 @@ export const PlayerDetail = () => {
                   player.is_active ? "status-success" : "status-muted"
                 }`}
               >
-                {player.is_active ? "Activa" : "Inactiva"}
+                {player.is_active ? "Activo en el club" : "Inactivo en el club"}
               </span>
             </div>
 
@@ -496,12 +558,86 @@ export const PlayerDetail = () => {
                 >
                   {playerAction === "status"
                     ? player.is_active
-                      ? "Desactivando jugadora..."
-                      : "Reactivando jugadora..."
+                      ? "Inactivando deportista..."
+                      : "Reactivando deportista..."
                     : player.is_active
-                    ? "Desactivar jugadora"
-                    : "Reactivar jugadora"}
+                    ? "Inactivar deportista"
+                    : "Reactivar deportista"}
                 </Button>
+              </div>
+            )}
+          </Card>
+
+          <Card className="player-teams-card">
+            <div className="player-section-header">
+              <div>
+                <span className="player-card-label">Equipos</span>
+                <h3>Equipos actuales</h3>
+              </div>
+
+              <span className="player-teams-count">
+                {player.current_memberships?.length || 0}
+              </span>
+            </div>
+
+            {player.current_memberships?.length > 0 ? (
+              <div className="player-teams-list">
+                {player.current_memberships.map((team) => (
+                  <div key={team.membership_id} className="player-team-row">
+                    <div className="player-team-row-info">
+                      <strong>{team.category_name || "Sin categoría"}</strong>
+                      <span>
+                        {team.team_name} · {team.season_name || "Sin temporada"} · Dorsal #{team.player_number}
+                        {team.season_status === "planned" ? " · Planificada" : ""}
+                        {team.team_status === "archived" ? " · Equipo archivado" : ""}
+                      </span>
+                      <Link to={`/teams/${team.team_id}?season=${team.season_id}`}>
+                        Ver equipo
+                      </Link>
+                    </div>
+
+                    <div className="player-team-row-actions">
+                      {showAssignment && team.is_assigned && <AssignedBadge />}
+
+                      <span className="player-membership-label">
+                        Disponibilidad en el equipo
+                      </span>
+                      <span
+                        className={`status-badge ${
+                          team.status === "active"
+                            ? "status-success"
+                            : team.status === "injured"
+                            ? "status-warning"
+                            : "status-muted"
+                        }`}
+                      >
+                        {MEMBERSHIP_STATUS_LABELS[team.status] || team.status}
+                      </span>
+
+                      {canRemoveFromTeam(team) && (
+                        <Button
+                          type="button"
+                          variant="secondary"
+                          disabled={playerAction !== null}
+                          onClick={() => handleRemoveFromTeam(team)}
+                        >
+                          {playerAction === `team-${team.team_id}`
+                            ? "Quitando..."
+                            : "Quitar del equipo"}
+                        </Button>
+                      )}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <div className="player-empty-membership">
+                <p className="player-empty-text">
+                  Este deportista aún no pertenece a un equipo actual.
+                </p>
+                {store.user?.role === "club_owner" && (
+                  <Button type="button" variant="secondary" onClick={() => navigate("/players")}>Agregar a un equipo</Button>
+                )}
               </div>
             )}
           </Card>
@@ -620,74 +756,7 @@ export const PlayerDetail = () => {
             )}
           </Card>
           )}
-          {/* 🏐 MEMBERSHIP CARDS */}
-          <Card className="player-teams-card">
-            <div className="player-section-header">
-              <div>
-                <span className="player-card-label">Equipos</span>
-                <h3>Participación deportiva</h3>
-              </div>
-
-              <span className="player-teams-count">
-                {player.teams?.length || 0}
-              </span>
-            </div>
-
-            {player.teams?.length > 0 ? (
-              <div className="player-teams-list">
-                {player.teams.map((team) => (
-                  <div key={team.id} className="player-team-row">
-                    <div className="player-team-row-info">
-                      <strong>{team.category_name || "Sin categoría"}</strong>
-                      <span>
-                        {team.name} · Número #{team.player_number}
-                        {team.season_status === "planned"
-                          ? ` · Temporada planificada: ${team.season_name}`
-                          : ""}
-                      </span>
-                    </div>
-
-                    <div className="player-team-row-actions">
-                      {showAssignment && team.is_assigned && <AssignedBadge />}
-
-                      <span
-                        className={`status-badge ${
-                          team.status === "active"
-                            ? "status-success"
-                            : team.status === "injured"
-                            ? "status-warning"
-                            : "status-muted"
-                        }`}
-                      >
-                        {team.status === "active"
-                          ? "Activa"
-                          : team.status === "injured"
-                          ? "Lesionada"
-                          : "Inactiva"}
-                      </span>
-
-                      {canRemoveFromTeam(team) && (
-                        <Button
-                          type="button"
-                          variant="secondary"
-                          disabled={playerAction !== null}
-                          onClick={() => handleRemoveFromTeam(team)}
-                        >
-                          {playerAction === `team-${team.id}`
-                            ? "Quitando..."
-                            : "Quitar del equipo"}
-                        </Button>
-                      )}
-                    </div>
-                  </div>
-                ))}
-              </div>
-            ) : (
-              <p className="player-empty-text">Sin equipo asignado</p>
-            )}
-          </Card>
-
-          {player.historical_teams?.length > 0 && (
+          {player.historical_memberships?.length > 0 && (
             <Card className="player-teams-card">
               <div className="player-section-header">
                 <div>
@@ -696,22 +765,27 @@ export const PlayerDetail = () => {
                 </div>
 
                 <span className="player-teams-count">
-                  {player.historical_teams.length}
+                  {player.historical_memberships.length}
                 </span>
               </div>
 
               <div className="player-teams-list">
-                {player.historical_teams.map((team) => (
+                {player.historical_memberships.map((team) => (
                   <div key={team.membership_id} className="player-team-row">
                     <div className="player-team-row-info">
-                      <strong>{team.category_name || "Sin categoría"}</strong>
+                      <strong>{team.season_name || "Sin temporada"}</strong>
                       <span>
-                        {team.name} · Número #{team.player_number}
-                        {team.season_name ? ` · ${team.season_name}` : ""}
+                        {team.category_name || "Sin categoría"} · {team.team_name} · Dorsal #{team.player_number}
+                      </span>
+                      <span>
+                        {formatMembershipDate(team.joined_at) || "Inicio sin definir"} – {formatMembershipDate(team.left_at) || (team.season_status === "closed" ? "Temporada cerrada" : "Actual")}
                         {team.team_status === "archived"
                           ? " · Equipo archivado"
                           : ""}
                       </span>
+                      <Link to={`/teams/${team.team_id}?season=${team.season_id}`}>
+                        Ver equipo histórico
+                      </Link>
                     </div>
                   </div>
                 ))}
@@ -723,10 +797,10 @@ export const PlayerDetail = () => {
             <Card className="player-delete-card">
               <div>
                 <span className="player-card-label">Acción excepcional</span>
-                <h3>Eliminar jugadora del club</h3>
+                <h3>Eliminar perfil</h3>
                 <p>
-                  Solo puede eliminarse si no posee historial deportivo o
-                  financiero. Si tiene historial, desactívala para conservarlo.
+                  Este perfil no tiene pertenencias ni historial deportivo o
+                  financiero. La eliminación no se puede deshacer.
                 </p>
               </div>
 
@@ -737,16 +811,16 @@ export const PlayerDetail = () => {
                 onClick={handleDeletePlayer}
               >
                 {playerAction === "delete"
-                  ? "Eliminando jugadora..."
-                  : "Eliminar jugadora del club"}
+                  ? "Eliminando perfil..."
+                  : "Eliminar perfil"}
               </Button>
             </Card>
           )}
-        </>
+        </div>
       )}
 
       {canViewPerformance && activeTab === "performance" && (
-        <>
+        <div role="tabpanel" id="player-panel-performance" aria-labelledby="player-tab-performance">
           {/* ===== RENDIMIENTO EN PARTIDOS ===== */}
 
           <SeasonSelector
@@ -1041,10 +1115,10 @@ export const PlayerDetail = () => {
               )}
             </Card>
           )}
-        </>
+        </div>
       )}
       {canManagePayments && activeTab === "payments" && (
-        <>
+        <div role="tabpanel" id="player-panel-payments" aria-labelledby="player-tab-payments">
           {" "}
           {/* 💳 PAGOS */}
           {!player.enrollment_date ? (
@@ -1116,7 +1190,7 @@ export const PlayerDetail = () => {
               )}
             </Card>
           )}
-        </>
+        </div>
       )}
     </div>
   );

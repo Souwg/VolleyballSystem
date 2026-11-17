@@ -42,6 +42,7 @@ export const TeamDetail = () => {
 
   const [firstName, setFirstName] = useState("");
   const [lastName, setLastName] = useState("");
+  const [birthDate, setBirthDate] = useState("");
   const [playerNumber, setPlayerNumber] = useState("");
   const [sex, setSex] = useState("");
 
@@ -56,7 +57,10 @@ export const TeamDetail = () => {
   const [showAddOptions, setShowAddOptions] = useState(false);
   const [selectedExistingPlayer, setSelectedExistingPlayer] = useState(null);
   const [availablePlayers, setAvailablePlayers] = useState([]);
+  const [existingSearch, setExistingSearch] = useState("");
   const [existingPlayerNumber, setExistingPlayerNumber] = useState("");
+  const [createCandidates, setCreateCandidates] = useState([]);
+  const [pendingCreatePayload, setPendingCreatePayload] = useState(null);
   const [editingPlayerId, setEditingPlayerId] = useState(null);
   const [editData, setEditData] = useState({
     first_name: "",
@@ -172,6 +176,28 @@ export const TeamDetail = () => {
     }
   }, [team]);
 
+  const persistNewPlayer = async (payload) => {
+    setLoadingSubmit(true);
+    const result = await actions.createPlayer(payload);
+
+    if (!result.ok) {
+      setErrors({ [result.code]: true });
+      setLoadingSubmit(false);
+      return;
+    }
+
+    setFirstName("");
+    setLastName("");
+    setBirthDate("");
+    setPlayerNumber("");
+    setSex(team?.gender === "mixed" ? "" : team.gender);
+    setCreateCandidates([]);
+    setPendingCreatePayload(null);
+    setPlayers((prev) => [...prev, result.data.player]);
+    setLoadingSubmit(false);
+    setShowForm(false);
+  };
+
   const registerPlayer = async (e) => {
     e.preventDefault();
 
@@ -180,6 +206,7 @@ export const TeamDetail = () => {
     const profileErrors = validatePlayerProfile({
       first_name: firstName,
       last_name: lastName,
+      birth_date: birthDate,
       sex,
     });
 
@@ -199,31 +226,35 @@ export const TeamDetail = () => {
     }
 
     setErrors({});
-    setLoadingSubmit(true);
-
-    const result = await actions.createPlayer({
+    const payload = {
       first_name: firstName.trim(),
       last_name: lastName.trim(),
+      birth_date: birthDate || null,
       player_number: Number(playerNumber),
       sex,
       team_id,
+    };
+    const candidatesResult = await actions.getPlayerCandidates({
+      firstName: payload.first_name,
+      lastName: payload.last_name,
+      birthDate: payload.birth_date,
+      sex: payload.sex,
     });
-
-    if (!result.ok) {
-      setErrors({ [result.code]: true });
-      setLoadingSubmit(false);
+    if (!candidatesResult.ok) {
+      setErrors({ [candidatesResult.code]: true });
       return;
     }
-
-    setFirstName("");
-    setLastName("");
-    setPlayerNumber("");
-    setSex(team?.gender === "mixed" ? "" : team.gender);
-
-    setPlayers((prev) => [...prev, result.data.player]);
-
-    setLoadingSubmit(false);
-    setShowForm(false);
+    const candidates = (candidatesResult.data.candidates || []).filter(
+      (candidate) =>
+        candidate.is_active &&
+        !players.some((player) => player.id === candidate.id),
+    );
+    if (candidates.length) {
+      setCreateCandidates(candidates);
+      setPendingCreatePayload(payload);
+      return;
+    }
+    await persistNewPlayer(payload);
   };
 
   const handleDeleteTeam = async () => {
@@ -287,7 +318,7 @@ export const TeamDetail = () => {
     e.stopPropagation();
 
     const confirmed = window.confirm(
-      `¿Quitar a esta jugadora del equipo?\n\n${player.first_name} continuará registrada en el club y su historial no se eliminará.`,
+      `¿Quitar a este deportista del equipo?\n\nSe cerrará esta pertenencia. ${player.first_name} conservará su perfil y su histórico; sus otros equipos no cambiarán.`,
     );
 
     if (!confirmed) return;
@@ -369,6 +400,7 @@ export const TeamDetail = () => {
     }
 
     setAvailablePlayers(filteredPlayers);
+    setExistingSearch("");
     setShowAddOptions(false);
     setShowForm(false);
   };
@@ -420,6 +452,11 @@ export const TeamDetail = () => {
       : team.gender === "male"
       ? "masculina"
       : "mixta";
+  const filteredAvailablePlayers = availablePlayers.filter((player) =>
+    `${player.first_name} ${player.last_name}`
+      .toLowerCase()
+      .includes(existingSearch.trim().toLowerCase()),
+  );
 
   return (
     <div className="team-detail-page">
@@ -507,6 +544,9 @@ export const TeamDetail = () => {
       {showAddOptions && (
         <Card className="add-player-options">
           <h4>Añadir deportista</h4>
+          <p className="team-context-line">
+            {team.category?.name || "Sin categoría"} · {team.name} · {team.season?.name || "Sin temporada"} · Rama {genderLabel}
+          </p>
 
           <Button
             variant="secondary"
@@ -518,11 +558,11 @@ export const TeamDetail = () => {
               setShowForm(true);
             }}
           >
-            Crear deportista
+            Crear nuevo deportista
           </Button>
 
           <Button onClick={handleLoadExistingPlayers}>
-            Agregar deportista existente
+            Agregar deportista existente del club
           </Button>
 
           <Button variant="secondary" onClick={() => setShowAddOptions(false)}>
@@ -534,8 +574,18 @@ export const TeamDetail = () => {
         <Card>
           <h4>Selecciona deportista</h4>
 
+          <FormField label="Buscar por nombre" htmlFor="existing-player-search">
+            <Input
+              id="existing-player-search"
+              type="search"
+              value={existingSearch}
+              placeholder="Nombre o apellido"
+              onChange={(event) => setExistingSearch(event.target.value)}
+            />
+          </FormField>
+
           <div className="players-list">
-            {availablePlayers.map((player) => (
+            {filteredAvailablePlayers.map((player) => (
               <button
                 type="button"
                 key={player.id}
@@ -549,10 +599,16 @@ export const TeamDetail = () => {
                   {player.first_name} {player.last_name}
                 </span>
 
+                <span className="player-meta">
+                  {player.birth_date
+                    ? `Nacimiento: ${new Date(`${player.birth_date}T00:00:00`).toLocaleDateString("es-ES")}`
+                    : "Nacimiento sin definir"} · Activo en el club
+                </span>
+
                 {player.teams?.length > 0 && (
                   <span className="player-meta">
                     Actualmente en:{" "}
-                    {player.teams.map((team) => team.name).join(" · ")}
+                    {player.teams.map((team) => `${team.name}${team.season_name ? ` (${team.season_name})` : ""}`).join(" · ")}
                   </span>
                 )}
               </button>
@@ -590,7 +646,7 @@ export const TeamDetail = () => {
                 </div>
               ))}
               <p className="helper-label">
-                Se mantendrá en esos equipos; esta acción solo crea otra pertenencia.
+                Seguirá perteneciendo a sus otros equipos.
               </p>
             </div>
           )}
@@ -717,6 +773,8 @@ export const TeamDetail = () => {
             >
               {selectedExistingPlayer.teams?.length > 0
                 ? "Agregar también a este equipo"
+                : selectedExistingPlayer.previous_team_ids?.includes(team_id)
+                ? "Volver a agregar"
                 : "Agregar a este equipo"}
             </Button>
           </div>
@@ -751,6 +809,8 @@ export const TeamDetail = () => {
                 placeholder="Nombre"
                 onChange={(e) => {
                   setFirstName(e.target.value);
+                  setCreateCandidates([]);
+                  setPendingCreatePayload(null);
                   setErrors((prev) => ({
                     ...prev,
                     FIRST_NAME_REQUIRED: false,
@@ -780,9 +840,44 @@ export const TeamDetail = () => {
                 placeholder="Apellido"
                 onChange={(e) => {
                   setLastName(e.target.value);
+                  setCreateCandidates([]);
+                  setPendingCreatePayload(null);
                   setErrors((prev) => ({
                     ...prev,
                     LAST_NAME_REQUIRED: false,
+                  }));
+                }}
+              />
+            </FormField>
+            <FormField
+              label="Fecha de nacimiento (opcional)"
+              htmlFor="new-player-birth-date"
+              errorId="new-player-birth-date-error"
+              error={
+                errors.INVALID_BIRTH_DATE
+                  ? errorMessages.INVALID_BIRTH_DATE
+                  : errors.INVALID_DATE_FORMAT
+                  ? errorMessages.INVALID_DATE_FORMAT
+                  : null
+              }
+            >
+              <Input
+                id="new-player-birth-date"
+                type="date"
+                value={birthDate}
+                aria-describedby={
+                  errors.INVALID_BIRTH_DATE || errors.INVALID_DATE_FORMAT
+                    ? "new-player-birth-date-error"
+                    : undefined
+                }
+                onChange={(event) => {
+                  setBirthDate(event.target.value);
+                  setCreateCandidates([]);
+                  setPendingCreatePayload(null);
+                  setErrors((current) => ({
+                    ...current,
+                    INVALID_BIRTH_DATE: false,
+                    INVALID_DATE_FORMAT: false,
                   }));
                 }}
               />
@@ -878,6 +973,8 @@ export const TeamDetail = () => {
                   }
                   onChange={(e) => {
                     setSex(e.target.value);
+                    setCreateCandidates([]);
+                    setPendingCreatePayload(null);
                     setErrors((prev) => ({
                       ...prev,
                       SEX_REQUIRED: false,
@@ -890,6 +987,58 @@ export const TeamDetail = () => {
                   <option value="female">Femenino</option>
                 </Select>
               </FormField>
+            )}
+
+            {createCandidates.length > 0 && (
+              <Card className="duplicate-candidates" role="status">
+                <h4>Encontramos posibles coincidencias</h4>
+                <p>Elige un perfil existente o crea uno nuevo de todos modos.</p>
+                {createCandidates.map((candidate) => (
+                  <div className="duplicate-candidate" key={candidate.id}>
+                    <div>
+                      <strong>{candidate.first_name} {candidate.last_name}</strong>
+                      <span>
+                        {candidate.birth_date
+                          ? new Date(`${candidate.birth_date}T00:00:00`).toLocaleDateString("es-ES")
+                          : "Nacimiento sin definir"} · Activo en el club
+                      </span>
+                      <span>
+                        {(candidate.teams || []).map((row) => row.team_name).join(" · ") || "Sin equipo actual"}
+                      </span>
+                    </div>
+                    <Button
+                      type="button"
+                      variant="secondary"
+                      disabled={loadingSubmit}
+                      onClick={async () => {
+                        setLoadingSubmit(true);
+                        const result = await actions.addExistingPlayerToTeam(team_id, {
+                          player_id: candidate.id,
+                          player_number: Number(playerNumber),
+                        });
+                        setLoadingSubmit(false);
+                        if (!result.ok) {
+                          setErrors({ [result.code]: true });
+                          return;
+                        }
+                        await loadTeamPlayers();
+                        setShowForm(false);
+                        setCreateCandidates([]);
+                        setPendingCreatePayload(null);
+                      }}
+                    >
+                      Usar este deportista
+                    </Button>
+                  </div>
+                ))}
+                <Button
+                  type="button"
+                  disabled={loadingSubmit}
+                  onClick={() => persistNewPlayer(pendingCreatePayload)}
+                >
+                  Crear de todos modos
+                </Button>
+              </Card>
             )}
 
             <div className="form-actions">
@@ -914,6 +1063,11 @@ export const TeamDetail = () => {
 
       <Card>
         <h4>Deportistas del equipo</h4>
+        {canUpdatePlayerStatus && (
+          <p className="team-context-line">
+            Disponibilidad en el equipo: Lesionado/a puede participar en entrenamientos, pero no en nuevos partidos o torneos.
+          </p>
+        )}
 
         {players.length === 0 ? (
           <div className="empty-state">
@@ -1133,9 +1287,9 @@ export const TeamDetail = () => {
                               }
                               value={player.status}
                             >
-                              <option value="active">Activa</option>
-                              <option value="injured">Lesionada</option>
-                              <option value="inactive">Inactiva</option>
+                              <option value="active">Disponible para este equipo</option>
+                              <option value="injured">Lesionado/a</option>
+                              <option value="inactive">No disponible para este equipo</option>
                             </Select>
                           ) : (
                             <span
@@ -1148,10 +1302,10 @@ export const TeamDetail = () => {
                               }`}
                             >
                               {player.status === "active"
-                                ? "Activa"
+                                ? "Disponible para este equipo"
                                 : player.status === "injured"
-                                ? "Lesionada"
-                                : "Inactiva"}
+                                ? "Lesionado/a"
+                                : "No disponible para este equipo"}
                             </span>
                           )}
                         </div>

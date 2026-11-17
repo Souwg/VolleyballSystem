@@ -264,6 +264,13 @@
   color: var(--color-muted);
 }
 
+.player-team-row-info a {
+  width: fit-content;
+  color: var(--color-primary);
+  font-size: var(--font-size-sm);
+  font-weight: var(--font-weight-semibold);
+}
+
 .player-global-actions {
   display: flex;
   margin-top: 16px;
@@ -548,6 +555,43 @@
   background: var(--color-primary);
   color: white;
   box-shadow: 0 8px 20px rgba(30, 58, 138, 0.25);
+}
+
+.player-profile-back:focus-visible,
+.player-inline-edit-button:focus-visible,
+.player-tab:focus-visible,
+.player-team-row-info a:focus-visible {
+  outline: 3px solid rgba(30, 58, 138, 0.24);
+  outline-offset: 2px;
+}
+
+.player-empty-membership {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 12px;
+}
+
+.player-membership-label {
+  color: var(--color-muted);
+  font-size: var(--font-size-xs);
+  font-weight: var(--font-weight-semibold);
+}
+
+@media (max-width: 560px) {
+  .player-team-row {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .player-team-row-actions {
+    width: 100%;
+    align-items: stretch;
+  }
+
+  .player-team-row-actions .status-badge {
+    width: fit-content;
+  }
 }
 
 /* ===== PLAYER PERFORMANCE ===== */

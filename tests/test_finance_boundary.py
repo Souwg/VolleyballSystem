@@ -477,13 +477,29 @@ def test_coach_cannot_send_player_finance(
     assert db.session.get(Player, player.id).first_name != "Cambio"
 
 
+def test_club_wide_coach_edits_only_main_position(
+    client, world, auth_headers
+):
+    coach = _coach_in_mode(world, "club_wide")
+    player = world.players_a[0]
+
+    response = client.put(
+        f"/api/players/{player.id}",
+        headers=auth_headers(coach),
+        json={"main_position": "libero"},
+    )
+
+    assert response.status_code == 200
+    assert response.get_json()["player"]["main_position"] == "libero"
+    assert _keys(response.get_json()) & FINANCE_KEYS == set()
+
+
 @pytest.mark.parametrize("mode", COACH_MODES)
-def test_coach_edits_sports_profile_without_finance(
+def test_coach_cannot_edit_player_identity_or_contact(
     client, world, auth_headers, mode
 ):
     coach = _coach_in_mode(world, mode)
     player = world.players_a[0]
-
     response = client.put(
         f"/api/players/{player.id}",
         headers=auth_headers(coach),
@@ -491,15 +507,12 @@ def test_coach_edits_sports_profile_without_finance(
             "first_name": "Cambio",
             "last_name": "Perfil",
             "sex": "female",
-            "main_position": player.main_position,
             "representative_name": "Representante",
-            "representative_phone": "+58 412 0000000",
         },
     )
-
-    assert response.status_code == 200
-    assert response.get_json()["player"]["first_name"] == "Cambio"
-    assert _keys(response.get_json()) & FINANCE_KEYS == set()
+    assert response.status_code == 403
+    db.session.refresh(player)
+    assert player.first_name != "Cambio"
 
 
 def test_owner_player_finance_keeps_current_behavior(

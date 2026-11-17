@@ -34,7 +34,8 @@ export const Seasons = () => {
   const [sourceTeamId, setSourceTeamId] = useState("");
   const [targetTeamId, setTargetTeamId] = useState("");
   const [sourcePlayers, setSourcePlayers] = useState([]);
-  const [selectedPlayers, setSelectedPlayers] = useState([]);
+  const [targetPlayers, setTargetPlayers] = useState([]);
+  const [rosterDraft, setRosterDraft] = useState({});
 
   const activeSeason = useMemo(
     () => seasons.find((season) => season.status === "active"),
@@ -84,7 +85,8 @@ export const Seasons = () => {
     setSourceTeamId("");
     setTargetTeamId("");
     setSourcePlayers([]);
-    setSelectedPlayers([]);
+    setTargetPlayers([]);
+    setRosterDraft({});
   }, [targetId, loadDetail]);
 
   const run = async (callback, successMessage) => {
@@ -129,28 +131,48 @@ export const Seasons = () => {
   };
 
   const loadRoster = async () => {
-    if (!sourceTeamId) return;
+    if (!sourceTeamId || !targetTeamId) return;
     setError("");
-    const result = await request(`/api/teams/${sourceTeamId}/players`);
-    if (!result.ok) {
-      setError(result.message || "No pudimos cargar el roster.");
+    const [sourceResult, targetResult] = await Promise.all([
+      request(`/api/teams/${sourceTeamId}/players`),
+      request(`/api/teams/${targetTeamId}/players`),
+    ]);
+    if (!sourceResult.ok || !targetResult.ok) {
+      setError(sourceResult.message || targetResult.message || "No pudimos cargar el roster.");
       return;
     }
-    setSourcePlayers(result.data.players || []);
-    setSelectedPlayers([]);
+    const sourceRows = sourceResult.data.players || [];
+    const targetRows = targetResult.data.players || [];
+    setSourcePlayers(sourceRows);
+    setTargetPlayers(targetRows);
+    setRosterDraft(Object.fromEntries(sourceRows.map((row) => [row.id, {
+      selected: false,
+      player_number: row.player_number,
+      status: row.status,
+    }])));
   };
 
   const copyRoster = async () => {
     const ok = await run(
       () => request(`/api/teams/${targetTeamId}/roster/copy`, {
         method: "POST",
-        body: JSON.stringify({ source_team_id: sourceTeamId, player_ids: selectedPlayers }),
+        body: JSON.stringify({
+          source_team_id: sourceTeamId,
+          players: sourcePlayers
+            .filter((row) => rosterDraft[row.id]?.selected)
+            .map((row) => ({
+              player_id: row.id,
+              player_number: Number(rosterDraft[row.id].player_number),
+              status: rosterDraft[row.id].status,
+            })),
+        }),
       }),
       "El roster seleccionado quedó preparado."
     );
     if (ok) {
       setSourcePlayers([]);
-      setSelectedPlayers([]);
+      setTargetPlayers([]);
+      setRosterDraft({});
       await loadDetail(targetId);
     }
   };
@@ -171,6 +193,23 @@ export const Seasons = () => {
   if (store.user?.role !== "club_owner") {
     return <p>Solo el dueño del club puede preparar temporadas.</p>;
   }
+
+  const selectedSourceTeam = (sourceSeason?.teams || []).find((team) => team.id === sourceTeamId);
+  const selectedTargetTeam = (targetSeason?.teams || []).find((team) => team.id === targetTeamId);
+  const selectedRoster = sourcePlayers.filter((row) => rosterDraft[row.id]?.selected);
+  const rosterIssue = (row) => {
+    if (!row.is_active) return "Inactivo en el club";
+    if (selectedTargetTeam && selectedTargetTeam.gender !== "mixed" && row.sex !== selectedTargetTeam.gender) {
+      return "No compatible con la rama del equipo destino";
+    }
+    if (targetPlayers.some((target) => target.id === row.id)) return "Ya pertenece al equipo destino";
+    const number = Number(rosterDraft[row.id]?.player_number);
+    if (!Number.isInteger(number) || number < 1 || number > 99) return "Dorsal destino inválido";
+    if (targetPlayers.some((target) => target.player_number === number)) return "Dorsal ocupado en el equipo destino";
+    if (selectedRoster.some((selected) => selected.id !== row.id && Number(rosterDraft[selected.id]?.player_number) === number)) return "Dorsal repetido en esta copia";
+    return "";
+  };
+  const hasSelectedIssues = selectedRoster.some((row) => rosterIssue(row));
 
   return (
     <>
@@ -247,26 +286,80 @@ export const Seasons = () => {
               </Select>
             </FormField>
           </div>
-          <Button type="button" variant="secondary" disabled={!sourceTeamId} onClick={loadRoster}>Cargar roster</Button>
+          <Button type="button" variant="secondary" disabled={!sourceTeamId || !targetTeamId} onClick={loadRoster}>Preparar vista previa</Button>
+          {sourcePlayers.length > 0 && (
+            <p>
+              <strong>{activeSeason.name} · {selectedSourceTeam?.name}</strong>
+              {" → "}
+              <strong>{targetSeason?.name} · {selectedTargetTeam?.name}</strong>
+            </p>
+          )}
           {sourcePlayers.map((row) => {
             const player = row.player || row;
+            const draft = rosterDraft[player.id] || {};
+            const issue = rosterIssue(row);
+            const hardBlocked = !row.is_active || issue === "No compatible con la rama del equipo destino" || issue === "Ya pertenece al equipo destino";
             return (
-              <label key={player.id} className="checkbox-row">
-                <input
-                  type="checkbox"
-                  checked={selectedPlayers.includes(player.id)}
-                  onChange={() => setSelectedPlayers((rows) => rows.includes(player.id) ? rows.filter((id) => id !== player.id) : [...rows, player.id])}
-                />
-                #{row.player_number} {player.first_name} {player.last_name}
-              </label>
+              <Card key={player.id} className="roster-copy-player">
+                <label className="checkbox-row">
+                  <input
+                    type="checkbox"
+                    disabled={hardBlocked}
+                    checked={Boolean(draft.selected)}
+                    onChange={(event) => setRosterDraft((current) => ({
+                      ...current,
+                      [player.id]: { ...current[player.id], selected: event.target.checked },
+                    }))}
+                  />
+                  <strong>{player.first_name} {player.last_name}</strong>
+                </label>
+                <p>
+                  Origen: dorsal #{row.player_number} · {row.is_active ? "Activo en el club" : "Inactivo en el club"} · {row.status === "active" ? "Disponible" : row.status === "injured" ? "Lesionado/a" : "No disponible"}
+                </p>
+                <div className="form-grid">
+                  <FormField label="Dorsal destino" htmlFor={`copy-number-${player.id}`}>
+                    <Input
+                      id={`copy-number-${player.id}`}
+                      type="number"
+                      min="1"
+                      max="99"
+                      disabled={hardBlocked}
+                      value={draft.player_number || ""}
+                      onChange={(event) => setRosterDraft((current) => ({
+                        ...current,
+                        [player.id]: { ...current[player.id], player_number: event.target.value },
+                      }))}
+                    />
+                  </FormField>
+                  <FormField label="Disponibilidad destino" htmlFor={`copy-status-${player.id}`}>
+                    <Select
+                      id={`copy-status-${player.id}`}
+                      disabled={hardBlocked}
+                      value={draft.status || "active"}
+                      onChange={(event) => setRosterDraft((current) => ({
+                        ...current,
+                        [player.id]: { ...current[player.id], status: event.target.value },
+                      }))}
+                    >
+                      <option value="active">Disponible para este equipo</option>
+                      <option value="injured">Lesionado/a</option>
+                      <option value="inactive">No disponible para este equipo</option>
+                    </Select>
+                  </FormField>
+                </div>
+                {row.status === "inactive" && !hardBlocked && !draft.selected && (
+                  <p className="text-muted">No se selecciona por defecto. Inclúyelo solo tras revisar su disponibilidad.</p>
+                )}
+                {issue && <p className="form-error">{issue}</p>}
+              </Card>
             );
           })}
           {sourcePlayers.length > 0 && (
-            <Button type="button" disabled={busy || !targetTeamId || !selectedPlayers.length} onClick={copyRoster}>Copiar seleccionadas</Button>
+            <Button type="button" disabled={busy || !selectedRoster.length || hasSelectedIssues} onClick={copyRoster}>Confirmar copia revisada</Button>
           )}
 
           <h4>3. Activar nueva temporada</h4>
-          <p>La transición cerrará {activeSeason.name} y activará {targetSeason?.name}. No modifica equipos ni memberships históricas.</p>
+          <p>La transición cerrará {activeSeason.name} y activará {targetSeason?.name}. No modifica equipos ni pertenencias históricas.</p>
           <Button type="button" disabled={busy || !(targetSeason?.active_teams > 0)} onClick={transition}>Activar nueva temporada</Button>
         </Card>
       )}

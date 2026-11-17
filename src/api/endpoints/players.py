@@ -3,18 +3,19 @@ from datetime import datetime
 from flask import jsonify, request
 from flask_jwt_extended import jwt_required
 from sqlalchemy.exc import IntegrityError
+from sqlalchemy.orm import selectinload
 
 from src.api.api_blueprint import api
 from src.api.coach_access import (
-    get_player_profile_access_resolver,
-    get_player_profile_error,
     get_player_serializer,
     get_team_access_resolver,
     get_team_assignment_error,
+    is_scoped_coach,
     is_current_membership,
     serialize_player_for_user,
     serialize_with_player_for_user,
 )
+from src.api.integrity_errors import violates_named_constraint
 from src.api.finance_access import (
     PLAYER_FINANCE_FIELDS,
     get_finance_payload_error,
@@ -57,6 +58,94 @@ from src.api.utils import error_response, get_current_user
 
 
 MAX_PLAYER_IMAGE_SIZE_MB = MAX_PLAYER_IMAGE_SIZE // (1024 * 1024)
+
+OPEN_PLAYER_CONSTRAINTS = (
+    "uq_team_players_open_player",
+    "team_players.team_id, team_players.player_id",
+)
+OPEN_NUMBER_CONSTRAINTS = (
+    "uq_team_players_open_number",
+    "team_players.team_id, team_players.player_number",
+)
+
+
+def _normalized_name(value):
+    return " ".join((value or "").strip().lower().split())
+
+
+def _parse_birth_date(value):
+    if not value:
+        return None, None
+
+    try:
+        parsed = datetime.strptime(value, "%Y-%m-%d").date()
+    except ValueError:
+        return None, (
+            "Formato de fecha inválido. Usa YYYY-MM-DD",
+            "INVALID_DATE_FORMAT",
+            400,
+        )
+
+    if parsed > datetime.utcnow().date():
+        return None, (
+            "La fecha de nacimiento no puede ser futura",
+            "INVALID_BIRTH_DATE",
+            400,
+        )
+
+    return parsed, None
+
+
+def _player_has_history(player_id):
+    return (
+        TeamPlayer.query.filter_by(player_id=player_id).first() is not None
+        or Attendance.query.filter_by(player_id=player_id).first() is not None
+        or TrainingPlayer.query.filter_by(player_id=player_id).first() is not None
+        or TournamentPlayer.query.filter_by(player_id=player_id).first() is not None
+        or MatchPlayer.query.filter_by(player_id=player_id).first() is not None
+        or PlayerPayment.query.filter_by(player_id=player_id).first() is not None
+        or PaymentReceipt.query.filter_by(player_id=player_id).first() is not None
+    )
+
+
+def _membership_payload(membership, team_access):
+    team = membership.team
+    season = team.season
+    return {
+        "membership_id": membership.id,
+        "team_id": team.id,
+        "team_name": team.name,
+        "team_status": team.status,
+        "category_id": team.category_id,
+        "category_name": team.category.name if team.category else None,
+        "season_id": team.season_id,
+        "season_name": season.name if season else None,
+        "season_status": season.status if season else None,
+        "player_number": membership.player_number,
+        "status": membership.status,
+        "joined_at": membership.joined_at.isoformat(),
+        "left_at": membership.left_at.isoformat() if membership.left_at else None,
+        "is_current": is_current_membership(membership),
+        **team_access(team),
+    }
+
+
+def _team_player_integrity_response(error):
+    if violates_named_constraint(error, OPEN_PLAYER_CONSTRAINTS):
+        return error_response(
+            "El deportista ya pertenece al equipo",
+            "PLAYER_ALREADY_IN_TEAM",
+            409,
+        )
+
+    if violates_named_constraint(error, OPEN_NUMBER_CONSTRAINTS):
+        return error_response(
+            "El dorsal ya está ocupado en este equipo",
+            "PLAYER_NUMBER_DUPLICATED",
+            409,
+        )
+
+    return None
 
 
 def ensure_planned_roster_owner(user, team):
@@ -151,7 +240,7 @@ def create_player():
 
     if user.role not in ["club_owner", "coach"]:
         return error_response(
-            "Solo el dueño del club o un entrenador pueden registrar jugadores",
+            "Solo el dueño del club o un entrenador pueden registrar deportistas",
             "FORBIDDEN",
             403
         )
@@ -179,8 +268,18 @@ def create_player():
     if finance_error:
         return error_response(*finance_error)
 
-    first_name = text_field(body, "first_name")
-    last_name = text_field(body, "last_name")
+    if user.role == "coach" and any(
+        field in body
+        for field in ("representative_name", "representative_phone")
+    ):
+        return error_response(
+            "No tienes permisos para registrar datos administrativos del representante",
+            "FORBIDDEN",
+            403,
+        )
+
+    first_name = " ".join((text_field(body, "first_name") or "").split())
+    last_name = " ".join((text_field(body, "last_name") or "").split())
     player_number = body.get("player_number")
     sex = body.get("sex")
     birth_date = text_field(body, "birth_date")
@@ -188,6 +287,13 @@ def create_player():
     team_id = body.get("team_id")
     representative_name = body.get("representative_name")
     representative_phone = body.get("representative_phone")
+
+    if is_scoped_coach(user) and not team_id:
+        return error_response(
+            "Solo puedes crear deportistas dentro de un equipo asignado",
+            "TEAM_REQUIRED_FOR_SCOPED_COACH",
+            403,
+        )
 
     if representative_name:
         representative_name = " ".join(str(representative_name).strip().split())
@@ -266,9 +372,9 @@ def create_player():
                 400
             )
 
-        if player_number <= 0:
+        if player_number < 1 or player_number > 99:
             return error_response(
-                "El número del jugador debe ser mayor que cero",
+                "El número del jugador debe estar entre 1 y 99",
                 "INVALID_PLAYER_NUMBER",
                 400
             )
@@ -284,7 +390,7 @@ def create_player():
 
         if team.club_id != user.club_id:
             return error_response(
-                "No tienes permisos para registrar jugadores en este equipo",
+            "No tienes permisos para registrar deportistas en este equipo",
                 "FORBIDDEN",
                 403
             )
@@ -333,19 +439,10 @@ def create_player():
                 409
             )
 
-    parsed_birth_date = None
+    parsed_birth_date, birth_date_error = _parse_birth_date(birth_date)
 
-    if birth_date:
-        try:
-            parsed_birth_date = datetime.strptime(
-                birth_date, "%Y-%m-%d"
-            ).date()
-        except ValueError:
-            return error_response(
-                "Formato de fecha inválido. Usa YYYY-MM-DD",
-                "INVALID_DATE_FORMAT",
-                400
-            )
+    if birth_date_error:
+        return error_response(*birth_date_error)
 
     player = Player(
         first_name=first_name,
@@ -371,9 +468,17 @@ def create_player():
             status=status
         )
         db.session.add(membership)
-        finish_club_onboarding_if_complete(team.club)
 
-    db.session.commit()
+    try:
+        if team:
+            finish_club_onboarding_if_complete(team.club)
+        db.session.commit()
+    except IntegrityError as error:
+        db.session.rollback()
+        response = _team_player_integrity_response(error)
+        if response:
+            return response
+        raise
 
     return jsonify({
         "message": "Jugador registrado correctamente",
@@ -401,17 +506,12 @@ def upload_player_image(player_id):
             404
         )
 
-    if user.role not in ["club_owner", "coach"]:
+    if user.role != "club_owner":
         return error_response(
             "No tienes permisos para modificar jugadores",
             "FORBIDDEN",
             403
         )
-
-    profile_error = get_player_profile_error(user, player)
-
-    if profile_error:
-        return error_response(*profile_error)
 
     image, extension, image_error = get_uploaded_image(
         MAX_PLAYER_IMAGE_SIZE,
@@ -460,7 +560,7 @@ def update_player_active_status(player_id):
 
     if user.role != "club_owner":
         return error_response(
-            "Solo el dueño del club puede cambiar el estado global de una jugadora",
+            "Solo el dueño del club puede cambiar el estado global de un deportista",
             "FORBIDDEN",
             403
         )
@@ -508,7 +608,7 @@ def get_team_players(team_id):
 
     if user.role not in ["club_owner", "coach"]:
         return error_response(
-            "No tienes permisos para ver jugadores",
+            "No tienes permisos para ver deportistas",
             "FORBIDDEN",
             403
         )
@@ -529,9 +629,14 @@ def get_team_players(team_id):
             403
         )
 
-    memberships = TeamPlayer.query.filter_by(team_id=team.id, left_at=None)\
-        .order_by(TeamPlayer.player_number)\
-        .all()
+    memberships = TeamPlayer.query.join(
+        Player,
+        Player.id == TeamPlayer.player_id,
+    ).filter(
+        TeamPlayer.team_id == team.id,
+        TeamPlayer.left_at.is_(None),
+        Player.club_id == user.club_id,
+    ).order_by(TeamPlayer.player_number).all()
 
     serialize_player = get_player_serializer(
         user,
@@ -585,7 +690,7 @@ def get_players():
 
     if user.role not in ["club_owner", "coach", "staff"]:
         return error_response(
-            "No tienes permisos para ver jugadores",
+            "No tienes permisos para ver deportistas",
             "FORBIDDEN",
             403
         )
@@ -605,13 +710,19 @@ def get_players():
     else:
         season = get_active_season_for_club(user.club_id)
 
-    players = Player.query.filter_by(
+    players = Player.query.options(
+        selectinload(Player.team_memberships)
+        .selectinload(TeamPlayer.team)
+        .selectinload(Team.category),
+        selectinload(Player.team_memberships)
+        .selectinload(TeamPlayer.team)
+        .selectinload(Team.season),
+    ).filter_by(
         club_id=user.club_id
-    ).order_by(Player.created_at.desc()).all()
+    ).order_by(Player.last_name, Player.first_name, Player.id).all()
 
     serialized_players = []
     serialize_player = get_player_serializer(user, players)
-    can_edit_profile = get_player_profile_access_resolver(user, players)
     team_access = get_team_access_resolver(user)
 
     for player in players:
@@ -620,13 +731,15 @@ def get_players():
                 membership
                 for membership in player.team_memberships
                 if membership.team.club_id == user.club_id
-                and season
-                and membership.team.season_id == season.id
                 and (
-                    explicit_season
+                    (
+                        explicit_season
+                        and season
+                        and membership.team.season_id == season.id
+                    )
                     or (
-                        membership.left_at is None
-                        and membership.team.status == "active"
+                        not explicit_season
+                        and is_current_membership(membership)
                     )
                 )
             ),
@@ -642,10 +755,22 @@ def get_players():
         # membership: no son fuente de permisos. Para eso está "teams".
         serialized_players.append({
             **serialize_player(player),
-            "can_edit_profile": can_edit_profile(player),
+            "can_edit_profile": user.role == "club_owner",
+            "can_edit_main_position": (
+                user.role == "club_owner"
+                or (user.role == "coach" and not is_scoped_coach(user))
+            ),
             "team_id": membership.team_id if membership else None,
             "player_number": membership.player_number if membership else None,
             "status": membership.status if membership else "active",
+            "previous_team_ids": sorted({
+                row.team_id
+                for row in player.team_memberships
+                if (
+                    row.left_at is not None
+                    and row.team.club_id == user.club_id
+                )
+            }),
             "teams": [
                 {
                     "id": m.team.id,
@@ -659,6 +784,11 @@ def get_players():
                     "joined_at": m.joined_at.isoformat(),
                     "left_at": m.left_at.isoformat() if m.left_at else None,
                     "season_id": m.team.season_id,
+                    "season_name": (
+                        m.team.season.name
+                        if m.team.season
+                        else None
+                    ),
                     "season_status": (
                         m.team.season.status
                         if m.team.season
@@ -677,6 +807,124 @@ def get_players():
         "total_players": len(serialized_players),
         "players": serialized_players
     }), 200
+
+
+@api.route("/players/candidates", methods=["GET"])
+@jwt_required()
+def get_player_candidates():
+    user = get_current_user()
+
+    if user.role not in ["club_owner", "coach", "staff"]:
+        return error_response("No tienes permisos", "FORBIDDEN", 403)
+
+    first_name = _normalized_name(request.args.get("first_name"))
+    last_name = _normalized_name(request.args.get("last_name"))
+    birth_date_value = request.args.get("birth_date")
+    sex = request.args.get("sex")
+
+    if not first_name or not last_name:
+        return jsonify({"candidates": []}), 200
+
+    birth_date, birth_date_error = _parse_birth_date(birth_date_value)
+    if birth_date_error:
+        return error_response(*birth_date_error)
+
+    players = Player.query.options(
+        selectinload(Player.team_memberships)
+        .selectinload(TeamPlayer.team)
+        .selectinload(Team.category),
+        selectinload(Player.team_memberships)
+        .selectinload(TeamPlayer.team)
+        .selectinload(Team.season),
+    ).filter_by(club_id=user.club_id).all()
+    serialize_player = get_player_serializer(user, players)
+    team_access = get_team_access_resolver(user)
+    candidates = []
+
+    for player in players:
+        if (
+            _normalized_name(player.first_name) != first_name
+            or _normalized_name(player.last_name) != last_name
+        ):
+            continue
+
+        serialized = serialize_player(player)
+        data = {
+            "id": player.id,
+            "first_name": player.first_name,
+            "last_name": player.last_name,
+            "sex": player.sex,
+            "is_active": player.is_active,
+        }
+        if "birth_date" in serialized:
+            data["birth_date"] = serialized.get("birth_date")
+        data["teams"] = [
+            _membership_payload(row, team_access)
+            for row in player.team_memberships
+            if row.team.club_id == user.club_id and is_current_membership(row)
+        ]
+        data["match"] = {
+            "birth_date": bool(birth_date and player.birth_date == birth_date),
+            "sex": bool(sex and player.sex == sex),
+        }
+        candidates.append(data)
+
+    candidates.sort(
+        key=lambda item: (
+            not item["match"]["birth_date"],
+            not item["match"]["sex"],
+            item["last_name"].lower(),
+            item["first_name"].lower(),
+        )
+    )
+    return jsonify({"candidates": candidates}), 200
+
+
+@api.route("/players/<string:player_id>", methods=["GET"])
+@jwt_required()
+def get_player_detail(player_id):
+    user = get_current_user()
+
+    if user.role not in ["club_owner", "coach", "staff"]:
+        return error_response("No tienes permisos", "FORBIDDEN", 403)
+
+    player = Player.query.options(
+        selectinload(Player.team_memberships)
+        .selectinload(TeamPlayer.team)
+        .selectinload(Team.category),
+        selectinload(Player.team_memberships)
+        .selectinload(TeamPlayer.team)
+        .selectinload(Team.season),
+    ).filter_by(id=player_id, club_id=user.club_id).first()
+
+    if not player:
+        return error_response("Deportista no encontrado", "PLAYER_NOT_FOUND", 404)
+
+    team_access = get_team_access_resolver(user)
+    memberships = sorted(
+        (
+            _membership_payload(row, team_access)
+            for row in player.team_memberships
+            if row.team.club_id == user.club_id
+        ),
+        key=lambda row: (row["joined_at"], row["membership_id"]),
+        reverse=True,
+    )
+    data = serialize_player_for_user(player, user)
+    for field in PLAYER_FINANCE_FIELDS:
+        data.pop(field, None)
+    data.update({
+        "current_memberships": [row for row in memberships if row["is_current"]],
+        "historical_memberships": [row for row in memberships if not row["is_current"]],
+        "can_edit_profile": user.role == "club_owner",
+        "can_edit_main_position": (
+            user.role == "club_owner"
+            or (user.role == "coach" and not is_scoped_coach(user))
+        ),
+        "can_delete": user.role == "club_owner" and not _player_has_history(player.id),
+        "read_only": user.role == "staff",
+    })
+    return jsonify({"player": data}), 200
 
 
 @api.route("/teams/<string:team_id>/players/existing", methods=["POST"])
@@ -782,7 +1030,7 @@ def add_existing_player_to_team(team_id):
 
     if not player.is_active:
         return error_response(
-            "No puedes asignar una jugadora desactivada",
+            "No puedes agregar a un deportista inactivo en el club",
             "PLAYER_INACTIVE",
             400
         )
@@ -828,8 +1076,15 @@ def add_existing_player_to_team(team_id):
     )
 
     db.session.add(membership)
-    finish_club_onboarding_if_complete(team.club)
-    db.session.commit()
+    try:
+        finish_club_onboarding_if_complete(team.club)
+        db.session.commit()
+    except IntegrityError as error:
+        db.session.rollback()
+        response = _team_player_integrity_response(error)
+        if response:
+            return response
+        raise
 
     return jsonify({
         "message": "Jugador agregado al equipo",
@@ -851,7 +1106,7 @@ def update_player(player_id):
 
     if user.role not in ["club_owner", "coach"]:
         return error_response(
-            "No tienes permisos para modificar jugadores",
+            "No tienes permisos para modificar deportistas",
             "FORBIDDEN",
             403
         )
@@ -865,11 +1120,6 @@ def update_player(player_id):
             404
         )
 
-    profile_error = get_player_profile_error(user, player)
-
-    if profile_error:
-        return error_response(*profile_error)
-
     body = request.get_json() or {}
 
     finance_error = get_finance_payload_error(
@@ -881,18 +1131,150 @@ def update_player(player_id):
     if finance_error:
         return error_response(*finance_error)
 
-    first_name = text_field(body, "first_name")
-    last_name = text_field(body, "last_name")
+    coach_can_edit_position = user.role == "coach" and not is_scoped_coach(user)
+    if user.role == "coach":
+        first_name_value = (
+            " ".join((text_field(body, "first_name") or "").split())
+            if "first_name" in body
+            else player.first_name
+        )
+        last_name_value = (
+            " ".join((text_field(body, "last_name") or "").split())
+            if "last_name" in body
+            else player.last_name
+        )
+        sex_value = body.get("sex", player.sex)
+        forbidden_change = (
+            first_name_value != player.first_name
+            or last_name_value != player.last_name
+            or sex_value != player.sex
+            or any(field in body for field in (
+                "birth_date", "image_url", "representative_name",
+                "representative_phone",
+            ))
+        )
+        if forbidden_change:
+            return error_response(
+                "No tienes permisos para modificar el perfil global",
+                "FORBIDDEN",
+                403,
+            )
+
+        sport_adapter = get_club_sport_adapter(player.club)
+        main_position = (
+            text_field(body, "main_position")
+            if "main_position" in body
+            else player.main_position
+        )
+        main_position = (main_position or "").strip().lower() or None
+        if main_position and not sport_adapter.has_position(main_position):
+            return error_response("Posición inválida", "INVALID_POSITION", 400)
+
+        team_id = body.get("team_id")
+        player_number = body.get("player_number")
+        if not team_id or player_number is None:
+            if not coach_can_edit_position:
+                return error_response(
+                    "No tienes permisos para modificar el perfil global",
+                    "FORBIDDEN",
+                    403,
+                )
+            player.main_position = main_position
+            db.session.commit()
+            return jsonify({
+                "message": "Posición actualizada correctamente",
+                "player": serialize_player_for_user(player, user),
+            }), 200
+
+        team = db.session.get(Team, team_id)
+        if not team or team.club_id != user.club_id:
+            return error_response("Equipo no encontrado", "TEAM_NOT_FOUND", 404)
+        assignment_error = get_team_assignment_error(user, team)
+        if assignment_error:
+            return error_response(*assignment_error)
+        team_error = get_team_membership_operation_error(team)
+        if team_error:
+            return error_response(*team_error)
+        role_error = ensure_planned_roster_owner(user, team)
+        if role_error:
+            return role_error
+        membership = TeamPlayer.query.filter_by(
+            player_id=player.id,
+            team_id=team.id,
+            left_at=None,
+        ).first()
+        if not membership:
+            return error_response(
+                "El deportista no pertenece a este equipo",
+                "PLAYER_MEMBERSHIP_NOT_FOUND",
+                404,
+            )
+        try:
+            player_number = int(player_number)
+        except (TypeError, ValueError):
+            return error_response(
+                "El dorsal debe ser numérico",
+                "INVALID_PLAYER_NUMBER",
+                400,
+            )
+        if player_number < 1 or player_number > 99:
+            return error_response(
+                "El dorsal debe estar entre 1 y 99",
+                "INVALID_PLAYER_NUMBER",
+                400,
+            )
+        duplicated_number = TeamPlayer.query.filter(
+            TeamPlayer.team_id == team.id,
+            TeamPlayer.player_number == player_number,
+            TeamPlayer.player_id != player.id,
+            TeamPlayer.left_at.is_(None),
+        ).first()
+        if duplicated_number:
+            return error_response(
+                "El dorsal ya está ocupado en este equipo",
+                "PLAYER_NUMBER_DUPLICATED",
+                409,
+            )
+        if not coach_can_edit_position and main_position != player.main_position:
+            return error_response(
+                "No tienes permisos para modificar la posición global",
+                "FORBIDDEN",
+                403,
+            )
+        membership.player_number = player_number
+        if coach_can_edit_position:
+            player.main_position = main_position
+        try:
+            db.session.commit()
+        except IntegrityError as error:
+            db.session.rollback()
+            response = _team_player_integrity_response(error)
+            if response:
+                return response
+            raise
+        return jsonify({
+            "message": "Dorsal actualizado correctamente",
+            "player": serialize_player_for_user(player, user),
+        }), 200
+
+    first_name = " ".join((text_field(body, "first_name") or "").split())
+    last_name = " ".join((text_field(body, "last_name") or "").split())
     sex = body.get("sex")
-    birth_date = text_field(body, "birth_date")
+    birth_date = (
+        text_field(body, "birth_date")
+        if "birth_date" in body
+        else None
+    )
     team_id = body.get("team_id")
     representative_name = body.get("representative_name")
     representative_phone = body.get("representative_phone")
 
     sport_adapter = get_club_sport_adapter(player.club)
     main_position = (
-        text_field(body, "main_position") or ""
-    ).strip().lower() or None
+        (text_field(body, "main_position") or "").strip().lower() or None
+        if "main_position" in body
+        else player.main_position
+    )
 
     if main_position and not sport_adapter.has_position(main_position):
         return error_response(
@@ -969,17 +1351,11 @@ def update_player(player_id):
         player.representative_phone = representative_phone or None
 
     # ✅ fecha opcional
-    if birth_date:
-        try:
-            player.birth_date = datetime.strptime(
-                birth_date, "%Y-%m-%d"
-            ).date()
-        except ValueError:
-            return error_response(
-                "Formato de fecha inválido",
-                "INVALID_DATE_FORMAT",
-                400
-            )
+    if "birth_date" in body:
+        parsed_birth_date, birth_date_error = _parse_birth_date(birth_date)
+        if birth_date_error:
+            return error_response(*birth_date_error)
+        player.birth_date = parsed_birth_date
 
     # ✅ actualizar número SOLO en membership específica
     if team_id and player_number is not None:
@@ -1043,7 +1419,14 @@ def update_player(player_id):
 
     player.main_position = main_position
 
-    db.session.commit()
+    try:
+        db.session.commit()
+    except IntegrityError as error:
+        db.session.rollback()
+        response = _team_player_integrity_response(error)
+        if response:
+            return response
+        raise
 
     return jsonify({
         "message": "Jugador actualizado correctamente",
@@ -1165,7 +1548,7 @@ def delete_player(player_id):
 
     if user.role != "club_owner":
         return error_response(
-            "Solo el dueño del club puede eliminar jugadoras del club",
+            "Solo el dueño del club puede eliminar perfiles de deportistas",
             "FORBIDDEN",
             403
         )
@@ -1179,40 +1562,26 @@ def delete_player(player_id):
             404
         )
 
-    memberships = TeamPlayer.query.filter_by(
-        player_id=player.id
-    ).all()
-
-    has_history = (
-        Attendance.query.filter_by(player_id=player.id).first() is not None
-        or TrainingPlayer.query.filter_by(player_id=player.id).first() is not None
-        or TournamentPlayer.query.filter_by(player_id=player.id).first() is not None
-        or MatchPlayer.query.filter_by(player_id=player.id).first() is not None
-        or PlayerPayment.query.filter_by(player_id=player.id).first() is not None
-        or PaymentReceipt.query.filter_by(player_id=player.id).first() is not None
-    )
+    has_history = _player_has_history(player.id)
 
     if has_history:
         return error_response(
-            "No puedes eliminar una jugadora con historial registrado",
+            "No puedes eliminar un deportista con historial registrado",
             "PLAYER_HAS_HISTORY",
             409
         )
 
     try:
-        for membership in memberships:
-            db.session.delete(membership)
-
         db.session.delete(player)
         db.session.commit()
     except IntegrityError:
         db.session.rollback()
         return error_response(
-            "No puedes eliminar una jugadora con historial registrado",
+            "No puedes eliminar un deportista con historial registrado",
             "PLAYER_HAS_HISTORY",
             409
         )
 
     return jsonify({
-        "message": "Jugador eliminado correctamente"
+        "message": "Perfil de deportista eliminado correctamente"
     }), 200

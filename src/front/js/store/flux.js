@@ -632,6 +632,39 @@ const getState = ({ getStore, getActions, setStore }) => {
         }
       },
 
+      getPlayerDetail: async (playerId) => {
+        try {
+          const resp = await authFetch(`/api/players/${playerId}`);
+          const result = await parseResponse(resp);
+
+          if (!result.ok) return result;
+
+          return successResponse(result.data);
+        } catch (error) {
+          return networkError("Error loading player detail:", error);
+        }
+      },
+
+      getPlayerCandidates: async ({ firstName, lastName, birthDate, sex }) => {
+        try {
+          const query = new URLSearchParams({
+            first_name: firstName,
+            last_name: lastName,
+          });
+          if (birthDate) query.set("birth_date", birthDate);
+          if (sex) query.set("sex", sex);
+
+          const resp = await authFetch(`/api/players/candidates?${query}`);
+          const result = await parseResponse(resp);
+
+          if (!result.ok) return result;
+
+          return successResponse(result.data);
+        } catch (error) {
+          return networkError("Error loading player candidates:", error);
+        }
+      },
+
       addExistingPlayerToTeam: async (teamId, playerData) => {
         try {
           const resp = await authFetch(
