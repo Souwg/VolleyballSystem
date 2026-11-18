@@ -219,7 +219,21 @@ def _sports_state():
 
 def _training_request(mutation):
     def build(ctx):
-        return TRAINING_MUTATIONS[mutation](_training(ctx.world), ctx.world)
+        training = _training(ctx.world)
+        if mutation == "complete":
+            roster = TrainingPlayer.query.filter_by(
+                training_id=training.id
+            ).all()
+            db.session.add_all([
+                Attendance(
+                    session_id=training.id,
+                    player_id=row.player_id,
+                    status="present",
+                )
+                for row in roster
+            ])
+            db.session.commit()
+        return TRAINING_MUTATIONS[mutation](training, ctx.world)
 
     return build
 

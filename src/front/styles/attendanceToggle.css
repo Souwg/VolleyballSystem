@@ -1,21 +1,64 @@
-.attendance-toggle {
-  min-width: 44px;
+.attendance-options {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 6px;
+  width: min(100%, 360px);
+}
+
+.attendance-option {
   min-height: 44px;
-  border: none;
-  background: transparent;
-  font-size: 24px;
+  padding: 8px 10px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  background: var(--color-surface);
+  color: var(--color-muted);
+  font: inherit;
+  font-size: var(--font-size-sm);
+  font-weight: var(--font-weight-semibold);
   cursor: pointer;
 }
 
-.attendance-toggle:hover {
-  transform: scale(1.2);
+.attendance-option:not(:disabled):hover {
+  border-color: var(--color-primary);
+  color: var(--color-primary);
 }
 
-.attendance-toggle:disabled {
+.attendance-option[aria-pressed="true"] {
+  border-color: currentColor;
+}
+
+.attendance-present[aria-pressed="true"] {
+  background: var(--color-accent-soft);
+  color: var(--color-success);
+}
+
+.attendance-late[aria-pressed="true"] {
+  background: var(--color-warning-soft);
+  color: var(--color-warning);
+}
+
+.attendance-absent[aria-pressed="true"] {
+  background: var(--color-danger-soft);
+  color: var(--color-danger);
+}
+
+.attendance-option:focus-visible {
+  outline: 2px solid var(--color-primary);
+  outline-offset: 2px;
+}
+
+.attendance-option:disabled {
   cursor: default;
   opacity: 0.9;
 }
 
-.attendance-toggle:disabled:hover {
-  transform: none;
+@media (max-width: 420px) {
+  .attendance-options {
+    width: 100%;
+  }
+
+  .attendance-option {
+    padding-inline: 6px;
+    font-size: var(--font-size-xs);
+  }
 }

@@ -1433,7 +1433,11 @@ const getState = ({ getStore, getActions, setStore }) => {
         }
       },
 
-      saveAttendance: async (trainingId, attendanceList) => {
+      saveAttendance: async (
+        trainingId,
+        attendanceList,
+        rosterPlayerIds = null,
+      ) => {
         try {
           const resp = await authFetch(
             `/api/trainings/${trainingId}/attendance`,
@@ -1444,6 +1448,9 @@ const getState = ({ getStore, getActions, setStore }) => {
               },
               body: JSON.stringify({
                 attendance: attendanceList,
+                ...(rosterPlayerIds
+                  ? { roster_player_ids: rosterPlayerIds }
+                  : {}),
               }),
             }
           );

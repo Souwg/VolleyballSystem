@@ -26,6 +26,7 @@ from src.api.training_audit_service import (
     get_club_training,
     validate_correction_reason,
 )
+from src.api.team_player_status import TRAINING_ELIGIBLE_TEAM_PLAYER_STATUSES
 from src.api.utils import error_response, get_current_user
 
 
@@ -97,6 +98,7 @@ def save_attendance(training_id):
             400
         )
     attendance_list = body.get("attendance")
+    loaded_roster_ids = body.get("roster_player_ids")
 
     if attendance_list is None or attendance_list == []:
         return error_response(
@@ -122,6 +124,32 @@ def save_attendance(training_id):
     }
 
     allowed_status = ["present", "late", "absent"]
+
+    if loaded_roster_ids is not None:
+        if (
+            not isinstance(loaded_roster_ids, list)
+            or any(
+                not isinstance(player_id, str) or not player_id
+                for player_id in loaded_roster_ids
+            )
+            or len(set(loaded_roster_ids)) != len(loaded_roster_ids)
+        ):
+            return error_response(
+                "El roster cargado no es válido",
+                "INVALID_ATTENDANCE_FORMAT",
+                400
+            )
+
+        if set(loaded_roster_ids) != allowed_player_ids:
+            return jsonify({
+                "message": (
+                    "Los participantes cambiaron. Revisa el roster antes "
+                    "de guardar la asistencia."
+                ),
+                "code": "TRAINING_ROSTER_CHANGED",
+                "roster_count": len(allowed_player_ids),
+            }), 409
+
     received_player_ids = set()
     validated_attendance = []
 
@@ -171,6 +199,19 @@ def save_attendance(training_id):
             status=status
         ))
 
+    if received_player_ids != allowed_player_ids:
+        return jsonify({
+            "message": (
+                "Debes registrar la asistencia de todos los participantes."
+            ),
+            "code": "TRAINING_ATTENDANCE_INCOMPLETE",
+            "roster_count": len(allowed_player_ids),
+            "attendance_count": len(received_player_ids),
+            "missing_count": len(
+                allowed_player_ids - received_player_ids
+            ),
+        }), 409
+
     try:
         Attendance.query.filter_by(session_id=training.id).delete()
         db.session.add_all(validated_attendance)
@@ -187,7 +228,8 @@ def save_attendance(training_id):
         )
 
     return jsonify({
-        "message": "Asistencia guardada correctamente"
+        "message": "Asistencia guardada correctamente",
+        "attendance": [row.serialize() for row in validated_attendance],
     }), 200
 
 
@@ -482,6 +524,16 @@ def get_training_players(training_id):
     snapshot = TrainingPlayer.query.filter_by(
         training_id=training.id
     ).order_by(TrainingPlayer.player_number).all()
+    snapshot_player_ids = [row.player_id for row in snapshot]
+    memberships = TeamPlayer.query.filter(
+        TeamPlayer.team_id == training.team_id,
+        TeamPlayer.player_id.in_(snapshot_player_ids),
+        TeamPlayer.left_at.is_(None),
+    ).all() if snapshot_player_ids else []
+    membership_by_player_id = {
+        membership.player_id: membership
+        for membership in memberships
+    }
 
     players = []
 
@@ -489,12 +541,23 @@ def get_training_players(training_id):
         if not row.player:
             continue
 
+        membership = membership_by_player_id.get(row.player_id)
+        currently_eligible = bool(
+            membership
+            and row.player.is_active
+            and membership.status in TRAINING_ELIGIBLE_TEAM_PLAYER_STATUSES
+        )
+
         players.append({
             "id": row.player.id,
             "first_name": row.player.first_name,
             "last_name": row.player.last_name,
             "player_number": row.player_number,
-            "sex": row.player.sex
+            "sex": row.player.sex,
+            "team_player_status": (
+                membership.status if membership else None
+            ),
+            "is_currently_eligible": currently_eligible,
         })
 
     return jsonify({

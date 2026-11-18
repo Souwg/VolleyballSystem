@@ -207,8 +207,16 @@ export const errorMessages = {
   TRAINING_REACTIVATION_FAILED:
     "No se pudo reactivar el entrenamiento. Intenta nuevamente.",
   INVALID_ATTENDANCE_STATUS: "Estado de asistencia inválido",
+  TRAINING_ATTENDANCE_INCOMPLETE:
+    "Marca la asistencia de todos los participantes antes de continuar.",
+  TRAINING_ROSTER_CHANGED:
+    "Los participantes cambiaron. Revisa nuevamente el roster y la asistencia.",
+  TRAINING_ROSTER_EMPTY:
+    "Agrega participantes antes de completar el entrenamiento.",
+  TRAINING_CONTEXT_CHANGED:
+    "El entrenamiento cambió mientras realizabas esta acción. Actualizamos la información para que puedas revisarla.",
   TEAM_HAS_NO_PLAYERS:
-    "Agrega al menos un deportista al equipo antes de crear un entrenamiento.",
+    "Este equipo no tiene deportistas elegibles para crear un entrenamiento.",
 
   // TOURNAMENTS
   TOURNAMENT_NAME_REQUIRED: "Ingresa el nombre del torneo",

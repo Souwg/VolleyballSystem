@@ -520,7 +520,19 @@ def test_scheduled_training_snapshot_is_kept_until_explicit_sync(
     attendance = client.post(
         f"/api/trainings/{training.id}/attendance",
         headers=auth_headers(world.owner_a),
-        json={"attendance": [{"player_id": player.id, "status": "present"}]},
+        json={
+            "attendance": [
+                {
+                    "player_id": row.player_id,
+                    "status": (
+                        "present" if row.player_id == player.id else "absent"
+                    ),
+                }
+                for row in TrainingPlayer.query.filter_by(
+                    training_id=training.id
+                ).all()
+            ]
+        },
     )
     other_training = _training(world)
     sync = client.put(

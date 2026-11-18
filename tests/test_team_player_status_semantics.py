@@ -127,7 +127,17 @@ def test_injured_player_can_receive_training_attendance(
         headers=auth_headers(world.coach_a),
         json={
             "attendance": [
-                {"player_id": membership.player_id, "status": "present"}
+                {
+                    "player_id": row.player_id,
+                    "status": (
+                        "present"
+                        if row.player_id == membership.player_id
+                        else "absent"
+                    ),
+                }
+                for row in TrainingPlayer.query.filter_by(
+                    training_id=training.id
+                ).all()
             ]
         },
     )

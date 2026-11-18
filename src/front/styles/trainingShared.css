@@ -11,6 +11,23 @@
   gap: 12px;
 }
 
+.training-fixed-context {
+  font-weight: var(--font-weight-semibold);
+  color: var(--color-primary);
+}
+
+.training-form-error {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.training-form-error p {
+  margin: 0;
+}
+
 @media (min-width: 640px) {
   .training-time-grid {
     grid-template-columns: repeat(2, minmax(0, 1fr));

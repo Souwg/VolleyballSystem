@@ -1,6 +1,6 @@
-import React, { useEffect, useContext, useState } from "react";
+import React, { useEffect, useContext, useRef, useState } from "react";
 import { Context } from "../../store/appContext";
-import { useParams, useNavigate } from "react-router-dom";
+import { useLocation, useParams, useNavigate } from "react-router-dom";
 
 import { PageHeader } from "../../component/ui/pageHeader";
 import { Card } from "../../component/ui/card";
@@ -15,7 +15,7 @@ import { Pencil } from "lucide-react";
 import { ReadOnlyNotice } from "../../component/ui/readOnlyNotice";
 import {
   canManage,
-  resolveTeamOperational,
+  isTeamOperational,
   useTeamAccessLost,
 } from "../../utils/coachAccess";
 import "../../../styles/trainingShared.css";
@@ -108,7 +108,9 @@ export const TrainingDetail = () => {
   const { store, actions } = useContext(Context);
   const { training_id } = useParams();
   const navigate = useNavigate();
+  const location = useLocation();
 
+  const [players, setPlayers] = useState([]);
   const [attendance, setAttendance] = useState({});
   const [originalAttendance, setOriginalAttendance] = useState({});
   const [loading, setLoading] = useState(true);
@@ -129,6 +131,9 @@ export const TrainingDetail = () => {
   const [auditLoading, setAuditLoading] = useState(false);
   const [auditEvents, setAuditEvents] = useState([]);
   const [teamOperational, setTeamOperational] = useState(true);
+  const [loadError, setLoadError] = useState(null);
+  const [infoMessage, setInfoMessage] = useState("");
+  const loadRequestId = useRef(0);
 
   useTeamAccessLost(() => loadTrainingData());
 
@@ -161,52 +166,82 @@ export const TrainingDetail = () => {
     setAuditEvents(result.data || []);
   };
 
-  const loadTrainingData = async () => {
-    setLoading(true);
-    setErrors({});
-
-    const [detailResult, playersResult, attendanceResult] = await Promise.all([
-      actions.getTrainingDetail(training_id),
+  const loadRosterAttendance = async (requestId = null) => {
+    const [playersResult, attendanceResult] = await Promise.all([
       actions.getTrainingPlayers(training_id),
       actions.getTrainingAttendance(training_id),
     ]);
 
-    const nextErrors = {};
-
-    if (detailResult.ok) {
-      const trainingData = detailResult.data.training;
-      setTraining(trainingData);
-      resetTrainingForm(trainingData);
-      setTeamOperational(
-        await resolveTeamOperational(actions, trainingData.team_id),
-      );
-    } else {
-      nextErrors[detailResult.code] = true;
+    if (requestId !== null && requestId !== loadRequestId.current) {
+      return { ok: false, stale: true };
     }
 
-    if (!playersResult.ok) nextErrors[playersResult.code] = true;
+    if (!playersResult.ok) return playersResult;
+    if (!attendanceResult.ok) return attendanceResult;
 
-    if (attendanceResult.ok) {
-      const attendanceMap = mapAttendanceRows(attendanceResult.data);
-      setAttendance(attendanceMap);
-      setOriginalAttendance(attendanceMap);
-    } else {
-      nextErrors[attendanceResult.code] = true;
-    }
-
-    setErrors(nextErrors);
+    const nextPlayers = playersResult.data.players || [];
+    const attendanceMap = mapAttendanceRows(attendanceResult.data);
+    setPlayers(nextPlayers);
+    setAttendance(attendanceMap);
+    setOriginalAttendance(attendanceMap);
     setHasChanges(false);
+
+    return { ok: true };
+  };
+
+  const loadTrainingData = async () => {
+    const requestId = loadRequestId.current + 1;
+    loadRequestId.current = requestId;
+    setLoading(true);
+    setErrors({});
+    setLoadError(null);
+    setInfoMessage("");
+    setTraining(null);
+    setPlayers([]);
+    setAttendance({});
+    setOriginalAttendance({});
+
+    const detailResult = await actions.getTrainingDetail(training_id);
+
+    if (requestId !== loadRequestId.current) return;
+
+    if (!detailResult.ok) {
+      setLoadError(detailResult);
+      setLoading(false);
+      return;
+    }
+
+    const trainingData = detailResult.data.training;
+    const rosterResult = await loadRosterAttendance(requestId);
+
+    if (rosterResult.stale) return;
+
+    if (!rosterResult.ok) {
+      setLoadError(rosterResult);
+      setLoading(false);
+      return;
+    }
+
+    setTraining(trainingData);
+    resetTrainingForm(trainingData);
+    setTeamOperational(isTeamOperational({
+      status: trainingData.team_status,
+      season_status: trainingData.season_status,
+    }));
     setLoading(false);
   };
 
   useEffect(() => {
     loadTrainingData();
+    return () => {
+      loadRequestId.current += 1;
+    };
   }, [training_id]);
 
   const handleAttendanceChange = (playerId, newStatus) => {
     setAttendance((previous) => {
       const next = { ...previous, [playerId]: newStatus };
-      const changed = store.players.some(
+      const changed = players.some(
         (player) =>
           (next[player.id] || null) !==
           (originalAttendance[player.id] || null),
@@ -300,7 +335,7 @@ export const TrainingDetail = () => {
       return;
     }
 
-    const attendanceList = store.players
+    const attendanceList = players
       .filter((player) => {
         if (!attendance[player.id]) return false;
 
@@ -320,10 +355,19 @@ export const TrainingDetail = () => {
           attendanceReason.trim(),
           attendanceList,
         )
-      : await actions.saveAttendance(training_id, attendanceList);
+      : await actions.saveAttendance(
+          training_id,
+          attendanceList,
+          players.map((player) => player.id),
+        );
     setSaving(false);
 
     if (!result.ok) {
+      if (result.code === "TRAINING_ROSTER_CHANGED") {
+        await loadTrainingData();
+        setErrors({ TRAINING_ROSTER_CHANGED: true });
+        return;
+      }
       setErrors({ [result.code]: true });
       return;
     }
@@ -355,8 +399,8 @@ export const TrainingDetail = () => {
     const isCompleting = targetStatus === "completed";
     const confirmed = window.confirm(
       isCompleting
-        ? "¿Marcar este entrenamiento como completado?\n\nEl entrenamiento quedará registrado como realizado."
-        : "¿Cancelar este entrenamiento?\n\nSe conservarán los datos registrados.",
+        ? "¿Completar este entrenamiento?\n\nEl entrenamiento quedará cerrado y sus participantes quedarán congelados. Los cambios posteriores requerirán una corrección histórica."
+        : "¿Cancelar este entrenamiento?\n\nEl entrenamiento quedará cancelado. No se eliminarán sus participantes ni la asistencia registrada. Podrá reactivarse mientras el equipo y la temporada sigan operativos.",
     );
 
     if (!confirmed) return;
@@ -370,11 +414,25 @@ export const TrainingDetail = () => {
         : await actions.cancelTraining(training_id);
 
       if (!result.ok) {
+        if ([
+          "INVALID_TRAINING_STATUS",
+          "TEAM_ARCHIVED",
+          "SEASON_CLOSED",
+          "TRAINING_ATTENDANCE_INCOMPLETE",
+          "TRAINING_ROSTER_EMPTY",
+        ].includes(result.code)) {
+          await loadTrainingData();
+          setErrors({ [result.code]: true });
+          return;
+        }
         setErrors({ [result.code]: true });
         return;
       }
 
-      setTraining(result.data.training);
+      setTraining((previous) => ({
+        ...previous,
+        ...result.data.training,
+      }));
       setAttendance({ ...originalAttendance });
       setHasChanges(false);
     } finally {
@@ -385,12 +443,26 @@ export const TrainingDetail = () => {
   const handleSyncRoster = async () => {
     if (syncingRoster || transitioningStatus || !training) return;
 
+    if (hasChanges) {
+      const discardDraft = window.confirm(
+        "Tienes cambios de asistencia sin guardar. Actualizar participantes descartará esos cambios. ¿Deseas continuar?",
+      );
+
+      if (!discardDraft) return;
+    }
+
     setErrors({});
     setSyncingRoster(true);
 
     try {
       const result = await actions.syncTrainingRoster(training_id);
-      if (!result.ok) setErrors({ [result.code]: true });
+      if (!result.ok) {
+        setErrors({ [result.code]: true });
+        return;
+      }
+
+      const rosterResult = await loadRosterAttendance();
+      if (!rosterResult.ok) setErrors({ [rosterResult.code]: true });
     } finally {
       setSyncingRoster(false);
     }
@@ -418,9 +490,13 @@ export const TrainingDetail = () => {
         return;
       }
 
-      setTraining(result.data.training);
+      setTraining((previous) => ({
+        ...previous,
+        ...result.data.training,
+      }));
       setReactivationOpen(false);
       setReactivationReason("");
+      setInfoMessage("Entrenamiento reactivado. Revisa los participantes antes de continuar.");
       if (auditOpen) await loadAuditEvents();
     } finally {
       setTransitioningStatus(null);
@@ -433,18 +509,37 @@ export const TrainingDetail = () => {
     if (nextOpen) await loadAuditEvents();
   };
 
-  const presentCount = Object.values(attendance).filter(
-    (status) => status === "present",
+  const handleMarkAllPresent = () => {
+    const next = Object.fromEntries(
+      players.map((player) => [player.id, "present"]),
+    );
+    const changed = players.some(
+      (player) => originalAttendance[player.id] !== "present",
+    );
+
+    setAttendance(next);
+    setHasChanges(changed);
+    setErrors({});
+  };
+
+  const presentCount = players.filter(
+    (player) => attendance[player.id] === "present",
   ).length;
-  const lateCount = Object.values(attendance).filter(
-    (status) => status === "late",
+  const lateCount = players.filter(
+    (player) => attendance[player.id] === "late",
   ).length;
-  const absentCount = Object.values(attendance).filter(
-    (status) => status === "absent",
+  const absentCount = players.filter(
+    (player) => attendance[player.id] === "absent",
   ).length;
-  const markedCount = Object.keys(attendance).length;
-  const totalPlayers = store.players.length;
-  const allMarked = markedCount === totalPlayers;
+  const markedCount = players.filter((player) => attendance[player.id]).length;
+  const persistedMarkedCount = players.filter(
+    (player) => originalAttendance[player.id],
+  ).length;
+  const totalPlayers = players.length;
+  const allMarked = totalPlayers > 0 && markedCount === totalPlayers;
+  const persistedAttendanceComplete = (
+    totalPlayers > 0 && persistedMarkedCount === totalPlayers
+  );
   const trainingStatus = getTrainingStatus(training?.status);
   const isScheduled = training?.status === "scheduled";
   const isCompleted = training?.status === "completed";
@@ -456,27 +551,67 @@ export const TrainingDetail = () => {
   const canOperateTraining = canManageTraining && teamOperational;
   const attendanceEditable =
     (isScheduled && canOperateTraining) || attendanceCorrection;
+  const completeReady = (
+    totalPlayers > 0 && persistedAttendanceComplete && !hasChanges
+  );
+  const completionHelp = totalPlayers === 0
+    ? "Agrega participantes antes de completar."
+    : hasChanges
+    ? "Guarda la asistencia antes de completar."
+    : !persistedAttendanceComplete
+    ? "Marca la asistencia de todos."
+    : "La asistencia está completa. Ya puedes cerrar el entrenamiento.";
   const generalErrorCode = Object.keys(errors).find(
     (code) => errors[code] && errorMessages[code],
   );
 
-  if (loading) return <p>Cargando asistencia...</p>;
+  if (loading) return <p role="status">Cargando entrenamiento...</p>;
+
+  if (loadError) {
+    return (
+      <Card className="page-error-state" role="alert">
+        <h2>
+          {loadError.code === "TRAINING_NOT_FOUND"
+            ? "Entrenamiento no encontrado"
+            : loadError.code === "FORBIDDEN"
+            ? "No tienes acceso a este entrenamiento"
+            : "No pudimos cargar el entrenamiento"}
+        </h2>
+        <p>{errorMessages[loadError.code] || loadError.message || "Ocurrió un error temporal."}</p>
+        <Button type="button" onClick={loadTrainingData}>Volver a intentar</Button>
+      </Card>
+    );
+  }
 
   return (
     <div className="training-detail-page">
       <PageHeader
         variant="detail"
-        eyebrow="Entrenamiento"
-        title="Asistencia"
+        eyebrow={training?.category_name || "Entrenamiento"}
+        title={training?.team_name || "Entrenamiento"}
         subtitle={!canManageTraining
-          ? "Consulta la asistencia registrada en esta sesión."
+          ? "Consulta este entrenamiento en modo de solo lectura."
           : isScheduled && canOperateTraining
-          ? "Marca la asistencia de los deportistas convocados a esta sesión."
+          ? "Revisa participantes, registra asistencia y completa la sesión."
           : isScheduled
           ? "Esta sesión no admite cambios porque su equipo no está operativo."
-          : "Consulta el registro cerrado y realiza correcciones históricas cuando sea necesario."}
-        onBack={() => navigate("/trainings")}
+          : "Consulta el registro cerrado y sus correcciones históricas."}
+        onBack={() => navigate(
+          location.state?.from || `/trainings${location.search}`,
+        )}
       />
+
+      <div className="training-context-line" aria-label="Contexto del entrenamiento">
+        <span>{training?.category_name || "Sin categoría"}</span>
+        <span aria-hidden="true">·</span>
+        <span>{training?.season_name || "Sin temporada"}</span>
+        {training?.season_status === "closed" && (
+          <span className="status-badge status-muted">Temporada cerrada</span>
+        )}
+        {training?.season_status === "planned" && (
+          <span className="status-badge status-info">En preparación</span>
+        )}
+      </div>
 
       {training && !canManageTraining && (
         <ReadOnlyNotice>
@@ -522,11 +657,15 @@ export const TrainingDetail = () => {
 
             <FormField
               label="Fecha"
+              htmlFor="training-detail-date"
+              errorId="training-detail-date-error"
               error={errors.TRAINING_DATE_REQUIRED
                 ? errorMessages.TRAINING_DATE_REQUIRED
                 : null}
             >
               <Input
+                id="training-detail-date"
+                aria-describedby={errors.TRAINING_DATE_REQUIRED ? "training-detail-date-error" : undefined}
                 type="date"
                 value={trainingForm.date}
                 className={errors.TRAINING_DATE_REQUIRED ? "input-error" : ""}
@@ -538,11 +677,15 @@ export const TrainingDetail = () => {
             <div className="training-time-grid">
               <FormField
                 label="Hora de inicio"
+                htmlFor="training-detail-start"
+                errorId="training-detail-start-error"
                 error={errors.TRAINING_START_TIME_REQUIRED
                   ? errorMessages.TRAINING_START_TIME_REQUIRED
                   : null}
               >
                 <Input
+                  id="training-detail-start"
+                  aria-describedby={errors.TRAINING_START_TIME_REQUIRED ? "training-detail-start-error" : undefined}
                   type="time"
                   value={trainingForm.start_time}
                   className={errors.TRAINING_START_TIME_REQUIRED ||
@@ -554,6 +697,8 @@ export const TrainingDetail = () => {
 
               <FormField
                 label="Hora de finalización"
+                htmlFor="training-detail-end"
+                errorId="training-detail-end-error"
                 error={errors.TRAINING_END_TIME_REQUIRED
                   ? errorMessages.TRAINING_END_TIME_REQUIRED
                   : errors.INVALID_TRAINING_TIME_RANGE
@@ -561,6 +706,8 @@ export const TrainingDetail = () => {
                   : null}
               >
                 <Input
+                  id="training-detail-end"
+                  aria-describedby={errors.TRAINING_END_TIME_REQUIRED || errors.INVALID_TRAINING_TIME_RANGE ? "training-detail-end-error" : undefined}
                   type="time"
                   value={trainingForm.end_time}
                   className={errors.TRAINING_END_TIME_REQUIRED ||
@@ -573,11 +720,15 @@ export const TrainingDetail = () => {
 
             <FormField
               label="Ubicación"
+              htmlFor="training-detail-location"
+              errorId="training-detail-location-error"
               error={errors.TRAINING_LOCATION_REQUIRED
                 ? errorMessages.TRAINING_LOCATION_REQUIRED
                 : null}
             >
               <Input
+                id="training-detail-location"
+                aria-describedby={errors.TRAINING_LOCATION_REQUIRED ? "training-detail-location-error" : undefined}
                 type="text"
                 value={trainingForm.location}
                 placeholder="Ej: Cancha central"
@@ -590,11 +741,16 @@ export const TrainingDetail = () => {
             {editMode === "correction" && (
               <FormField
                 label="Motivo de la corrección *"
+                helper="El motivo quedará registrado en el historial de cambios."
+                htmlFor="training-metadata-reason"
+                errorId="training-metadata-reason-error"
                 error={errors.CORRECTION_REASON_REQUIRED
                   ? errorMessages.CORRECTION_REASON_REQUIRED
                   : null}
               >
                 <textarea
+                  id="training-metadata-reason"
+                  aria-describedby={errors.CORRECTION_REASON_REQUIRED ? "training-metadata-reason-error" : undefined}
                   className="input training-reason-input"
                   maxLength={500}
                   value={metadataReason}
@@ -647,38 +803,6 @@ export const TrainingDetail = () => {
           </p>
         )}
 
-        {isScheduled && canTransitionTraining && canOperateTraining && (
-          <div className="training-status-actions">
-            <Button
-              type="button"
-              variant="secondary"
-              onClick={handleSyncRoster}
-              disabled={syncingRoster || Boolean(transitioningStatus)}
-            >
-              {syncingRoster ? "Actualizando..." : "Actualizar participantes"}
-            </Button>
-            <Button
-              type="button"
-              onClick={() => handleTrainingTransition("completed")}
-              disabled={Boolean(transitioningStatus) || syncingRoster}
-            >
-              {transitioningStatus === "completed"
-                ? "Completando..."
-                : "Completar entrenamiento"}
-            </Button>
-            <Button
-              type="button"
-              variant="danger"
-              onClick={() => handleTrainingTransition("cancelled")}
-              disabled={Boolean(transitioningStatus) || syncingRoster}
-            >
-              {transitioningStatus === "cancelled"
-                ? "Cancelando..."
-                : "Cancelar entrenamiento"}
-            </Button>
-          </div>
-        )}
-
         {canManageTraining && (isCompleted || isCancelled) && !editMode && (
           <div className="training-status-actions training-history-actions">
             <Button
@@ -699,6 +823,11 @@ export const TrainingDetail = () => {
                 Reactivar entrenamiento
               </Button>
             )}
+            {isCancelled && !teamOperational && (
+              <p className="training-operation-note">
+                No puede reactivarse porque el equipo está archivado o la temporada no está activa.
+              </p>
+            )}
           </div>
         )}
 
@@ -706,15 +835,23 @@ export const TrainingDetail = () => {
           <div className="training-correction-panel">
             <div className="training-correction-heading">
               <strong>Reactivar entrenamiento</strong>
-              <span>Volverá al estado programado sin borrar su historial.</span>
+              <span>
+                Volverá a Programado, conservará participantes y asistencia,
+                y no actualizará el roster automáticamente.
+              </span>
             </div>
             <FormField
               label="Motivo de la reactivación *"
+              helper="El motivo quedará registrado en el historial de cambios."
+              htmlFor="training-reactivation-reason"
+              errorId="training-reactivation-reason-error"
               error={errors.CORRECTION_REASON_REQUIRED
                 ? errorMessages.CORRECTION_REASON_REQUIRED
                 : null}
             >
               <textarea
+                id="training-reactivation-reason"
+                aria-describedby={errors.CORRECTION_REASON_REQUIRED ? "training-reactivation-reason-error" : undefined}
                 className="input training-reason-input"
                 maxLength={500}
                 value={reactivationReason}
@@ -749,27 +886,95 @@ export const TrainingDetail = () => {
         )}
       </Card>
 
+      {infoMessage && (
+        <p className="training-info-message" role="status">{infoMessage}</p>
+      )}
+
+      <Card className="training-participants-card">
+        <div className="training-attendance-heading">
+          <div>
+            <h3>Participantes</h3>
+            <p>
+              {totalPlayers > 0
+                ? `${totalPlayers} deportistas en el roster de esta sesión.`
+                : "Este entrenamiento no tiene participantes."}
+            </p>
+          </div>
+          {isScheduled && canOperateTraining && (
+            <Button
+              type="button"
+              variant="secondary"
+              onClick={handleSyncRoster}
+              disabled={syncingRoster || Boolean(transitioningStatus)}
+            >
+              {syncingRoster ? "Actualizando..." : "Actualizar participantes"}
+            </Button>
+          )}
+        </div>
+        {isScheduled && canOperateTraining && (
+          <p className="training-sync-help">
+            Agrega nuevos deportistas elegibles, actualiza dorsales y retira
+            quienes ya no son elegibles. Las asistencias existentes se conservan.
+          </p>
+        )}
+      </Card>
+
       <Card>
         <div className="training-attendance-heading">
           <div>
             <h3>Asistencia</h3>
+            <p className={`attendance-state ${
+              hasChanges
+                ? "is-dirty"
+                : persistedAttendanceComplete
+                ? "is-complete"
+                : ""
+            }`}>
+              {hasChanges
+                ? "Cambios sin guardar"
+                : totalPlayers === 0
+                ? "Sin participantes"
+                : persistedMarkedCount === 0
+                ? "Sin comenzar"
+                : persistedAttendanceComplete
+                ? "Asistencia completa"
+                : "Asistencia incompleta"}
+            </p>
+            <div className="attendance-summary" aria-label="Resumen de asistencia">
+              <span>{markedCount} de {totalPlayers} registrados</span>
+              <span>{presentCount} presentes</span>
+              <span>{lateCount} tarde</span>
+              <span>{absentCount} ausentes</span>
+            </div>
             {(!isScheduled || !canOperateTraining) && (
               <p>Registro en modo de solo lectura.</p>
             )}
           </div>
-          {canManageTraining && isCompleted && !attendanceCorrection && (
-            <Button
-              type="button"
-              variant="secondary"
-              onClick={() => {
-                setErrors({});
-                setAttendanceReason("");
-                setAttendanceCorrection(true);
-              }}
-            >
-              Corregir asistencia
-            </Button>
-          )}
+          <div className="training-attendance-actions">
+            {isScheduled && canOperateTraining && totalPlayers > 0 && (
+              <Button
+                type="button"
+                variant="secondary"
+                onClick={handleMarkAllPresent}
+                disabled={saving}
+              >
+                Marcar todos presentes
+              </Button>
+            )}
+            {canManageTraining && isCompleted && !attendanceCorrection && (
+              <Button
+                type="button"
+                variant="secondary"
+                onClick={() => {
+                  setErrors({});
+                  setAttendanceReason("");
+                  setAttendanceCorrection(true);
+                }}
+              >
+                Corregir asistencia
+              </Button>
+            )}
+          </div>
         </div>
 
         {attendanceCorrection && (
@@ -779,24 +984,32 @@ export const TrainingDetail = () => {
           </div>
         )}
 
-        {store.players.length === 0 ? (
-          <p>No hay deportistas en esta categoría.</p>
+        {players.length === 0 ? (
+          <p>Este entrenamiento no tiene participantes.</p>
         ) : (
           <div className="attendance-list">
-            {store.players.map((player) => {
+            {players.map((player) => {
               const status = attendance[player.id] || null;
+              const playerName = `${player.first_name} ${player.last_name}`;
 
               return (
                 <div key={player.id} className="attendance-row">
                   <div className="attendance-player">
                     <span className="player-number">#{player.player_number}</span>
                     <span className="attendance-player-name">
-                      {player.first_name} {player.last_name}
+                      {playerName}
                     </span>
+                    {player.team_player_status === "injured" && (
+                      <span className="status-badge status-muted">Lesionado/a</span>
+                    )}
+                    {!player.is_currently_eligible && (
+                      <span className="status-badge status-muted">Ya no elegible</span>
+                    )}
                   </div>
                   <AttendanceToggle
                     value={status}
                     disabled={!attendanceEditable}
+                    playerName={playerName}
                     onChange={(newStatus) =>
                       handleAttendanceChange(player.id, newStatus)}
                   />
@@ -810,11 +1023,16 @@ export const TrainingDetail = () => {
           <div className="training-correction-panel">
             <FormField
               label="Motivo de la corrección *"
+              helper="El motivo quedará registrado en el historial de cambios."
+              htmlFor="training-attendance-reason"
+              errorId="training-attendance-reason-error"
               error={errors.CORRECTION_REASON_REQUIRED
                 ? errorMessages.CORRECTION_REASON_REQUIRED
                 : null}
             >
               <textarea
+                id="training-attendance-reason"
+                aria-describedby={errors.CORRECTION_REASON_REQUIRED ? "training-attendance-reason-error" : undefined}
                 className="input training-reason-input"
                 maxLength={500}
                 value={attendanceReason}
@@ -843,8 +1061,88 @@ export const TrainingDetail = () => {
         )}
       </Card>
 
+      {isScheduled && canOperateTraining && (
+        <div className="attendance-sticky-bar">
+          <div>
+            <div className="attendance-progress">
+              {markedCount} / {totalPlayers} deportistas marcados
+            </div>
+            <div className="attendance-summary">
+              <span>{presentCount} presentes</span>
+              <span>{lateCount} tarde</span>
+              <span>{absentCount} ausentes</span>
+            </div>
+          </div>
+          <Button
+            className="button-primary"
+            onClick={handleSaveAttendance}
+            disabled={saving || !hasChanges || !allMarked}
+          >
+            {saving
+              ? "Guardando..."
+              : !allMarked
+              ? totalPlayers === 0
+                ? "Sin participantes"
+                : `Faltan ${totalPlayers - markedCount}`
+              : hasChanges
+              ? "Guardar asistencia"
+              : "Sin cambios"}
+          </Button>
+        </div>
+      )}
+
+      {isScheduled && canTransitionTraining && canOperateTraining && (
+        <Card className="training-completion-card">
+          <div>
+            <h3>Finalizar entrenamiento</h3>
+            <p>{completionHelp}</p>
+          </div>
+          <div className="training-status-actions">
+            <Button
+              type="button"
+              onClick={() => handleTrainingTransition("completed")}
+              disabled={
+                !completeReady ||
+                Boolean(transitioningStatus) ||
+                syncingRoster
+              }
+            >
+              {transitioningStatus === "completed"
+                ? "Completando..."
+                : "Completar entrenamiento"}
+            </Button>
+            <Button
+              type="button"
+              variant="danger"
+              onClick={() => handleTrainingTransition("cancelled")}
+              disabled={Boolean(transitioningStatus) || syncingRoster}
+            >
+              {transitioningStatus === "cancelled"
+                ? "Cancelando..."
+                : "Cancelar entrenamiento"}
+            </Button>
+          </div>
+        </Card>
+      )}
+
+      {(isCompleted || isCancelled) && (
+        <Card className="training-closed-summary" role="note">
+          <strong>
+            {isCompleted ? "Registro cerrado" : "Entrenamiento cancelado"}
+          </strong>
+          <span>
+            {totalPlayers} participantes · {presentCount} presentes · {lateCount} tarde · {absentCount} ausentes
+          </span>
+          {isCancelled && !persistedAttendanceComplete && (
+            <span>La asistencia conservada puede estar incompleta.</span>
+          )}
+        </Card>
+      )}
+
       {generalErrorCode && (
-        <p className="form-error">{errorMessages[generalErrorCode]}</p>
+        <p className="form-error" role="alert">
+          {errorMessages[generalErrorCode]}
+        </p>
       )}
 
       <Card className="training-audit-card">
@@ -860,7 +1158,7 @@ export const TrainingDetail = () => {
 
         {auditOpen && (
           auditLoading ? (
-            <p>Cargando historial...</p>
+            <p role="status">Cargando historial...</p>
           ) : auditEvents.length === 0 ? (
             <p className="training-audit-empty">
               No se han realizado correcciones.
@@ -910,33 +1208,6 @@ export const TrainingDetail = () => {
         )}
       </Card>
 
-      {isScheduled && canOperateTraining && (
-        <div className="attendance-sticky-bar">
-          <div>
-            <div className="attendance-progress">
-              {markedCount} / {totalPlayers} deportistas marcados
-            </div>
-            <div className="attendance-summary">
-              <span>{presentCount} presentes</span>
-              <span>{lateCount} tarde</span>
-              <span>{absentCount} ausente</span>
-            </div>
-          </div>
-          <Button
-            className="button-primary"
-            onClick={handleSaveAttendance}
-            disabled={saving || !hasChanges || !allMarked}
-          >
-            {saving
-              ? "Guardando..."
-              : !allMarked
-              ? `Faltan ${totalPlayers - markedCount}`
-              : hasChanges
-              ? "Guardar asistencia"
-              : "Sin cambios"}
-          </Button>
-        </div>
-      )}
     </div>
   );
 };

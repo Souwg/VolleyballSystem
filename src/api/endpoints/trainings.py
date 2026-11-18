@@ -2,6 +2,7 @@ from datetime import datetime
 
 from flask import jsonify, request
 from flask_jwt_extended import jwt_required
+from sqlalchemy import and_, case, distinct, func
 
 from src.api.api_blueprint import api
 from src.api.coach_access import (
@@ -9,7 +10,14 @@ from src.api.coach_access import (
     get_team_access_resolver,
     get_team_assignment_error,
 )
-from src.api.models import db, Team, TrainingAuditEvent, TrainingSession
+from src.api.models import (
+    db,
+    Attendance,
+    Team,
+    TrainingAuditEvent,
+    TrainingPlayer,
+    TrainingSession,
+)
 from src.api.request_validation import InputValidationError, text_field
 from src.api.season_service import (
     get_active_season_for_club,
@@ -36,6 +44,142 @@ TRAINING_METADATA_FIELDS = {
     "end_time",
     "location",
 }
+ATTENDANCE_STATUSES = ("present", "late", "absent")
+
+
+def _get_training_progress(training_ids):
+    """Return compact roster/attendance aggregates for read models."""
+    if not training_ids:
+        return {}
+
+    rows = (
+        db.session.query(
+            TrainingPlayer.training_id,
+            func.count(distinct(TrainingPlayer.player_id)).label(
+                "roster_count"
+            ),
+            func.count(Attendance.id).label("attendance_row_count"),
+            func.count(distinct(case(
+                (
+                    Attendance.status.in_(ATTENDANCE_STATUSES),
+                    Attendance.player_id,
+                ),
+                else_=None,
+            ))).label("attendance_count"),
+            func.count(distinct(case(
+                (Attendance.status == "present", Attendance.player_id),
+                else_=None,
+            ))).label("present_count"),
+            func.count(distinct(case(
+                (Attendance.status == "late", Attendance.player_id),
+                else_=None,
+            ))).label("late_count"),
+            func.count(distinct(case(
+                (Attendance.status == "absent", Attendance.player_id),
+                else_=None,
+            ))).label("absent_count"),
+        )
+        .outerjoin(
+            Attendance,
+            and_(
+                Attendance.session_id == TrainingPlayer.training_id,
+                Attendance.player_id == TrainingPlayer.player_id,
+            ),
+        )
+        .filter(TrainingPlayer.training_id.in_(training_ids))
+        .group_by(TrainingPlayer.training_id)
+        .all()
+    )
+
+    progress = {}
+
+    for row in rows:
+        roster_count = int(row.roster_count or 0)
+        attendance_count = int(row.attendance_count or 0)
+        attendance_row_count = int(row.attendance_row_count or 0)
+        progress[row.training_id] = {
+            "roster_count": roster_count,
+            "attendance_count": attendance_count,
+            "present_count": int(row.present_count or 0),
+            "late_count": int(row.late_count or 0),
+            "absent_count": int(row.absent_count or 0),
+            "attendance_complete": (
+                roster_count > 0
+                and attendance_count == roster_count
+                and attendance_row_count == roster_count
+            ),
+        }
+
+    for training_id in training_ids:
+        progress.setdefault(training_id, {
+            "roster_count": 0,
+            "attendance_count": 0,
+            "present_count": 0,
+            "late_count": 0,
+            "absent_count": 0,
+            "attendance_complete": False,
+        })
+
+    return progress
+
+
+def _serialize_training_read(training, progress=None):
+    team = training.team
+    season = team.season if team else None
+
+    return {
+        **training.serialize(),
+        **(progress or _get_training_progress([training.id])[training.id]),
+        "team_name": team.name if team else None,
+        "team_status": team.status if team else None,
+        "team_gender": team.gender if team else None,
+        "category_id": team.category_id if team else None,
+        "category_name": (
+            team.category.name
+            if team and team.category
+            else None
+        ),
+        "season_id": season.id if season else None,
+        "season_name": season.name if season else None,
+        "season_status": season.status if season else None,
+    }
+
+
+def _get_completion_progress(training):
+    roster_player_ids = {
+        player_id
+        for (player_id,) in db.session.query(TrainingPlayer.player_id).filter(
+            TrainingPlayer.training_id == training.id
+        ).all()
+    }
+    attendance_rows = Attendance.query.filter_by(
+        session_id=training.id
+    ).all()
+    rows_by_player = {}
+
+    for row in attendance_rows:
+        rows_by_player.setdefault(row.player_id, []).append(row)
+
+    valid_player_ids = {
+        player_id
+        for player_id in roster_player_ids
+        if len(rows_by_player.get(player_id, [])) == 1
+        and rows_by_player[player_id][0].status in ATTENDANCE_STATUSES
+    }
+    roster_count = len(roster_player_ids)
+    attendance_count = len(valid_player_ids)
+
+    return {
+        "roster_count": roster_count,
+        "attendance_count": attendance_count,
+        "missing_count": roster_count - attendance_count,
+        "is_complete": (
+            roster_count > 0
+            and attendance_count == roster_count
+            and len(attendance_rows) == roster_count
+            and set(rows_by_player) == roster_player_ids
+        ),
+    }
 
 
 def _validate_training_metadata(values):
@@ -113,19 +257,7 @@ def _validate_training_metadata(values):
 
 
 def _serialize_training_detail(training):
-    team = training.team
-
-    return {
-        **training.serialize(),
-        "team_name": team.name,
-        "team_gender": team.gender,
-        "category_id": team.category_id,
-        "category_name": (
-            team.category.name
-            if team.category
-            else None
-        )
-    }
+    return _serialize_training_read(training)
 
 
 def _audit_value(field, value):
@@ -210,6 +342,28 @@ def _transition_training_status(training_id, target_status):
             "INVALID_TRAINING_STATUS",
             409
         )
+
+    if target_status == "completed":
+        completion = _get_completion_progress(training)
+
+        if completion["roster_count"] == 0:
+            return jsonify({
+                "message": (
+                    "Agrega participantes antes de completar el entrenamiento."
+                ),
+                "code": "TRAINING_ROSTER_EMPTY",
+                **completion,
+            }), 409
+
+        if not completion["is_complete"]:
+            return jsonify({
+                "message": (
+                    "Registra la asistencia completa antes de completar "
+                    "el entrenamiento."
+                ),
+                "code": "TRAINING_ATTENDANCE_INCOMPLETE",
+                **completion,
+            }), 409
 
     updated_count = TrainingSession.query.filter_by(
         id=training.id,
@@ -544,16 +698,8 @@ def get_training_detail(training_id):
 
     return jsonify({
         "training": {
-            **training.serialize(),
+            **_serialize_training_detail(training),
             "can_manage": can_manage_team(user, team),
-            "team_name": team.name,
-            "team_gender": team.gender,
-            "category_id": team.category_id,
-            "category_name": (
-                team.category.name
-                if team.category
-                else None
-            )
         }
     }), 200
 
@@ -967,6 +1113,9 @@ def get_team_trainings(team_id):
     trainings = TrainingSession.query.filter_by(team_id=team.id)\
         .order_by(TrainingSession.date.desc())\
         .all()
+    progress_by_id = _get_training_progress([
+        training.id for training in trainings
+    ])
 
     access = get_team_access_resolver(user)(team)
 
@@ -974,7 +1123,10 @@ def get_team_trainings(team_id):
         "team": {**team.serialize(), **access},
         "total_trainings": len(trainings),
         "trainings": [
-            {**t.serialize(), "can_manage": access["can_manage"]}
+            {
+                **_serialize_training_read(t, progress_by_id[t.id]),
+                "can_manage": access["can_manage"],
+            }
             for t in trainings
         ]
     }), 200
@@ -1017,15 +1169,17 @@ def get_all_trainings():
 
     trainings = query.order_by(TrainingSession.date.desc()).all()
     team_access = get_team_access_resolver(user)
+    progress_by_id = _get_training_progress([
+        training.id for training in trainings
+    ])
 
     return jsonify({
         "season": season.serialize(),
         "total_trainings": len(trainings),
         "trainings": [
         {
-            **t.serialize(),
+            **_serialize_training_read(t, progress_by_id[t.id]),
             "can_manage": team_access(t.team)["can_manage"],
-            "team_name": t.team.name
         }
         for t in trainings
     ]

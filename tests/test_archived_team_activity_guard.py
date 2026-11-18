@@ -117,7 +117,8 @@ TRAINING_MUTATIONS = {
         f"/api/trainings/{training.id}/attendance",
         {
             "attendance": [
-                {"player_id": world.players_a[0].id, "status": "present"}
+                {"player_id": player.id, "status": "present"}
+                for player in world.players_a
             ]
         },
     ),
@@ -164,6 +165,20 @@ def test_training_mutation_payload_is_valid_on_active_team(
     client, world, auth_headers, mutation
 ):
     training = _training(world)
+
+    if mutation == "complete":
+        db.session.add_all([
+            Attendance(
+                session_id=training.id,
+                player_id=row.player_id,
+                status="present",
+            )
+            for row in TrainingPlayer.query.filter_by(
+                training_id=training.id
+            ).all()
+        ])
+        db.session.commit()
+
     request = TRAINING_MUTATIONS[mutation](training, world)
 
     response = _send(client, auth_headers(world.coach_a), request)
@@ -618,6 +633,18 @@ def test_reactivating_team_restores_only_operations_allowed_by_lifecycle(
     assert db.session.get(TrainingSession, completed.id).status == "completed"
     assert db.session.get(TrainingSession, cancelled.id).status == "cancelled"
     assert db.session.get(MatchSession, finished_match.match.id).is_completed
+
+    db.session.add_all([
+        Attendance(
+            session_id=scheduled.id,
+            player_id=row.player_id,
+            status="present",
+        )
+        for row in TrainingPlayer.query.filter_by(
+            training_id=scheduled.id
+        ).all()
+    ])
+    db.session.commit()
 
     assert client.put(
         f"/api/trainings/{scheduled.id}/complete", headers=headers

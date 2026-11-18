@@ -622,7 +622,7 @@ def _get_sports_sections(club_id, season_id, today, team_ids=None):
         attendance_counts.c.training_id == TrainingSession.id,
     ).filter(
         *operational_team_filters,
-        TrainingSession.status != "cancelled",
+        TrainingSession.status == "scheduled",
         TrainingSession.date <= today,
         func.coalesce(roster_counts.c.roster_count, 0) > 0,
         func.coalesce(attendance_counts.c.attendance_count, 0)

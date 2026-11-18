@@ -493,6 +493,12 @@ const OwnerDashboard = ({ sections, currencyCode }) => {
   const attention = sections.attention_summary || {};
   const setup = sections.setup_continuation;
   const preparedMatch = operations.live_match;
+  const pendingTrainingDestination = (
+    operations.pending_attendance?.count === 1 &&
+    operations.pending_attendance?.trainings?.[0]?.id
+  )
+    ? `/trainings/${operations.pending_attendance.trainings[0].id}`
+    : "/trainings?pending=1";
   const agenda = buildAgenda(
     operations.upcoming_trainings,
     operations.upcoming_matches,
@@ -552,7 +558,7 @@ const OwnerDashboard = ({ sections, currencyCode }) => {
             {
               count: attention.pending_attendance,
               label: "entrenamientos con asistencia por revisar",
-              to: "/trainings",
+              to: pendingTrainingDestination,
               actionLabel: "Registrar asistencia",
               tone: "pending",
             },
@@ -640,6 +646,12 @@ const OwnerDashboard = ({ sections, currencyCode }) => {
 const CoachDashboard = ({ sections, hasTeamAssignments }) => {
   const agenda = sections.agenda || {};
   const preparedMatch = agenda.live_match;
+  const pendingTrainingDestination = (
+    agenda.pending_attendance?.count === 1 &&
+    agenda.pending_attendance?.trainings?.[0]?.id
+  )
+    ? `/trainings/${agenda.pending_attendance.trainings[0].id}`
+    : "/trainings?pending=1";
   const activities = buildAgenda(
     agenda.upcoming_trainings,
     agenda.upcoming_matches,
@@ -688,7 +700,7 @@ const CoachDashboard = ({ sections, hasTeamAssignments }) => {
             {
               count: agenda.pending_attendance?.count,
               label: "entrenamientos con asistencia por revisar",
-              to: "/trainings",
+              to: pendingTrainingDestination,
               actionLabel: "Registrar asistencia",
               tone: "pending",
             },
