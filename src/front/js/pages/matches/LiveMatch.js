@@ -1,5 +1,5 @@
-import React, { useEffect, useState, useContext } from "react";
-import { useParams, useNavigate } from "react-router-dom";
+import React, { useEffect, useRef, useState, useContext } from "react";
+import { useParams, useNavigate, useLocation } from "react-router-dom";
 import { Context } from "../../store/appContext";
 import { Button } from "../../component/ui/button";
 import {
@@ -67,6 +67,8 @@ export const LiveMatch = () => {
   const { actions } = useContext(Context);
   const { match_id } = useParams();
   const navigate = useNavigate();
+  const location = useLocation();
+  const detailPath = `/matches/${match_id}${location.search}`;
 
   const [match, setMatch] = useState(null);
   const [loadingMatch, setLoadingMatch] = useState(true);
@@ -86,14 +88,17 @@ export const LiveMatch = () => {
   const [savingLineup, setSavingLineup] = useState(false);
   const [lineupError, setLineupError] = useState("");
   const [liveError, setLiveError] = useState("");
+  const [events, setEvents] = useState([]);
+  const loadRequestId = useRef(0);
 
   const [teamOperational, setTeamOperational] = useState(true);
 
   useTeamAccessLost(() => loadMatchContext());
 
-  const loadRoster = async () => {
+  const loadRoster = async (requestId = null) => {
     const result = await actions.getMatchRoster(match_id);
 
+    if (requestId !== null && requestId !== loadRequestId.current) return;
     if (!result.ok) return;
 
     const rosterData = result.data || [];
@@ -101,10 +106,15 @@ export const LiveMatch = () => {
   };
 
   const loadMatchContext = async () => {
+    const requestId = ++loadRequestId.current;
     setLoadingMatch(true);
+    setMatch(null);
+    setRoster([]);
+    setEvents([]);
 
     const result = await actions.getMatchDetail(match_id);
 
+    if (requestId !== loadRequestId.current) return;
     if (!result.ok) {
       setLiveError(result.message || "No se pudo cargar el partido");
       setLoadingMatch(false);
@@ -113,15 +123,18 @@ export const LiveMatch = () => {
 
     const matchData = result.data.match;
     setMatch(matchData);
-    setTeamOperational(
-      await resolveTeamOperational(actions, matchData.team_id),
-    );
+    const operational = await resolveTeamOperational(actions, matchData.team_id);
+    if (requestId !== loadRequestId.current) return;
+    setTeamOperational(operational);
 
     if (
       matchData.capture_mode === "live" &&
       !matchData.is_completed
     ) {
-      await loadRoster();
+      await loadRoster(requestId);
+      const eventsResult = await actions.getMatchEvents(match_id);
+      if (requestId !== loadRequestId.current) return;
+      setEvents(eventsResult.ok ? eventsResult.data.events || [] : []);
     }
 
     setLoadingMatch(false);
@@ -173,6 +186,7 @@ export const LiveMatch = () => {
 
   useEffect(() => {
     loadMatchContext();
+    return () => { loadRequestId.current += 1; };
   }, [match_id]);
 
   const getActionLabel = (value) => {
@@ -199,6 +213,11 @@ export const LiveMatch = () => {
 
   const handleSubstitution = async (incomingPlayer) => {
     if (!selectedOutPlayer || savingParticipation) return;
+
+    const confirmed = window.confirm(
+      `Confirmar cambio: sale #${selectedOutPlayer.player_number} ${selectedOutPlayer.first_name} y entra #${incomingPlayer.player_number} ${incomingPlayer.first_name}.`,
+    );
+    if (!confirmed) return;
 
     setLiveError("");
     setSavingParticipation(true);
@@ -273,6 +292,8 @@ export const LiveMatch = () => {
 
     setSelectedAction(null);
     setSelectedPlayer(null);
+    const eventsResult = await actions.getMatchEvents(match_id);
+    if (eventsResult.ok) setEvents(eventsResult.data.events || []);
   };
 
   const handleUndo = async () => {
@@ -292,6 +313,8 @@ export const LiveMatch = () => {
 
     navigator.vibrate?.(30);
     setLastAction(null);
+    const eventsResult = await actions.getMatchEvents(match_id);
+    if (eventsResult.ok) setEvents(eventsResult.data.events || []);
   };
 
   const handleSetChange = (set) => {
@@ -320,7 +343,7 @@ export const LiveMatch = () => {
           <button
             type="button"
             className="live-back-button"
-            onClick={() => navigate(`/matches/${match_id}`)}
+            onClick={() => navigate(detailPath)}
           >
             ← Volver
           </button>
@@ -348,7 +371,7 @@ export const LiveMatch = () => {
           <button
             type="button"
             className="live-back-button"
-            onClick={() => navigate(`/matches/${match_id}`)}
+            onClick={() => navigate(detailPath)}
           >
             ← Volver
           </button>
@@ -364,7 +387,7 @@ export const LiveMatch = () => {
           </p>
           <Button
             variant="secondary"
-            onClick={() => navigate(`/matches/${match_id}`)}
+            onClick={() => navigate(detailPath)}
           >
             Consultar partido
           </Button>
@@ -380,7 +403,7 @@ export const LiveMatch = () => {
           <button
             type="button"
             className="live-back-button"
-            onClick={() => navigate(`/matches/${match_id}`)}
+            onClick={() => navigate(detailPath)}
           >
             ← Volver
           </button>
@@ -396,7 +419,7 @@ export const LiveMatch = () => {
           </p>
           <Button
             variant="secondary"
-            onClick={() => navigate(`/matches/${match_id}`)}
+            onClick={() => navigate(detailPath)}
           >
             Consultar partido
           </Button>
@@ -411,12 +434,14 @@ export const LiveMatch = () => {
         <button
           type="button"
           className="live-back-button"
-          onClick={() => navigate(`/matches/${match_id}`)}
+          onClick={() => navigate(detailPath)}
         >
           ← Volver
         </button>
 
-        <span className="live-topbar-label">Partido en vivo</span>
+        <span className="live-topbar-label">
+          {match.team_name || "Equipo"} vs {match.opponent_name || "Rival"} · Set {currentSet}
+        </span>
       </div>
 
       {!hasStartingLineup && (
@@ -719,6 +744,24 @@ export const LiveMatch = () => {
             </section>
           )}
         </>
+      )}
+      {hasStartingLineup && (
+        <section className="live-section" aria-labelledby="live-history-title">
+          <h3 id="live-history-title" className="live-section-title">Historial de acciones</h3>
+          {events.length === 0 ? (
+            <p className="live-section-helper">Aún no hay acciones registradas.</p>
+          ) : (
+            <ol className="live-event-history">
+              {[...events].reverse().map((event) => (
+                <li key={event.id}>
+                  <strong>Set {event.set_number}</strong>
+                  <span>#{event.player?.player_number} {event.player?.first_name} {event.player?.last_name}</span>
+                  <span>{getActionLabel(event.action_type)} · {event.result}</span>
+                </li>
+              ))}
+            </ol>
+          )}
+        </section>
       )}
     </div>
   );

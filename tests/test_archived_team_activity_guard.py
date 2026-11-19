@@ -266,7 +266,8 @@ def _match_for_mutation(world, match_factory, mutation):
         "event": {"on_court_count": 6},
         "delete_event": {"on_court_count": 6},
         "result": {},
-        "finalize": {},
+        # Finalize now requires the complete sports flow, not only a result.
+        "finalize": {"on_court_count": 6},
     }[mutation]
     created = match_factory(world, **config)
 
@@ -301,7 +302,8 @@ def _match_request(client, world, auth_headers, created, mutation):
             {
                 "players": [
                     {"match_player_id": row.id, "attendance_status": "present"}
-                    for row in rows[:6]
+                    for row in rows
+                    if row.is_called
                 ]
             },
         )
@@ -331,7 +333,17 @@ def _match_request(client, world, auth_headers, created, mutation):
         return (
             "put",
             f"{base}/roster/participation",
-            {"players": [{"match_player_id": rows[0].id, "did_play": True}]},
+            {
+                "players": [
+                    {
+                        "match_player_id": row.id,
+                        "did_play": index == 0,
+                    }
+                    for index, row in enumerate(rows)
+                    if row.is_called
+                    and row.attendance_status in ["present", "late"]
+                ]
+            },
         )
 
     if mutation == "stats":

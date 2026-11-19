@@ -6,6 +6,11 @@
   gap: 14px;
   padding-bottom: 28px;
 }
+
+.live-event-history {
+  margin: 0;
+  color: inherit;
+}
 /* ===== LIVE TOPBAR ===== */
 
 .live-topbar {

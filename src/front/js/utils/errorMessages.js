@@ -229,6 +229,8 @@ export const errorMessages = {
   INVALID_TOURNAMENT_STATUS: "Estado de torneo inválido",
   TOURNAMENT_HAS_PENDING_CHARGES:
     "El torneo tiene cargos de inscripción pendientes. Cóbralos o cancélalos antes de cancelar el torneo.",
+  TOURNAMENT_HAS_OPEN_MATCHES:
+    "Completa los partidos abiertos antes de cerrar o cancelar el torneo.",
   INVALID_AMOUNT: "Ingresa un monto válido",
   TOURNAMENT_TEAM_NOT_FOUND: "Participación de torneo no encontrada",
   TEAM_ALREADY_IN_TOURNAMENT: "Este equipo ya está inscrito en el torneo",
@@ -264,6 +266,16 @@ export const errorMessages = {
   MATCH_ROSTER_REQUIRED: "Debes seleccionar al menos una jugadora.",
   INVALID_MATCH_ROSTER:
     "Uno o más participantes no pertenecen a este partido.",
+  TEAM_HAS_NO_ELIGIBLE_PLAYERS:
+    "El equipo no tiene deportistas elegibles para crear este partido.",
+  MATCH_CALLUP_LOCKED:
+    "La convocatoria ya no puede cambiarse porque existe información deportiva.",
+  MATCH_ROSTER_CHANGED:
+    "La convocatoria cambió. Actualiza el partido y revisa la asistencia.",
+  MATCH_ATTENDANCE_CHANGED:
+    "La asistencia cambió. Actualiza el partido y revisa la participación.",
+  DUPLICATE_MATCH_ATTENDANCE:
+    "Una deportista aparece más de una vez en la asistencia.",
   MATCH_COMPLETED:
     "El partido ya está finalizado y no permite realizar este cambio.",
   MATCH_HISTORY_LOCKED:
@@ -274,6 +286,8 @@ export const errorMessages = {
     "Resultado inválido. Debe ser máximo 5 sets y uno de los equipos debe llegar a 3.",
   MATCH_RESULT_INCOMPLETE:
     "Debes guardar un resultado válido antes de finalizar el partido.",
+  MATCH_NOT_READY:
+    "Completa todos los pasos de preparación antes de finalizar el partido.",
   MATCH_RESULT_NOT_SUPPORTED:
     "El deporte del club no tiene una validación de resultado configurada.",
   MATCH_FINALIZED:
@@ -312,6 +326,10 @@ export const errorMessages = {
   STARTING_LINEUP_REQUIRED: "Debes seleccionar las jugadoras iniciales",
   STARTING_LINEUP_MUST_HAVE_6:
     "Debes seleccionar exactamente 6 jugadoras en cancha",
+  DUPLICATE_STARTING_LINEUP:
+    "No puedes seleccionar dos veces a la misma jugadora.",
+  STARTING_LINEUP_MUST_PARTICIPATE:
+    "Las seis titulares deben quedar marcadas como participantes.",
   INVALID_STARTING_LINEUP: "Una o más jugadoras no pertenecen a este partido",
 
   INVALID_SET_NUMBER: "Set inválido",
@@ -328,6 +346,8 @@ export const errorMessages = {
 
   INVALID_ATTACK_STATS: "Los ataques no cuadran",
   INVALID_RECEPTION_STATS: "Las recepciones no cuadran",
+  INVALID_DEFENSE_STATS: "Las defensas no cuadran",
+  INVALID_SET_STATS: "Los armados no cuadran",
   INVALID_SERVE_STATS: "Los saques no cuadran",
   INVALID_BLOCK_STATS: "Los bloqueos no cuadran",
   INVALID_SUMMARY_STAT_VALUE:

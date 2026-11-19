@@ -49,6 +49,93 @@
   color: var(--color-muted);
 }
 
+.match-preflight-heading {
+  justify-content: space-between;
+}
+
+.match-preflight-heading p { margin: 0; color: var(--color-text-muted, #64748b); }
+
+.match-preflight-list {
+  list-style: none;
+  padding: 0;
+  margin: 1rem 0 0;
+  display: grid;
+  gap: 0.65rem;
+}
+
+.match-preflight-list li {
+  display: flex;
+  gap: 0.65rem;
+  padding: 0.75rem;
+  border-radius: 0.75rem;
+  background: #fff7ed;
+}
+
+.match-preflight-list li.is-ready { background: #ecfdf5; }
+.match-preflight-list li > div { display: grid; }
+.match-preflight-list small { color: #64748b; }
+
+.match-attendance-toolbar,
+.match-summary-lineup,
+.match-dialog-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  flex-wrap: wrap;
+}
+
+.match-attendance-toolbar { justify-content: space-between; margin-bottom: 1rem; }
+.match-summary-lineup { margin: 1rem 0; align-items: stretch; flex-direction: column; }
+
+.match-attendance-options {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 0.5rem;
+}
+
+.match-attendance-options button {
+  border: 1px solid #cbd5e1;
+  border-radius: 0.65rem;
+  background: white;
+  padding: 0.65rem 0.4rem;
+}
+
+.match-attendance-options button.is-selected {
+  border-color: #2563eb;
+  background: #eff6ff;
+  color: #1d4ed8;
+  font-weight: 700;
+}
+
+.match-stats-progress { margin-top: 0.75rem; }
+.match-event-history, .live-event-history { display: grid; gap: 0.6rem; padding-left: 1.25rem; }
+.match-event-history li, .live-event-history li { display: flex; gap: 0.5rem; flex-wrap: wrap; }
+
+.match-dialog-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 1100;
+  display: grid;
+  place-items: center;
+  padding: 1rem;
+  background: rgba(15, 23, 42, 0.64);
+}
+
+.match-dialog {
+  width: min(100%, 30rem);
+  padding: 1.25rem;
+  border-radius: 1rem;
+  background: white;
+  box-shadow: 0 24px 70px rgba(15, 23, 42, 0.3);
+}
+
+.match-dialog-actions { justify-content: flex-end; }
+
+@media (max-width: 640px) {
+  .match-attendance-options { grid-template-columns: 1fr 1fr; }
+  .match-dialog-actions > * { flex: 1; }
+}
+
 .match-result-win {
   color: var(--color-success);
 }

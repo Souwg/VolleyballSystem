@@ -1,5 +1,5 @@
-import React, { useEffect, useState, useContext } from "react";
-import { useParams, useNavigate } from "react-router-dom";
+import React, { useEffect, useRef, useState, useContext } from "react";
+import { useParams, useNavigate, useLocation } from "react-router-dom";
 import { Context } from "../../store/appContext";
 import { PageHeader } from "../../component/ui/pageHeader";
 import { Card } from "../../component/ui/card";
@@ -12,21 +12,31 @@ export const MatchStatsAdjust = () => {
   const { actions } = useContext(Context);
   const { match_id } = useParams();
   const navigate = useNavigate();
+  const location = useLocation();
+  const detailPath = `/matches/${match_id}${location.search}`;
 
   const [players, setPlayers] = useState([]);
   const [captureMode, setCaptureMode] = useState(null);
   const [isCompleted, setIsCompleted] = useState(false);
   const [canOperate, setCanOperate] = useState(true);
   const [loading, setLoading] = useState(true);
+  const [preflight, setPreflight] = useState(null);
+  const loadRequestId = useRef(0);
 
   const loadPlayers = async () => {
+    const requestId = ++loadRequestId.current;
     setLoading(true);
 
     try {
-      const [matchResult, rosterResult] = await Promise.all([
+      setPlayers([]);
+      setPreflight(null);
+      const [matchResult, rosterResult, preflightResult] = await Promise.all([
         actions.getMatchDetail(match_id),
         actions.getMatchRoster(match_id),
+        actions.getMatchPreflight(match_id),
       ]);
+
+      if (requestId !== loadRequestId.current) return;
 
       if (matchResult.ok) {
         const matchData = matchResult.data.match;
@@ -51,13 +61,16 @@ export const MatchStatsAdjust = () => {
 
         setPlayers(playablePlayers);
       }
+
+      if (preflightResult.ok) setPreflight(preflightResult.data.preflight);
     } finally {
-      setLoading(false);
+      if (requestId === loadRequestId.current) setLoading(false);
     }
   };
 
   useEffect(() => {
     loadPlayers();
+    return () => { loadRequestId.current += 1; };
   }, [match_id]);
 
   if (loading) {
@@ -68,7 +81,7 @@ export const MatchStatsAdjust = () => {
           eyebrow="Partido"
           title="Ajustar estadísticas"
           subtitle="Cargando deportistas..."
-          onBack={() => navigate(`/matches/${match_id}`)}
+          onBack={() => navigate(detailPath)}
         />
       </>
     );
@@ -90,7 +103,7 @@ export const MatchStatsAdjust = () => {
             ? "El partido está completado y sus estadísticas son de solo lectura."
             : "Las estadísticas de este partido están disponibles en modo de solo lectura."
         }
-        onBack={() => navigate(`/matches/${match_id}`)}
+        onBack={() => navigate(detailPath)}
       />
       {players.length === 0 ? (
         <Card>
@@ -99,7 +112,12 @@ export const MatchStatsAdjust = () => {
           </p>
         </Card>
       ) : (
-        players.map((player) => (
+        <>
+        <Card className="mb-3" aria-live="polite">
+          <strong>Progreso del resumen</strong>
+          <p className="mb-0">{preflight?.stats?.counts?.reviewed || 0} de {preflight?.stats?.counts?.required || players.length} deportistas revisadas</p>
+        </Card>
+        {players.map((player) => (
           <Card key={player.match_player_id} className="mb-3">
             <h3>
               #{player.player_number} {player.first_name} {player.last_name}
@@ -111,16 +129,21 @@ export const MatchStatsAdjust = () => {
                 : "Consulta las estadísticas registradas de esta deportista."}
             </p>
 
+            <span className={`status-badge ${player.stats_reviewed ? "status-success" : "status-warning"}`}>
+              {player.stats_reviewed ? "Revisada" : "Pendiente"}
+            </span>
+
             <Button
               variant="secondary"
               onClick={() =>
-                navigate(`/match-players/${player.match_player_id}/stats`)
+                navigate(`/match-players/${player.match_player_id}/stats${location.search}`)
               }
             >
               {canEditStats ? "Cargar resumen" : "Ver estadísticas"}
             </Button>
           </Card>
-        ))
+        ))}
+        </>
       )}
     </>
   );

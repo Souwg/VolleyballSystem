@@ -82,6 +82,57 @@
   font-weight: var(--font-weight-medium);
 }
 
+.match-card-link {
+  color: inherit;
+  text-decoration: none;
+}
+
+.match-card-link:focus-visible .match-card {
+  outline: 3px solid var(--color-primary, #2563eb);
+  outline-offset: 3px;
+}
+
+.match-card-heading,
+.match-filters,
+.match-preflight-heading {
+  display: flex;
+  align-items: center;
+  gap: 0.65rem;
+  flex-wrap: wrap;
+}
+
+.match-card-arrow {
+  align-self: center;
+  font-size: 1.35rem;
+}
+
+.match-groups,
+.match-group {
+  display: grid;
+  gap: 1rem;
+}
+
+.match-group + .match-group {
+  margin-top: 2rem;
+}
+
+.match-filters {
+  margin-bottom: 1.25rem;
+  align-items: end;
+}
+
+.match-filters label {
+  display: grid;
+  gap: 0.35rem;
+  flex: 1 1 10rem;
+  font-weight: 600;
+}
+
+@media (max-width: 640px) {
+  .match-card-arrow { display: none; }
+  .match-filters { display: grid; grid-template-columns: 1fr 1fr; }
+}
+
 .match-card-team {
   margin: 0 0 3px;
   font-size: var(--font-size-sm);

@@ -1,4 +1,4 @@
-import React, { useState, useContext, useEffect } from "react";
+import React, { useState, useContext, useEffect, useRef } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { Context } from "../../store/appContext";
 import { StatCounter } from "../../component/ui/statCounter";
@@ -68,111 +68,25 @@ export const PlayerMatchStats = () => {
   const [blocksErrors, setBlocksErrors] = useState(0);
 
   const [loading, setLoading] = useState(false);
+  const loadRequestId = useRef(0);
 
-  useEffect(() => {
-    const sum = attacksPositive + attacksNeutral + attacksErrors;
-
-    if (sum > attacksTotal) {
-      const overflow = sum - attacksTotal;
-
-      if (attacksErrors >= overflow) {
-        setAttacksErrors((prev) => prev - overflow);
-      } else if (attacksNeutral >= overflow) {
-        setAttacksNeutral((prev) => prev - overflow);
-      } else {
-        setAttacksPositive((prev) => Math.max(0, prev - overflow));
-      }
-    }
-  }, [attacksPositive, attacksNeutral, attacksErrors, attacksTotal]);
-
-  useEffect(() => {
-    const sum = receptionsPositive + receptionsNeutral + receptionsNegative;
-
-    if (sum > receptionsTotal) {
-      const overflow = sum - receptionsTotal;
-
-      if (receptionsNegative >= overflow) {
-        setReceptionsNegative((prev) => prev - overflow);
-      } else if (receptionsNeutral >= overflow) {
-        setReceptionsNeutral((prev) => prev - overflow);
-      } else {
-        setReceptionsPositive((prev) => Math.max(0, prev - overflow));
-      }
-    }
-  }, [
-    receptionsPositive,
-    receptionsNeutral,
-    receptionsNegative,
-    receptionsTotal,
-  ]);
-
-  useEffect(() => {
-    const sum = defensesPositive + defensesNeutral + defensesNegative;
-
-    if (sum > defensesTotal) {
-      const overflow = sum - defensesTotal;
-
-      if (defensesNegative >= overflow) {
-        setDefensesNegative((prev) => prev - overflow);
-      } else if (defensesNeutral >= overflow) {
-        setDefensesNeutral((prev) => prev - overflow);
-      } else {
-        setDefensesPositive((prev) => Math.max(0, prev - overflow));
-      }
-    }
-  }, [defensesPositive, defensesNeutral, defensesNegative, defensesTotal]);
-
-  useEffect(() => {
-    const sum = setsPositive + setsNeutral + setsErrors;
-
-    if (sum > setsTotal) {
-      const overflow = sum - setsTotal;
-
-      if (setsErrors >= overflow) {
-        setSetsErrors((prev) => prev - overflow);
-      } else if (setsNeutral >= overflow) {
-        setSetsNeutral((prev) => prev - overflow);
-      } else {
-        setSetsPositive((prev) => Math.max(0, prev - overflow));
-      }
-    }
-  }, [setsPositive, setsNeutral, setsErrors, setsTotal]);
-
-  useEffect(() => {
-    const sum = servesIn + servesAces + servesErrors;
-
-    if (sum > servesTotal) {
-      const overflow = sum - servesTotal;
-
-      if (servesErrors >= overflow) {
-        setServesErrors((prev) => prev - overflow);
-      } else if (servesAces >= overflow) {
-        setServesAces((prev) => prev - overflow);
-      } else {
-        setServesIn((prev) => Math.max(0, prev - overflow));
-      }
-    }
-  }, [servesIn, servesAces, servesErrors, servesTotal]);
-
-  useEffect(() => {
-    const sum = blocksPoints + blocksNeutral + blocksErrors;
-
-    if (sum > blocksTotal) {
-      const overflow = sum - blocksTotal;
-
-      if (blocksErrors >= overflow) {
-        setBlocksErrors((prev) => prev - overflow);
-      } else if (blocksNeutral >= overflow) {
-        setBlocksNeutral((prev) => prev - overflow);
-      } else {
-        setBlocksPoints((prev) => Math.max(0, prev - overflow));
-      }
-    }
-  }, [blocksPoints, blocksNeutral, blocksErrors, blocksTotal]);
+  const resetStats = () => {
+    setAttacksTotal(0); setAttacksPositive(0); setAttacksNeutral(0); setAttacksErrors(0);
+    setReceptionsTotal(0); setReceptionsPositive(0); setReceptionsNeutral(0); setReceptionsNegative(0);
+    setDefensesTotal(0); setDefensesPositive(0); setDefensesNeutral(0); setDefensesNegative(0);
+    setSetsTotal(0); setSetsPositive(0); setSetsNeutral(0); setSetsErrors(0);
+    setServesTotal(0); setServesIn(0); setServesAces(0); setServesErrors(0);
+    setBlocksTotal(0); setBlocksPoints(0); setBlocksNeutral(0); setBlocksErrors(0);
+  };
 
   const loadStats = async () => {
+    const requestId = ++loadRequestId.current;
+    setContext(null);
+    setError("");
+    resetStats();
     const result = await actions.getPlayerMatchStats(match_player_id);
 
+    if (requestId !== loadRequestId.current) return;
     if (!result.ok) return;
 
     const contextData = result.data.context || null;
@@ -186,43 +100,14 @@ export const PlayerMatchStats = () => {
       if (matchResult.ok) {
         const matchData = matchResult.data.match;
 
-        setCanOperate(
-          canManage(matchData) &&
-            (await resolveTeamOperational(actions, matchData.team_id)),
-        );
+        const operational = await resolveTeamOperational(actions, matchData.team_id);
+        if (requestId !== loadRequestId.current) return;
+        setCanOperate(canManage(matchData) && operational);
       }
     }
 
     if (!stats) {
-      setAttacksTotal(0);
-      setAttacksPositive(0);
-      setAttacksNeutral(0);
-      setAttacksErrors(0);
-
-      setReceptionsTotal(0);
-      setReceptionsPositive(0);
-      setReceptionsNeutral(0);
-      setReceptionsNegative(0);
-
-      setDefensesTotal(0);
-      setDefensesPositive(0);
-      setDefensesNeutral(0);
-      setDefensesNegative(0);
-
-      setSetsTotal(0);
-      setSetsPositive(0);
-      setSetsNeutral(0);
-      setSetsErrors(0);
-
-      setServesTotal(0);
-      setServesIn(0);
-      setServesAces(0);
-      setServesErrors(0);
-
-      setBlocksTotal(0);
-      setBlocksPoints(0);
-      setBlocksNeutral(0);
-      setBlocksErrors(0);
+      resetStats();
       return;
     }
 
@@ -259,10 +144,26 @@ export const PlayerMatchStats = () => {
 
   useEffect(() => {
     loadStats();
+    return () => { loadRequestId.current += 1; };
   }, [match_player_id]);
 
   const handleSave = async () => {
     setError("");
+
+    const invalidGroup = [
+      ["ataque", attacksTotal, attacksPositive + attacksNeutral + attacksErrors],
+      ["recepción", receptionsTotal, receptionsPositive + receptionsNeutral + receptionsNegative],
+      ["defensa", defensesTotal, defensesPositive + defensesNeutral + defensesNegative],
+      ["armado", setsTotal, setsPositive + setsNeutral + setsErrors],
+      ["saque", servesTotal, servesIn + servesAces + servesErrors],
+      ["bloqueo", blocksTotal, blocksPoints + blocksNeutral + blocksErrors],
+    ].find(([, total, components]) => total !== components);
+
+    if (invalidGroup) {
+      setError(`Revisa ${invalidGroup[0]}: el total debe coincidir con la suma de sus resultados.`);
+      return;
+    }
+
     setLoading(true);
 
     const result = await actions.savePlayerMatchStats(match_player_id, {

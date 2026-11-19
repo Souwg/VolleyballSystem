@@ -642,6 +642,36 @@ def transition_tournament_status(tournament_id, target_status):
             409
         )
 
+    # Shared order with Match sports writes: Tournament -> Match. Locking the
+    # open children makes the blocker and the transition one atomic decision.
+    open_matches = (
+        MatchSession.query
+        .join(
+            TournamentTeam,
+            TournamentTeam.id == MatchSession.tournament_team_id,
+        )
+        .filter(
+            TournamentTeam.tournament_id == tournament.id,
+            MatchSession.is_completed.is_(False),
+        )
+        .order_by(MatchSession.id.asc())
+        .populate_existing()
+        .with_for_update()
+        .all()
+    )
+
+    if open_matches:
+        return jsonify({
+            "error": True,
+            "message": (
+                "Completa los partidos abiertos antes de cambiar el estado "
+                "del torneo."
+            ),
+            "code": "TOURNAMENT_HAS_OPEN_MATCHES",
+            "open_matches_count": len(open_matches),
+            "open_match_ids": [match.id for match in open_matches],
+        }), 409
+
     if target_status == "cancelled":
         charges_error = _cancel_tournament_charges_error(tournament, user)
 

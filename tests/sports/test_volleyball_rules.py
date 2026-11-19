@@ -47,6 +47,25 @@ def register_result_adapter(monkeypatch, world, adapter):
     db.session.commit()
 
 
+def full_attendance_payload(created, *, first_position=None):
+    return [
+        {
+            "match_player_id": row.id,
+            "attendance_status": row.attendance_status,
+            "position": first_position if index == 0 else row.position,
+        }
+        for index, row in enumerate(created.rows)
+    ]
+
+
+def save_valid_lineup(client, created, headers):
+    return client.put(
+        f"/api/matches/{created.match.id}/starting-lineup",
+        headers=headers,
+        json={"players": [row.id for row in created.rows[:6]]},
+    )
+
+
 def test_positions_catalog_is_frozen():
     assert VOLLEYBALL_POSITIONS == (
         "setter", "outside", "middle", "opposite", "libero"
@@ -59,11 +78,7 @@ def test_each_position_is_accepted(client, world, auth_headers, match_factory, p
     response = client.put(
         f"/api/matches/{created.match.id}/roster/status",
         headers=auth_headers(world.owner_a),
-        json={"players": [{
-            "match_player_id": created.rows[0].id,
-            "attendance_status": "present",
-            "position": position,
-        }]},
+        json={"players": full_attendance_payload(created, first_position=position)},
     )
     assert response.status_code == 200
     assert db.session.get(MatchPlayer, created.rows[0].id).position == position
@@ -74,11 +89,7 @@ def test_invalid_position_is_rejected(client, world, auth_headers, match_factory
     response = client.put(
         f"/api/matches/{created.match.id}/roster/status",
         headers=auth_headers(world.owner_a),
-        json={"players": [{
-            "match_player_id": created.rows[0].id,
-            "attendance_status": "present",
-            "position": "goalkeeper",
-        }]},
+        json={"players": full_attendance_payload(created, first_position="goalkeeper")},
     )
     assert response.status_code == 400
     assert response.get_json()["code"] == "INVALID_POSITION"
@@ -245,7 +256,10 @@ def test_match_cannot_finalize_without_valid_result(client, world, auth_headers,
         headers=auth_headers(world.owner_a),
     )
     assert response.status_code == 409
-    assert response.get_json()["code"] == "MATCH_RESULT_INCOMPLETE"
+    assert response.get_json()["code"] == "MATCH_NOT_READY"
+    assert "result" in {
+        blocker["section"] for blocker in response.get_json()["blockers"]
+    }
 
 
 def test_decimal_result_endpoint_rejects_without_mutating_match(
@@ -274,12 +288,13 @@ def test_decimal_result_endpoint_rejects_without_mutating_match(
         headers=headers,
     )
     assert finalize_response.status_code == 409
-    assert finalize_response.get_json()["code"] == "MATCH_RESULT_INCOMPLETE"
+    assert finalize_response.get_json()["code"] == "MATCH_NOT_READY"
 
 
 def test_result_then_finalize_contract(client, world, auth_headers, match_factory):
     created = match_factory(world)
     headers = auth_headers(world.owner_a)
+    assert save_valid_lineup(client, created, headers).status_code == 200
     client.put(
         f"/api/matches/{created.match.id}/result",
         headers=headers,
@@ -310,6 +325,7 @@ def test_result_endpoint_uses_club_sport_adapter(
     register_result_adapter(monkeypatch, world, adapter)
     created = match_factory(world)
     headers = auth_headers(world.owner_a)
+    assert save_valid_lineup(client, created, headers).status_code == 200
 
     for score in [(2, 0), (2, 1)]:
         response = client.put(

@@ -80,6 +80,30 @@ def test_operational_club_has_no_setup_continuation(
     assert sections["setup_continuation"] is None
 
 
+def test_dashboard_live_match_requires_complete_attendance(
+    client, world, auth_headers, match_factory
+):
+    created = match_factory(
+        world,
+        capture_mode="live",
+        attendance_status=None,
+    )
+
+    operations = _owner_dashboard(client, auth_headers, world)["sections"][
+        "operations"
+    ]
+    assert operations["live_match"] is None
+
+    for row in created.rows:
+        row.attendance_status = "present"
+    db.session.commit()
+
+    operations = _owner_dashboard(client, auth_headers, world)["sections"][
+        "operations"
+    ]
+    assert operations["live_match"]["id"] == created.match.id
+
+
 def test_staff_dashboard_remains_financial_and_season_independent(
     client, world, auth_headers
 ):

@@ -157,18 +157,28 @@ def test_match_step_live_flow(client, world, auth_headers, match_factory):
 
 
 def test_match_step_summary_flow(client, world, auth_headers, match_factory):
-    created = match_factory(world, capture_mode="summary", did_play=False)
+    created = match_factory(
+        world,
+        capture_mode="summary",
+        did_play=False,
+        on_court_count=6,
+    )
     headers = auth_headers(world.owner_a)
     response = client.put(
         f"/api/matches/{created.match.id}/roster/participation",
         headers=headers,
-        json={"players": [{"match_player_id": created.rows[0].id, "did_play": True}]},
+        json={"players": [
+            {
+                "match_player_id": row.id,
+                "did_play": index < 6,
+            }
+            for index, row in enumerate(created.rows)
+        ]},
     )
     assert response.status_code == 200
     assert db.session.get(MatchSession, created.match.id).match_step == 3
     response = client.post(
-        f"/api/match-players/{created.rows[0].id}/stats",
-        headers=headers,
+        f"/api/match-players/{created.rows[0].id}/stats", headers=headers,
         json=zero_stats(),
     )
     assert response.status_code == 200

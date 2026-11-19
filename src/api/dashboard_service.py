@@ -505,6 +505,16 @@ def _get_sports_sections(club_id, season_id, today, team_ids=None):
         MatchPlayer.is_called.is_(True)
     ).group_by(MatchPlayer.match_id).subquery()
 
+    recorded_match_attendance_counts = db.session.query(
+        MatchPlayer.match_id.label("match_id"),
+        func.count(MatchPlayer.id).label("attendance_count"),
+    ).filter(
+        MatchPlayer.is_called.is_(True),
+        MatchPlayer.attendance_status.in_(
+            ["present", "late", "absent", "injured"]
+        ),
+    ).group_by(MatchPlayer.match_id).subquery()
+
     match_columns = (
         MatchSession.id,
         MatchSession.team_id,
@@ -571,10 +581,18 @@ def _get_sports_sections(club_id, season_id, today, team_ids=None):
     ).outerjoin(
         called_roster_counts,
         called_roster_counts.c.match_id == MatchSession.id,
+    ).outerjoin(
+        recorded_match_attendance_counts,
+        recorded_match_attendance_counts.c.match_id == MatchSession.id,
     ).filter(
         *operational_team_filters,
         MatchSession.is_completed.is_(False),
         MatchSession.capture_mode == "live",
+        func.coalesce(called_roster_counts.c.roster_count, 0) > 0,
+        func.coalesce(
+            recorded_match_attendance_counts.c.attendance_count,
+            0,
+        ) == func.coalesce(called_roster_counts.c.roster_count, 0),
         open_match_filter,
     ).order_by(
         MatchSession.date.asc(),

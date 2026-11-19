@@ -1,4 +1,4 @@
-import React, { useState, useContext, useEffect } from "react";
+import React, { useState, useContext, useEffect, useRef } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { Context } from "../../store/appContext";
 
@@ -37,6 +37,8 @@ export const CreateMatch = () => {
   const [refereeFee, setRefereeFee] = useState("");
   const [loadingTournaments, setLoadingTournaments] = useState(true);
   const [team, setTeam] = useState(null);
+  const [eligiblePlayersCount, setEligiblePlayersCount] = useState(0);
+  const loadRequestId = useRef(0);
   const canConfigureFinance = canConfigureSportsFinance(store);
   const selectedTournamentEntry = tournamentEntries.find(
     (entry) => entry.id === tournamentTeamId,
@@ -49,12 +51,20 @@ export const CreateMatch = () => {
 
   useEffect(() => {
     const loadTournamentEntries = async () => {
+      const requestId = ++loadRequestId.current;
       setLoadingTournaments(true);
+      setTeam(null);
+      setTournamentEntries([]);
+      setEligiblePlayersCount(0);
 
-      const teamResult = await actions.getTeamDetail(team_id);
+      const [teamResult, result, playersResult] = await Promise.all([
+        actions.getTeamDetail(team_id),
+        actions.getTeamTournamentEntries(team_id),
+        actions.getTeamPlayersOnly(team_id),
+      ]);
+      if (requestId !== loadRequestId.current) return;
       setTeam(teamResult.ok ? teamResult.data.team : null);
-
-      const result = await actions.getTeamTournamentEntries(team_id);
+      setEligiblePlayersCount(playersResult.ok ? playersResult.data.length : 0);
 
       if (result.ok) {
         setTournamentEntries(result.data.tournament_entries || []);
@@ -66,6 +76,7 @@ export const CreateMatch = () => {
     };
 
     loadTournamentEntries();
+    return () => { loadRequestId.current += 1; };
   }, [team_id]);
 
   const clearFieldError = (errorCode) => {
@@ -133,9 +144,11 @@ export const CreateMatch = () => {
         onBack={() => navigate(`/teams/${team_id}/matches`)}
       />
 
-      {!canManage(team) || !isTeamOperational(team) ? (
+      {!canManage(team) || !isTeamOperational(team) || eligiblePlayersCount === 0 ? (
         <ReadOnlyNotice>
-          No puedes crear partidos para este equipo en este momento.
+          {eligiblePlayersCount === 0
+            ? "Este equipo no tiene deportistas elegibles. Agrega una deportista activa antes de crear el partido."
+            : "No puedes crear partidos para este equipo en este momento."}
         </ReadOnlyNotice>
       ) : (
       <Card>

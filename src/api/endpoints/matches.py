@@ -31,6 +31,7 @@ from src.api.models import (
     PlayerPayment,
     Team,
     TeamPlayer,
+    Tournament,
     TournamentPlayer,
     TournamentTeam,
 )
@@ -212,6 +213,19 @@ def match_has_statistical_data(match_id):
     )
 
 
+def match_has_capture_data(match_id):
+    if match_has_recorded_game_history(match_id):
+        return True
+
+    return MatchPlayer.query.filter(
+        MatchPlayer.match_id == match_id,
+        (
+            MatchPlayer.is_on_court.is_(True)
+            | MatchPlayer.did_play.is_(True)
+        ),
+    ).first() is not None
+
+
 def capture_mode_write_error(match, required_mode):
     if match.capture_mode == required_mode:
         return None
@@ -248,12 +262,30 @@ def capture_mode_write_error(match, required_mode):
 
 
 
-def _match_payload(match, user, team_access=None):
+def _match_payload(match, user, team_access=None, preflight=None):
     resolve_access = team_access or get_team_access_resolver(user)
+    team = match.team
+    category = team.category if team else None
+    season = team.season if team else None
+    access = resolve_access(team)
 
     return {
         **redact_sports_money_for_user(user, match.serialize()),
-        "can_manage": resolve_access(match.team)["can_manage"],
+        **access,
+        "team_name": team.name if team else None,
+        "category_id": category.id if category else None,
+        "category_name": category.name if category else None,
+        "season_id": season.id if season else None,
+        "season_name": season.name if season else None,
+        "season_status": season.status if season else None,
+        **(
+            {
+                "readiness": preflight["summary"],
+                "readonly_reason": preflight["readonly_reason"],
+            }
+            if preflight
+            else {}
+        ),
     }
 
 
@@ -262,6 +294,100 @@ def _get_match_for_update(match_id):
     return MatchSession.query.filter_by(
         id=match_id
     ).populate_existing().with_for_update().first()
+
+
+def _lock_match_tournament_parent(match_id):
+    """Lock the optional Tournament parent before the Match.
+
+    Every sports write uses the deterministic order Tournament -> Match ->
+    Team/Season. Tournament transitions use the same first two locks, so a
+    transition cannot race a Match write or introduce the inverse order.
+    """
+    tournament_id = (
+        db.session.query(TournamentTeam.tournament_id)
+        .join(
+            MatchSession,
+            MatchSession.tournament_team_id == TournamentTeam.id,
+        )
+        .filter(MatchSession.id == match_id)
+        .scalar()
+    )
+
+    if not tournament_id:
+        return None
+
+    return (
+        Tournament.query.filter_by(id=tournament_id)
+        .populate_existing()
+        .with_for_update(key_share=True)
+        .first()
+    )
+
+
+def _lock_match_for_sports_write(match_id, user):
+    """Load and revalidate the authority boundary for a Match sports write."""
+    _lock_match_tournament_parent(match_id)
+    match = _get_match_for_update(match_id)
+
+    if not match:
+        return None, (
+            "Partido no encontrado",
+            "MATCH_NOT_FOUND",
+            404,
+        )
+
+    if match.team.club_id != user.club_id:
+        return None, (
+            "No tienes acceso",
+            "FORBIDDEN",
+            403,
+        )
+
+    assignment_error = get_team_assignment_error(user, match.team)
+
+    if assignment_error:
+        return None, assignment_error
+
+    # Completed is terminal. Individual endpoints may still accept an exact
+    # idempotent request, so parent lifecycle is only required for open writes.
+    if match.is_completed:
+        return match, None
+
+    team = lock_team_lifecycle(match.team_id, user.club_id)
+
+    if not team:
+        return None, (
+            "Equipo no encontrado",
+            "TEAM_NOT_FOUND",
+            404,
+        )
+
+    team_error = get_team_operation_error(team)
+
+    if team_error:
+        return None, team_error
+
+    if match.tournament_team_id:
+        tournament_team = (
+            TournamentTeam.query.filter_by(id=match.tournament_team_id)
+            .populate_existing()
+            .with_for_update(key_share=True)
+            .first()
+        )
+
+        if (
+            not tournament_team
+            or tournament_team.status != "active"
+            or not tournament_team.tournament
+            or tournament_team.tournament.status != "active"
+        ):
+            return None, (
+                "El torneo vinculado ya no está activo",
+                "TOURNAMENT_NOT_ACTIVE",
+                409,
+            )
+
+    return match, None
 
 
 def _get_referee_charges_for_update(club_id, match_id):
@@ -443,6 +569,16 @@ def _build_match_roster_view(match):
     rows = MatchPlayer.query.filter_by(
         match_id=match.id
     ).order_by(MatchPlayer.player_number).all()
+    row_ids_with_stats = {
+        item[0]
+        for item in (
+            db.session.query(PlayerMatchStat.match_player_id)
+            .filter(PlayerMatchStat.match_player_id.in_([row.id for row in rows]))
+            .all()
+            if rows
+            else []
+        )
+    }
 
     plan = _plan_match_roster_sync(match)
     has_changes = plan is not None and any(plan.values())
@@ -473,6 +609,7 @@ def _build_match_roster_view(match):
             "is_on_court": row.is_on_court,
             "main_position": row.player.main_position,
             "position": row.position,
+            "stats_reviewed": row.id in row_ids_with_stats,
         })
 
     if has_changes:
@@ -489,6 +626,7 @@ def _build_match_roster_view(match):
                 "is_on_court": False,
                 "main_position": membership.player.main_position,
                 "position": None,
+                "stats_reviewed": False,
             })
 
         players.sort(key=lambda player: player["player_number"])
@@ -552,6 +690,273 @@ def recalculate_player_match_stats(match_player_id):
             setattr(stat, field, getattr(stat, field) + 1)
 
     return True
+
+
+def _preflight_section(ready, code, message, **counts):
+    return {
+        "ready": bool(ready),
+        "code": None if ready else code,
+        "message": "Listo" if ready else message,
+        "counts": counts,
+    }
+
+
+def build_match_preflight(match, user=None, rows=None, stat_row_ids=None):
+    """Build the authoritative, side-effect-free Match readiness contract."""
+    rows = rows if rows is not None else MatchPlayer.query.filter_by(
+        match_id=match.id
+    ).all()
+
+    if stat_row_ids is None:
+        row_ids = [row.id for row in rows]
+        stat_row_ids = {
+            row[0]
+            for row in (
+                db.session.query(PlayerMatchStat.match_player_id)
+                .filter(PlayerMatchStat.match_player_id.in_(row_ids))
+                .all()
+                if row_ids
+                else []
+            )
+        }
+
+    called_rows = [row for row in rows if row.is_called]
+    called_ids = {row.id for row in called_rows}
+    playable_rows = [
+        row
+        for row in called_rows
+        if row.attendance_status in PLAYABLE_MATCH_STATUSES
+    ]
+    attendance_rows = [
+        row
+        for row in called_rows
+        if row.attendance_status in VALID_MATCH_STATUSES
+    ]
+    on_court_rows = [row for row in rows if row.is_on_court]
+    participating_rows = [row for row in rows if row.did_play]
+
+    lineup_size = _get_match_lineup_size(match)
+    callup_ready = bool(called_rows)
+    attendance_ready = (
+        callup_ready
+        and len(attendance_rows) == len(called_rows)
+    )
+    capture_ready = match.capture_mode in VALID_MATCH_CAPTURE_MODES
+    lineup_ready = (
+        lineup_size is not None
+        and len(on_court_rows) == lineup_size
+        and len({row.id for row in on_court_rows}) == lineup_size
+        and all(
+            row.id in called_ids
+            and row.attendance_status in PLAYABLE_MATCH_STATUSES
+            for row in on_court_rows
+        )
+    )
+    participation_ready = (
+        lineup_ready
+        and all(row.did_play for row in on_court_rows)
+        and all(
+            row.is_called
+            and row.attendance_status in PLAYABLE_MATCH_STATUSES
+            for row in participating_rows
+        )
+    )
+
+    participants_with_stats = sum(
+        1 for row in participating_rows if row.id in stat_row_ids
+    )
+
+    if match.capture_mode == "summary":
+        stats_ready = (
+            participation_ready
+            and len(participating_rows) > 0
+            and participants_with_stats == len(participating_rows)
+        )
+    elif match.capture_mode == "live":
+        stats_ready = participation_ready
+    else:
+        stats_ready = False
+
+    result_ready = match_has_valid_result(match)
+    parent_error = get_team_operation_error(match.team)
+
+    if (
+        not parent_error
+        and match.tournament_team_id
+        and (
+            not match.tournament_team
+            or match.tournament_team.status != "active"
+            or not match.tournament_team.tournament
+            or match.tournament_team.tournament.status != "active"
+        )
+    ):
+        parent_error = (
+            "El torneo vinculado ya no está activo",
+            "TOURNAMENT_NOT_ACTIVE",
+            409,
+        )
+
+    parent_ready = parent_error is None
+
+    sections = {
+        "callup": _preflight_section(
+            callup_ready,
+            "MATCH_CALLUP_INCOMPLETE",
+            "Guarda una convocatoria con al menos una deportista.",
+            called=len(called_rows),
+            snapshot=len(rows),
+        ),
+        "attendance": _preflight_section(
+            attendance_ready,
+            "MATCH_ATTENDANCE_INCOMPLETE",
+            "Registra la asistencia de todas las convocadas.",
+            recorded=len(attendance_rows),
+            required=len(called_rows),
+        ),
+        "capture_mode": _preflight_section(
+            capture_ready,
+            "MATCH_CAPTURE_MODE_REQUIRED",
+            "Elige el modo En vivo o Resumen.",
+            selected=match.capture_mode,
+        ),
+        "lineup": _preflight_section(
+            lineup_ready,
+            "MATCH_LINEUP_INCOMPLETE",
+            "Define exactamente seis titulares elegibles.",
+            on_court=len(on_court_rows),
+            required=lineup_size,
+        ),
+        "participation": _preflight_section(
+            participation_ready,
+            "MATCH_PARTICIPATION_INCOMPLETE",
+            "Revisa la participación de las deportistas elegibles.",
+            participants=len(participating_rows),
+            playable=len(playable_rows),
+        ),
+        "stats": _preflight_section(
+            stats_ready,
+            "MATCH_STATS_INCOMPLETE",
+            "Revisa las estadísticas de todas las participantes.",
+            reviewed=(
+                len(participating_rows)
+                if match.capture_mode == "live" and participation_ready
+                else participants_with_stats
+            ),
+            required=len(participating_rows),
+        ),
+        "result": _preflight_section(
+            result_ready,
+            "MATCH_RESULT_INCOMPLETE",
+            "Guarda un resultado válido antes de finalizar.",
+            home_sets=match.home_sets,
+            opponent_sets=match.opponent_sets,
+        ),
+        "parent_lifecycle": _preflight_section(
+            parent_ready,
+            parent_error[1] if parent_error else None,
+            parent_error[0] if parent_error else "Listo",
+        ),
+    }
+
+    ui_section_keys = (
+        "callup",
+        "attendance",
+        "capture_mode",
+        "lineup",
+        "stats",
+        "result",
+    )
+    ready_count = sum(
+        1
+        for key in ui_section_keys
+        if (
+            sections[key]["ready"]
+            and (key != "lineup" or sections["participation"]["ready"])
+        )
+    )
+    blockers = [
+        {
+            "section": key,
+            "code": section["code"],
+            "message": section["message"],
+        }
+        for key, section in sections.items()
+        if not section["ready"]
+    ]
+
+    readonly_reason = None
+
+    if match.is_completed:
+        readonly_reason = "MATCH_COMPLETED"
+    elif user is not None and not can_manage_team(user, match.team):
+        readonly_reason = "TEAM_NOT_ASSIGNED"
+    elif not parent_ready:
+        readonly_reason = parent_error[1]
+
+    return {
+        "match_id": match.id,
+        "is_completed": match.is_completed,
+        "can_finalize": (
+            not match.is_completed
+            and not blockers
+            and (user is None or can_manage_team(user, match.team))
+        ),
+        "readonly_reason": readonly_reason,
+        **sections,
+        "blockers": blockers,
+        "summary": {
+            "ready_count": ready_count,
+            "total_steps": len(ui_section_keys),
+            "next_action": next(
+                (
+                    key
+                    for key in ui_section_keys
+                    if not sections[key]["ready"]
+                    or (
+                        key == "lineup"
+                        and not sections["participation"]["ready"]
+                    )
+                ),
+                None,
+            ),
+        },
+    }
+
+
+def build_match_preflight_map(matches, user=None):
+    if not matches:
+        return {}
+
+    match_ids = [match.id for match in matches]
+    rows = MatchPlayer.query.filter(
+        MatchPlayer.match_id.in_(match_ids)
+    ).all()
+    rows_by_match = {match_id: [] for match_id in match_ids}
+
+    for row in rows:
+        rows_by_match[row.match_id].append(row)
+
+    row_ids = [row.id for row in rows]
+    stat_row_ids = {
+        row[0]
+        for row in (
+            db.session.query(PlayerMatchStat.match_player_id)
+            .filter(PlayerMatchStat.match_player_id.in_(row_ids))
+            .all()
+            if row_ids
+            else []
+        )
+    }
+
+    return {
+        match.id: build_match_preflight(
+            match,
+            user=user,
+            rows=rows_by_match[match.id],
+            stat_row_ids=stat_row_ids,
+        )
+        for match in matches
+    }
 
 
 ############################################# MATCHES #############################################
@@ -657,25 +1062,10 @@ def create_match():
             403
         )
 
-    # Serializa con transition_season: valida el lifecycle ya bloqueado.
-    team = lock_team_lifecycle(team.id, user.club_id)
-
-    if not team:
-        return error_response(
-            "Equipo no encontrado",
-            "TEAM_NOT_FOUND",
-            404
-        )
-
     assignment_error = get_team_assignment_error(user, team)
 
     if assignment_error:
         return error_response(*assignment_error)
-
-    team_error = get_team_operation_error(team)
-
-    if team_error:
-        return error_response(*team_error)
 
     tournament_team = None
 
@@ -697,6 +1087,39 @@ def create_match():
                 "FORBIDDEN",
                 403
             )
+
+        # There is no Match row yet. Lock the parent now so a concurrent
+        # Tournament transition cannot pass its open-Match check and then
+        # accept this new linked Match.
+        Tournament.query.filter_by(
+            id=tournament_team.tournament_id
+        ).populate_existing().with_for_update(key_share=True).first()
+        tournament_team = TournamentTeam.query.filter_by(
+            id=tournament_team.id
+        ).populate_existing().with_for_update().first()
+
+    # There is no Match row yet, so linked creation uses Tournament ->
+    # Team/Season. Independent creation starts directly at Team/Season.
+    team = lock_team_lifecycle(team.id, user.club_id)
+
+    if not team:
+        return error_response(
+            "Equipo no encontrado",
+            "TEAM_NOT_FOUND",
+            404
+        )
+
+    assignment_error = get_team_assignment_error(user, team)
+
+    if assignment_error:
+        return error_response(*assignment_error)
+
+    team_error = get_team_operation_error(team)
+
+    if team_error:
+        return error_response(*team_error)
+
+    if tournament_team:
 
         if tournament_team.team_id != team.id:
             return error_response(
@@ -790,6 +1213,14 @@ def create_match():
 
     roster_members = roster_query.all()
 
+    if not roster_members:
+        db.session.rollback()
+        return error_response(
+            "El equipo no tiene deportistas elegibles para este partido",
+            "TEAM_HAS_NO_ELIGIBLE_PLAYERS",
+            409
+        )
+
     for member in roster_members:
         snapshot = MatchPlayer(
             match_id=match.id,
@@ -844,11 +1275,20 @@ def get_team_matches(team_id):
         .all()
 
     team_access = get_team_access_resolver(user)
+    preflights = build_match_preflight_map(matches, user)
 
     return jsonify({
         "team": {**team.serialize(), **team_access(team)},
         "total_matches": len(matches),
-        "matches": [_match_payload(m, user, team_access) for m in matches]
+        "matches": [
+            _match_payload(
+                match,
+                user,
+                team_access,
+                preflights[match.id],
+            )
+            for match in matches
+        ]
     }), 200
 
 @api.route("/matches/<string:match_id>/roster", methods=["POST"])
@@ -863,6 +1303,8 @@ def save_match_roster(match_id):
             403
         )
 
+    # Resolve tenant and team scope before validating the payload. A malformed
+    # request must not reveal how a Match from another club is mutated.
     match = MatchSession.query.get(match_id)
 
     if not match:
@@ -937,9 +1379,12 @@ def save_match_roster(match_id):
         )
 
     # El GET muestra el roster derivado sin persistirlo: guardar la convocatoria
-    # es donde el snapshot abierto se reconcilia. El lock serializa dos guardados
-    # simultáneos; el segundo ve match_step ya avanzado y no vuelve a reconciliar.
-    match = _get_match_for_update(match.id)
+    # es donde el snapshot abierto se reconcilia. All sports writes share the
+    # Tournament -> Match -> Team/Season lock and revalidation contract.
+    match, match_error = _lock_match_for_sports_write(match_id, user)
+
+    if match_error:
+        return error_response(*match_error)
 
     # El reparto depende de toda la convocatoria: con cargos existentes, el Coach
     # no puede cambiarla aunque quien entra o sale no tenga cargo propio.
@@ -1014,6 +1459,25 @@ def save_match_roster(match_id):
                 "MATCH_HISTORY_LOCKED",
                 409
             )
+
+    if changed_rows and (
+        any(
+            row.attendance_status is not None
+            or row.did_play
+            or row.is_on_court
+            for row in rows
+        )
+        or match_has_recorded_game_history(match.id)
+    ):
+        db.session.rollback()
+        return error_response(
+            (
+                "La convocatoria está bloqueada porque el partido ya tiene "
+                "asistencia o información deportiva registrada."
+            ),
+            "MATCH_CALLUP_LOCKED",
+            409
+        )
 
     removed_player_ids = {
         row.player_id for row in removed_rows
@@ -1439,34 +1903,13 @@ def update_match_status(match_id):
             403
         )
 
-    match = MatchSession.query.get(match_id)
-
-    if not match:
-        return error_response("Partido no encontrado", "MATCH_NOT_FOUND", 404)
-
-    if match.team.club_id != user.club_id:
-        return error_response("No tienes acceso", "FORBIDDEN", 403)
-
-    assignment_error = get_team_assignment_error(user, match.team)
-
-    if assignment_error:
-        return error_response(*assignment_error)
-
-    team_error = get_team_operation_error(match.team)
-
-    if team_error:
-        return error_response(*team_error)
-
-    sport_adapter = get_club_sport_adapter(match.team.club)
-
     body = request.get_json() or {}
     players = body.get("players")
 
     if not isinstance(players, list) or not players:
         return error_response("Lista requerida", "MATCH_STATUS_REQUIRED", 400)
 
-    planned_updates = []
-    has_any_real_change = False
+    payload_by_id = {}
 
     for item in players:
         if not isinstance(item, dict):
@@ -1505,28 +1948,73 @@ def update_match_status(match_id):
                 400
             )
 
-        row = MatchPlayer.query.get(match_player_id)
-
-        if not row:
+        if match_player_id in payload_by_id:
             return error_response(
-                "Registro del partido no encontrado",
-                "MATCH_PLAYER_NOT_FOUND",
-                404
-            )
-
-        if row.match_id != match.id:
-            return error_response(
-                "La jugadora no pertenece a este partido",
-                "MATCH_PLAYER_INVALID",
+                "La asistencia contiene deportistas duplicadas",
+                "DUPLICATE_MATCH_ATTENDANCE",
                 400
             )
 
-        if not row.is_called:
-            return error_response(
-                "La jugadora no está convocada para este partido",
-                "PLAYER_NOT_CALLED",
-                400
-            )
+        payload_by_id[match_player_id] = {
+            "status": status,
+            "position_was_provided": position_was_provided,
+            "position": position,
+        }
+
+    match, match_error = _lock_match_for_sports_write(match_id, user)
+
+    if match_error:
+        return error_response(*match_error)
+
+    called_rows = MatchPlayer.query.filter_by(
+        match_id=match.id,
+        is_called=True,
+    ).all()
+    called_by_id = {row.id: row for row in called_rows}
+
+    if match.is_completed and any(
+        match_player_id not in called_by_id
+        or called_by_id[match_player_id].attendance_status != payload["status"]
+        or (
+            payload["position_was_provided"]
+            and called_by_id[match_player_id].position != payload["position"]
+        )
+        for match_player_id, payload in payload_by_id.items()
+    ):
+        return error_response(
+            "El partido ya está finalizado y su estructura no puede modificarse.",
+            "MATCH_COMPLETED",
+            409,
+        )
+
+    if set(payload_by_id) != set(called_by_id):
+        db.session.rollback()
+        return error_response(
+            (
+                "La convocatoria cambió mientras registrabas la asistencia. "
+                "Actualiza el partido y revísala nuevamente."
+            ),
+            "MATCH_ROSTER_CHANGED",
+            409
+        )
+
+    try:
+        sport_adapter = get_club_sport_adapter(match.team.club)
+    except (InvalidClubSportError, SportAdapterNotFoundError):
+        return error_response(
+            "El deporte del club no tiene posiciones válidas configuradas.",
+            "MATCH_LINEUP_NOT_SUPPORTED",
+            409
+        )
+
+    planned_updates = []
+    has_any_real_change = False
+
+    for match_player_id, payload in payload_by_id.items():
+        row = called_by_id[match_player_id]
+        status = payload["status"]
+        position_was_provided = payload["position_was_provided"]
+        position = payload["position"]
 
         if status not in VALID_MATCH_STATUSES:
             return error_response(
@@ -1566,17 +2054,16 @@ def update_match_status(match_id):
             has_any_real_change or has_real_change
         )
 
-        if has_real_change and match.is_completed:
-            return error_response(
-                "El partido ya está finalizado y su estructura no puede modificarse.",
-                "MATCH_COMPLETED",
-                409
-            )
-
         if (
+            not match.is_completed
+            and
             has_real_change
             and status not in PLAYABLE_MATCH_STATUSES
-            and match_player_has_sports_history(row)
+            and (
+                row.did_play
+                or row.is_on_court
+                or match_player_has_sports_history(row)
+            )
         ):
             return error_response(
                 (
@@ -1595,9 +2082,16 @@ def update_match_status(match_id):
             target_is_on_court
         ))
 
+    if match.is_completed and has_any_real_change:
+        return error_response(
+            "El partido ya está finalizado y su estructura no puede modificarse.",
+            "MATCH_COMPLETED",
+            409
+        )
+
     if match.is_completed and not has_any_real_change:
         return jsonify({
-            "message": "Estado del día actualizado"
+            "message": "Asistencia guardada correctamente"
         }), 200
 
     for (
@@ -1617,7 +2111,7 @@ def update_match_status(match_id):
     db.session.commit()
 
     return jsonify({
-        "message": "Estado del día actualizado"
+        "message": "Asistencia guardada correctamente"
     }), 200
 
 @api.route("/matches", methods=["GET"])
@@ -1652,6 +2146,42 @@ def get_club_matches():
         Team.season_id == season.id,
     )
 
+    team_id = str(request.args.get("team_id") or "").strip()
+    status = str(request.args.get("status") or "").strip()
+    tournament_id = str(request.args.get("tournament_id") or "").strip()
+    match_type = str(request.args.get("match_type") or "").strip()
+
+    if status and status not in ("open", "completed"):
+        return error_response(
+            "Estado de partido inválido",
+            "INVALID_MATCH_FILTER",
+            400,
+        )
+
+    if match_type and match_type not in VALID_MATCH_TYPES:
+        return error_response(
+            "Tipo de partido inválido",
+            "INVALID_MATCH_TYPE",
+            400,
+        )
+
+    if team_id:
+        query = query.filter(MatchSession.team_id == team_id)
+
+    if status:
+        query = query.filter(
+            MatchSession.is_completed.is_(status == "completed")
+        )
+
+    if tournament_id:
+        query = query.join(
+            TournamentTeam,
+            TournamentTeam.id == MatchSession.tournament_team_id,
+        ).filter(TournamentTeam.tournament_id == tournament_id)
+
+    if match_type:
+        query = query.filter(MatchSession.match_type == match_type)
+
     if not explicit_season:
         query = query.filter(Team.status == "active")
 
@@ -1661,13 +2191,19 @@ def get_club_matches():
 
     result = []
     team_access = get_team_access_resolver(user)
+    preflights = build_match_preflight_map(matches, user)
 
     for match in matches:
         team = match.team
         category = team.category if team else None
 
         result.append({
-            **_match_payload(match, user, team_access),
+            **_match_payload(
+                match,
+                user,
+                team_access,
+                preflights[match.id],
+            ),
             "team_id": team.id if team else None,
             "team_name": team.name if team else None,
             "category_id": category.id if category else None,
@@ -1707,8 +2243,40 @@ def get_match_detail(match_id):
             403
         )
 
+    preflight = build_match_preflight(match, user=user)
+
     return jsonify({
-        "match": _match_payload(match, user)
+        "match": _match_payload(match, user, preflight=preflight),
+        "preflight": preflight,
+    }), 200
+
+
+@api.route("/matches/<string:match_id>/preflight", methods=["GET"])
+@jwt_required()
+def get_match_preflight(match_id):
+    user = get_current_user()
+
+    if user.role not in ["club_owner", "coach"]:
+        return error_response(
+            "No tienes permisos para acceder a partidos",
+            "FORBIDDEN",
+            403,
+        )
+
+    match = MatchSession.query.get(match_id)
+
+    if not match:
+        return error_response(
+            "Partido no encontrado",
+            "MATCH_NOT_FOUND",
+            404,
+        )
+
+    if match.team.club_id != user.club_id:
+        return error_response("No tienes acceso", "FORBIDDEN", 403)
+
+    return jsonify({
+        "preflight": build_match_preflight(match, user=user),
     }), 200
 
 
@@ -1724,32 +2292,6 @@ def update_match_capture_mode(match_id):
             403
         )
 
-    match = MatchSession.query.get(match_id)
-
-    if not match:
-        return error_response(
-            "Partido no encontrado",
-            "MATCH_NOT_FOUND",
-            404
-        )
-
-    if match.team.club_id != user.club_id:
-        return error_response(
-            "No tienes acceso",
-            "FORBIDDEN",
-            403
-        )
-
-    assignment_error = get_team_assignment_error(user, match.team)
-
-    if assignment_error:
-        return error_response(*assignment_error)
-
-    team_error = get_team_operation_error(match.team)
-
-    if team_error:
-        return error_response(*team_error)
-
     body = request.get_json() or {}
     capture_mode = body.get("capture_mode")
 
@@ -1759,6 +2301,11 @@ def update_match_capture_mode(match_id):
             "INVALID_MATCH_CAPTURE_MODE",
             400
         )
+
+    match, match_error = _lock_match_for_sports_write(match_id, user)
+
+    if match_error:
+        return error_response(*match_error)
 
     if match.capture_mode == capture_mode:
         return jsonify({
@@ -1773,11 +2320,11 @@ def update_match_capture_mode(match_id):
             409
         )
 
-    if match_has_statistical_data(match.id):
+    if match_has_capture_data(match.id):
         return error_response(
             (
                 "El modo de captura no puede cambiarse porque el partido "
-                "ya tiene información estadística."
+                "ya tiene alineación, participación o información estadística."
             ),
             "MATCH_CAPTURE_MODE_LOCKED",
             409
@@ -1840,37 +2387,23 @@ def save_starting_lineup(match_id):
             403
         )
 
-    match = MatchSession.query.get(match_id)
+    match, match_error = _lock_match_for_sports_write(match_id, user)
 
-    if not match:
-        return error_response(
-            "Partido no encontrado",
-            "MATCH_NOT_FOUND",
-            404
-        )
-
-    if match.team.club_id != user.club_id:
-        return error_response(
-            "No tienes acceso",
-            "FORBIDDEN",
-            403
-        )
-
-    assignment_error = get_team_assignment_error(user, match.team)
-
-    if assignment_error:
-        return error_response(*assignment_error)
-
-    team_error = get_team_operation_error(match.team)
-
-    if team_error:
-        return error_response(*team_error)
+    if match_error:
+        return error_response(*match_error)
 
     if match.is_completed:
         return error_response(
             "El partido ya está finalizado y su estructura no puede modificarse.",
             "MATCH_COMPLETED",
             409
+        )
+
+    if match.capture_mode not in VALID_MATCH_CAPTURE_MODES:
+        return error_response(
+            "Elige cómo registrarás las estadísticas de este partido.",
+            "MATCH_CAPTURE_MODE_REQUIRED",
+            409,
         )
 
     lineup_size = _get_match_lineup_size(match)
@@ -1913,6 +2446,13 @@ def save_starting_lineup(match_id):
         )
 
     selected_ids = set(players)
+
+    if len(selected_ids) != len(players):
+        return error_response(
+            "No puedes seleccionar dos veces a la misma jugadora",
+            "DUPLICATE_STARTING_LINEUP",
+            400,
+        )
 
     rows = MatchPlayer.query.filter_by(match_id=match.id).all()
 
@@ -2008,31 +2548,10 @@ def create_match_substitution(match_id):
             403
         )
 
-    match = MatchSession.query.get(match_id)
+    match, match_error = _lock_match_for_sports_write(match_id, user)
 
-    if not match:
-        return error_response(
-            "Partido no encontrado",
-            "MATCH_NOT_FOUND",
-            404
-        )
-
-    if match.team.club_id != user.club_id:
-        return error_response(
-            "No tienes acceso",
-            "FORBIDDEN",
-            403
-        )
-
-    assignment_error = get_team_assignment_error(user, match.team)
-
-    if assignment_error:
-        return error_response(*assignment_error)
-
-    team_error = get_team_operation_error(match.team)
-
-    if team_error:
-        return error_response(*team_error)
+    if match_error:
+        return error_response(*match_error)
 
     if match.is_completed:
         return error_response(
@@ -2040,6 +2559,11 @@ def create_match_substitution(match_id):
             "MATCH_COMPLETED",
             409
         )
+
+    mode_error = capture_mode_write_error(match, "live")
+
+    if mode_error:
+        return mode_error
 
     period_range = _get_match_period_range(match)
 
@@ -2085,6 +2609,16 @@ def create_match_substitution(match_id):
             "La jugadora que entra no puede ser la misma que sale",
             "INVALID_SUBSTITUTION",
             400
+        )
+
+    if MatchPlayer.query.filter_by(
+        match_id=match.id,
+        is_on_court=True,
+    ).count() != 6:
+        return error_response(
+            "Define una alineación válida de seis jugadoras antes del cambio",
+            "MATCH_LINEUP_INCOMPLETE",
+            409,
         )
 
     player_out = MatchPlayer.query.get(player_out_id)
@@ -2179,31 +2713,10 @@ def update_match_participation(match_id):
             403
         )
 
-    match = MatchSession.query.get(match_id)
+    match, match_error = _lock_match_for_sports_write(match_id, user)
 
-    if not match:
-        return error_response(
-            "Partido no encontrado",
-            "MATCH_NOT_FOUND",
-            404
-        )
-
-    if match.team.club_id != user.club_id:
-        return error_response(
-            "No tienes acceso",
-            "FORBIDDEN",
-            403
-        )
-
-    assignment_error = get_team_assignment_error(user, match.team)
-
-    if assignment_error:
-        return error_response(*assignment_error)
-
-    team_error = get_team_operation_error(match.team)
-
-    if team_error:
-        return error_response(*team_error)
+    if match_error:
+        return error_response(*match_error)
 
     if match.capture_mode == "live":
         return error_response(
@@ -2238,6 +2751,14 @@ def update_match_participation(match_id):
             "MATCH_PARTICIPATION_REQUIRED",
             400
         )
+
+    playable_rows = MatchPlayer.query.filter(
+        MatchPlayer.match_id == match.id,
+        MatchPlayer.is_called.is_(True),
+        MatchPlayer.attendance_status.in_(PLAYABLE_MATCH_STATUSES),
+    ).all()
+    playable_by_id = {row.id: row for row in playable_rows}
+    on_court_ids = {row.id for row in playable_rows if row.is_on_court}
 
     planned_updates = []
     has_any_real_change = False
@@ -2276,38 +2797,21 @@ def update_match_participation(match_id):
                 400
             )
 
-        row = MatchPlayer.query.get(match_player_id)
+        row = playable_by_id.get(match_player_id)
 
         if not row:
             return error_response(
-                "Registro del partido no encontrado",
-                "MATCH_PLAYER_NOT_FOUND",
-                404
-            )
-
-        if row.match_id != match.id:
-            return error_response(
-                "La jugadora no pertenece a este partido",
-                "MATCH_PLAYER_INVALID",
-                400
-            )
-
-        if not row.is_called:
-            return error_response(
-                "La jugadora no está convocada para este partido",
-                "PLAYER_NOT_CALLED",
+                "La jugadora no está disponible para registrar participación",
+                "PLAYER_NOT_ELIGIBLE_FOR_PARTICIPATION",
                 400
             )
 
         did_play = item["did_play"]
 
-        if (
-            did_play
-            and row.attendance_status not in PLAYABLE_MATCH_STATUSES
-        ):
+        if row.id in on_court_ids and not did_play:
             return error_response(
-                "La jugadora no puede marcar participación con ese estado",
-                "PLAYER_NOT_ELIGIBLE_FOR_PARTICIPATION",
+                "Las seis titulares deben quedar marcadas como participantes",
+                "STARTING_LINEUP_MUST_PARTICIPATE",
                 400
             )
 
@@ -2324,6 +2828,8 @@ def update_match_participation(match_id):
             )
 
         if (
+            not match.is_completed
+            and
             has_real_change
             and match_player_has_sports_history(row)
         ):
@@ -2340,6 +2846,17 @@ def update_match_participation(match_id):
             row,
             did_play
         ))
+
+    if seen_match_player_ids != set(playable_by_id):
+        db.session.rollback()
+        return error_response(
+            (
+                "La asistencia cambió mientras registrabas la participación. "
+                "Actualiza el partido y revísala nuevamente."
+            ),
+            "MATCH_ATTENDANCE_CHANGED",
+            409,
+        )
 
     if match.is_completed and not has_any_real_change:
         return jsonify({
@@ -2369,33 +2886,28 @@ def save_match_stats(match_player_id):
             403
         )
 
-    row = MatchPlayer.query.get(match_player_id)
+    match_id = db.session.query(MatchPlayer.match_id).filter_by(
+        id=match_player_id
+    ).scalar()
 
-    if not row:
+    if not match_id:
         return error_response(
             "Registro del partido no encontrado",
             "MATCH_PLAYER_NOT_FOUND",
             404
         )
 
-    if row.match.team.club_id != user.club_id:
-        return error_response(
-            "No tienes acceso",
-            "FORBIDDEN",
-            403
-        )
+    match, match_error = _lock_match_for_sports_write(match_id, user)
 
-    assignment_error = get_team_assignment_error(user, row.match.team)
+    if match_error:
+        return error_response(*match_error)
 
-    if assignment_error:
-        return error_response(*assignment_error)
+    row = MatchPlayer.query.filter_by(
+        id=match_player_id,
+        match_id=match.id,
+    ).first()
 
-    team_error = get_team_operation_error(row.match.team)
-
-    if team_error:
-        return error_response(*team_error)
-
-    if row.match.is_completed:
+    if match.is_completed:
         return error_response(
             "El partido ya fue finalizado y no puede modificarse.",
             "MATCH_FINALIZED",
@@ -2403,7 +2915,7 @@ def save_match_stats(match_player_id):
         )
 
     mode_error = capture_mode_write_error(
-        row.match,
+        match,
         "summary"
     )
 
@@ -2425,7 +2937,7 @@ def save_match_stats(match_player_id):
 
     try:
         sport_adapter = get_club_sport_adapter(
-            row.match.team.club
+            match.team.club
         )
         summary_stat_fields = (
             sport_adapter.get_summary_stat_fields()
@@ -2506,7 +3018,7 @@ def save_match_stats(match_player_id):
         setattr(stat, field, validated_stats[field])
 
 
-    row.match.match_step = max(row.match.match_step, 4)
+    match.match_step = max(match.match_step, 4)
 
 
     db.session.commit()
@@ -2603,27 +3115,10 @@ def update_match_result(match_id):
             403
         )
 
-    match = MatchSession.query.get(match_id)
+    match, match_error = _lock_match_for_sports_write(match_id, user)
 
-    if not match:
-        return error_response(
-            "Partido no encontrado",
-            "MATCH_NOT_FOUND",
-            404
-        )
-
-    if match.team.club_id != user.club_id:
-        return error_response("No tienes acceso", "FORBIDDEN", 403)
-
-    assignment_error = get_team_assignment_error(user, match.team)
-
-    if assignment_error:
-        return error_response(*assignment_error)
-
-    team_error = get_team_operation_error(match.team)
-
-    if team_error:
-        return error_response(*team_error)
+    if match_error:
+        return error_response(*match_error)
 
     if match.is_completed:
         return error_response(
@@ -2678,57 +3173,27 @@ def finalize_match(match_id):
             403
         )
 
-    match = MatchSession.query.get(match_id)
+    match, match_error = _lock_match_for_sports_write(match_id, user)
 
-    if not match:
-        return error_response(
-            "Partido no encontrado",
-            "MATCH_NOT_FOUND",
-            404
-        )
-
-    if match.team.club_id != user.club_id:
-        return error_response(
-            "No tienes acceso",
-            "FORBIDDEN",
-            403
-        )
-
-    assignment_error = get_team_assignment_error(user, match.team)
-
-    if assignment_error:
-        return error_response(*assignment_error)
-
-    team_error = get_team_operation_error(match.team)
-
-    if team_error:
-        return error_response(*team_error)
-
-    validated_result, validation_error = _validate_match_result(
-        match,
-        match.home_sets,
-        match.opponent_sets
-    )
-
-    if validated_result is None and validation_error is None:
-        return error_response(
-            "El deporte del club no tiene una validación de resultado configurada.",
-            "MATCH_RESULT_NOT_SUPPORTED",
-            409
-        )
-
-    if validation_error or not match_has_valid_result(match, validated_result):
-        return error_response(
-            "Debes guardar un resultado válido antes de finalizar el partido.",
-            "MATCH_RESULT_INCOMPLETE",
-            409
-        )
+    if match_error:
+        return error_response(*match_error)
 
     if match.is_completed:
         return jsonify({
             "message": "Partido finalizado correctamente",
             "match": _match_payload(match, user)
         }), 200
+
+    preflight = build_match_preflight(match, user=user)
+
+    if not preflight["can_finalize"]:
+        return jsonify({
+            "error": True,
+            "message": "Completa la preparación del partido antes de finalizar.",
+            "code": "MATCH_NOT_READY",
+            "blockers": preflight["blockers"],
+            "preflight": preflight,
+        }), 409
 
     match.is_completed = True
     db.session.commit()
@@ -2779,31 +3244,10 @@ def create_match_event():
             400
         )
 
-    match = MatchSession.query.get(match_id)
+    match, match_error = _lock_match_for_sports_write(match_id, user)
 
-    if not match:
-        return error_response(
-            "Partido no encontrado",
-            "MATCH_NOT_FOUND",
-            404
-        )
-
-    if match.team.club_id != user.club_id:
-        return error_response(
-            "No tienes acceso",
-            "FORBIDDEN",
-            403
-        )
-
-    assignment_error = get_team_assignment_error(user, match.team)
-
-    if assignment_error:
-        return error_response(*assignment_error)
-
-    team_error = get_team_operation_error(match.team)
-
-    if team_error:
-        return error_response(*team_error)
+    if match_error:
+        return error_response(*match_error)
 
     if match.is_completed:
         return error_response(
@@ -2913,6 +3357,51 @@ def create_match_event():
         "event": event.serialize()
     }), 201
 
+
+@api.route("/matches/<string:match_id>/events", methods=["GET"])
+@jwt_required()
+def get_match_events(match_id):
+    user = get_current_user()
+
+    if user.role not in ["club_owner", "coach"]:
+        return error_response(
+            "No tienes permisos para acceder a partidos",
+            "FORBIDDEN",
+            403,
+        )
+
+    match = MatchSession.query.get(match_id)
+
+    if not match:
+        return error_response(
+            "Partido no encontrado",
+            "MATCH_NOT_FOUND",
+            404,
+        )
+
+    if match.team.club_id != user.club_id:
+        return error_response("No tienes acceso", "FORBIDDEN", 403)
+
+    events = MatchEvent.query.filter_by(match_id=match.id).order_by(
+        MatchEvent.created_at.asc(),
+        MatchEvent.id.asc(),
+    ).all()
+
+    return jsonify({
+        "events": [
+            {
+                **event.serialize(),
+                "player": {
+                    "match_player_id": event.match_player.id,
+                    "player_number": event.match_player.player_number,
+                    "first_name": event.match_player.player.first_name,
+                    "last_name": event.match_player.player.last_name,
+                },
+            }
+            for event in events
+        ],
+    }), 200
+
 @api.route("/match-events/<string:event_id>", methods=["DELETE"])
 @jwt_required()
 def delete_match_event(event_id):
@@ -2925,40 +3414,34 @@ def delete_match_event(event_id):
             403
         )
 
-    event = MatchEvent.query.get(event_id)
+    event_locator = MatchEvent.query.get(event_id)
 
-    if not event:
+    if not event_locator:
         return error_response(
             "Evento no encontrado",
             "MATCH_EVENT_NOT_FOUND",
             404
         )
 
-    match = MatchSession.query.get(event.match_id)
+    match, match_error = _lock_match_for_sports_write(
+        event_locator.match_id,
+        user,
+    )
 
-    if not match:
+    if match_error:
+        return error_response(*match_error)
+
+    event = MatchEvent.query.filter_by(
+        id=event_id,
+        match_id=match.id,
+    ).first()
+
+    if not event:
         return error_response(
-            "Partido no encontrado",
-            "MATCH_NOT_FOUND",
-            404
+            "Evento no encontrado",
+            "MATCH_EVENT_NOT_FOUND",
+            404,
         )
-
-    if match.team.club_id != user.club_id:
-        return error_response(
-            "No tienes acceso",
-            "FORBIDDEN",
-            403
-        )
-
-    assignment_error = get_team_assignment_error(user, match.team)
-
-    if assignment_error:
-        return error_response(*assignment_error)
-
-    team_error = get_team_operation_error(match.team)
-
-    if team_error:
-        return error_response(*team_error)
 
     if match.is_completed:
         return error_response(

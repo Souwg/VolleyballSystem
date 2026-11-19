@@ -517,6 +517,13 @@ def test_legacy_club_lifecycle_without_new_login(client, world, auth_headers):
     assert _assignments_state() == kept
 
     other = _team(world, "Sin asignar")
+    db.session.add(TeamPlayer(
+        team_id=other.id,
+        player_id=world.players_a[0].id,
+        player_number=99,
+        status="active",
+    ))
+    db.session.commit()
 
     assert _create_match(client, auth_headers, coach, other).status_code == 201
 

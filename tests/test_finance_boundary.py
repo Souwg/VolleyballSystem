@@ -83,7 +83,7 @@ def _money_scenario(world, match_factory):
     world.club_a.default_monthly_fee = 22
     world.players_a[0].monthly_fee = 30
     world.players_a[0].enrollment_fee = 15
-    match = match_factory(world).match
+    match = match_factory(world, attendance_status=None).match
     match.referee_fee = 60
     entry = _entry(world)
     entry.registration_fee = 500
@@ -588,6 +588,7 @@ def test_coach_tournament_match_inherits_default_fee_without_seeing_it(
 ):
     coach = _coach_in_mode(world, mode)
     entry = _entry(world)
+    _register(world, entry, world.players_a)
     entry.tournament.default_referee_fee = 30
     db.session.commit()
 
@@ -1256,7 +1257,7 @@ def test_coach_roster_removal_is_blocked_by_receipt_history(
 
 def _rostered_match(world, match_factory, called=5):
     """Cinco convocadas y el resto disponible para entrar."""
-    created = match_factory(world)
+    created = match_factory(world, attendance_status=None)
     created.match.referee_fee = 60
     created.match.match_step = 1
 

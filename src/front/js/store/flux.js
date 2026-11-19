@@ -30,6 +30,7 @@ const STALE_RESPONSE = { ok: false, code: "STALE_RESPONSE" };
 
 const getState = ({ getStore, getActions, setStore }) => {
   let dashboardRequestId = 0;
+  let clubMatchesRequestId = 0;
   let coachAccessSyncInFlight = false;
 
   const getSessionClub = () => getStore().club || getStore().user?.club;
@@ -1917,9 +1918,19 @@ const getState = ({ getStore, getActions, setStore }) => {
         });
       },
       getClubMatches: async (filters = {}) => {
+        clubMatchesRequestId += 1;
+        const requestId = clubMatchesRequestId;
+        setStore({ clubMatches: [] });
+
         try {
           const params = new URLSearchParams();
           if (filters.seasonId) params.append("season_id", filters.seasonId);
+          if (filters.teamId) params.append("team_id", filters.teamId);
+          if (filters.status) params.append("status", filters.status);
+          if (filters.tournamentId) {
+            params.append("tournament_id", filters.tournamentId);
+          }
+          if (filters.matchType) params.append("match_type", filters.matchType);
           const query = params.toString();
           const resp = await authFetch(
             query ? `/api/matches?${query}` : "/api/matches",
@@ -1927,6 +1938,7 @@ const getState = ({ getStore, getActions, setStore }) => {
 
           const result = await parseResponse(resp);
 
+          if (requestId !== clubMatchesRequestId) return STALE_RESPONSE;
           if (!result.ok) return result;
 
           setStore({
@@ -1935,6 +1947,7 @@ const getState = ({ getStore, getActions, setStore }) => {
 
           return successResponse(result.data);
         } catch (error) {
+          if (requestId !== clubMatchesRequestId) return STALE_RESPONSE;
           return networkError("Error loading club matches:", error);
         }
       },
@@ -1988,6 +2001,32 @@ const getState = ({ getStore, getActions, setStore }) => {
           return successResponse(result.data);
         } catch (error) {
           return networkError("Error loading match detail:", error);
+        }
+      },
+
+      getMatchPreflight: async (matchId) => {
+        try {
+          const resp = await authFetch(`/api/matches/${matchId}/preflight`);
+          const result = await parseResponse(resp);
+
+          if (!result.ok) return result;
+
+          return successResponse(result.data);
+        } catch (error) {
+          return networkError("Error loading match preflight:", error);
+        }
+      },
+
+      getMatchEvents: async (matchId) => {
+        try {
+          const resp = await authFetch(`/api/matches/${matchId}/events`);
+          const result = await parseResponse(resp);
+
+          if (!result.ok) return result;
+
+          return successResponse(result.data);
+        } catch (error) {
+          return networkError("Error loading match events:", error);
         }
       },
 
