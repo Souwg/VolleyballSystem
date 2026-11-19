@@ -98,58 +98,82 @@ export const SeasonSelector = ({
   loading,
   onChange,
   onRetry,
+  requestedSeasonId = "",
   seasons,
   selectedSeason,
   error,
-}) => (
-  <>
-    <div className="season-filter" aria-label="Contexto de temporada">
-      <label htmlFor="season-filter-select">Temporada</label>
-      <Select
-        id="season-filter-select"
-        value={selectedSeason?.id || ""}
-        onChange={(event) => onChange(event.target.value)}
-        disabled={loading || Boolean(error)}
-      >
-        {includeAll && <option value="">Todas las temporadas</option>}
-        {!includeAll && !selectedSeason && (
-          <option value="">Sin temporada activa</option>
+}) => {
+  const unresolvedRequestedSeason = Boolean(
+    requestedSeasonId && !selectedSeason,
+  );
+  const invalidRequestedSeason = Boolean(
+    requestedSeasonId && !loading && !selectedSeason && !error,
+  );
+
+  return (
+    <>
+      <div className="season-filter" aria-label="Contexto de temporada">
+        <label htmlFor="season-filter-select">Temporada</label>
+        <Select
+          id="season-filter-select"
+          value={selectedSeason?.id || requestedSeasonId || ""}
+          onChange={(event) => onChange(event.target.value)}
+          disabled={loading || Boolean(error)}
+        >
+          {includeAll && <option value="">Todas las temporadas</option>}
+          {unresolvedRequestedSeason && (
+            <option value={requestedSeasonId}>
+              {loading
+                ? "Cargando temporada..."
+                : invalidRequestedSeason
+                ? "Temporada no disponible"
+                : "Temporada seleccionada"}
+            </option>
+          )}
+          {!includeAll && !selectedSeason && (
+            <option value="">Sin temporada activa</option>
+          )}
+          {seasons.map((season) => (
+            <option key={season.id} value={season.id}>
+              {season.name} — {STATUS_LABELS[season.status] || season.status}
+            </option>
+          ))}
+        </Select>
+        {selectedSeason?.status === "active" && (
+          <span className="status-badge status-success">Actual</span>
         )}
-        {seasons.map((season) => (
-          <option key={season.id} value={season.id}>
-            {season.name} — {STATUS_LABELS[season.status] || season.status}
-          </option>
-        ))}
-      </Select>
-      {selectedSeason?.status === "active" && (
-        <span className="status-badge status-success">Actual</span>
-      )}
-      {selectedSeason?.status === "closed" && (
-        <span className="status-badge status-muted">Cerrada · consulta histórica</span>
-      )}
-      {selectedSeason?.status === "planned" && (
-        <span className="status-badge status-info">En preparación</span>
-      )}
-    </div>
-    {showContext && selectedSeason && (
-      <p className="season-context-copy">
-        Mostrando datos de: <strong>{selectedSeason.name}</strong>
-        {selectedSeason.status === "closed"
-          ? ". Esta consulta no cambia la temporada actual."
-          : selectedSeason.status === "planned"
-          ? ". Esta temporada aún está en preparación."
-          : "."}
-      </p>
-    )}
-    {error && (
-      <div className="season-load-error" role="alert">
-        <p>No se pudieron cargar las temporadas.</p>
-        {onRetry && (
-          <button type="button" onClick={onRetry}>
-            Volver a intentar
-          </button>
+        {selectedSeason?.status === "closed" && (
+          <span className="status-badge status-muted">
+            Cerrada · consulta histórica
+          </span>
+        )}
+        {selectedSeason?.status === "planned" && (
+          <span className="status-badge status-info">En preparación</span>
+        )}
+        {invalidRequestedSeason && (
+          <span className="status-badge status-danger">No disponible</span>
         )}
       </div>
-    )}
-  </>
-);
+      {showContext && selectedSeason && (
+        <p className="season-context-copy">
+          Mostrando datos de: <strong>{selectedSeason.name}</strong>
+          {selectedSeason.status === "closed"
+            ? ". Esta consulta no cambia la temporada actual."
+            : selectedSeason.status === "planned"
+            ? ". Esta temporada aún está en preparación."
+            : "."}
+        </p>
+      )}
+      {error && (
+        <div className="season-load-error" role="alert">
+          <p>No se pudieron cargar las temporadas.</p>
+          {onRetry && (
+            <button type="button" onClick={onRetry}>
+              Volver a intentar
+            </button>
+          )}
+        </div>
+      )}
+    </>
+  );
+};

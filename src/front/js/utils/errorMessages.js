@@ -162,6 +162,8 @@ export const errorMessages = {
   PLAYER_GENDER_MISMATCH:
     "El sexo del deportista no coincide con la rama del equipo.",
   PLAYER_NOT_FOUND: "Deportista no encontrado",
+  PLAYER_PERFORMANCE_NOT_SUPPORTED:
+    "Rendimiento no disponible para este deporte.",
   INVALID_PLAYER_STATUS: "Estado del deportista inválido",
   PLAYER_NOT_AVAILABLE_FOR_TOURNAMENT:
     "Una o más personas no están disponibles para una nueva inscripción en el torneo.",
