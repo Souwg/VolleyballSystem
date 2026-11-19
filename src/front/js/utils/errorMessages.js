@@ -164,7 +164,7 @@ export const errorMessages = {
   PLAYER_NOT_FOUND: "Deportista no encontrado",
   INVALID_PLAYER_STATUS: "Estado del deportista inválido",
   PLAYER_NOT_AVAILABLE_FOR_TOURNAMENT:
-    "Una o más jugadoras no están disponibles para una nueva inscripción en el torneo.",
+    "Una o más personas no están disponibles para una nueva inscripción en el torneo.",
   INVALID_PLAYER_ACTIVE_STATUS: "Estado inválido",
   PLAYER_HAS_HISTORY:
     "No se puede eliminar este perfil porque posee historial registrado. Puedes inactivar al deportista en su lugar.",
@@ -244,7 +244,9 @@ export const errorMessages = {
   TOURNAMENT_REGISTRATION_CHARGES_LOCKED:
     "No puedes modificar los cargos porque alguno ya fue pagado o tiene recibo",
   TOURNAMENT_PLAYERS_FINANCIALLY_LOCKED:
-    "No puedes cambiar las deportistas porque existen pagos registrados",
+    "No puedes cambiar el roster porque existen pagos registrados",
+  TOURNAMENT_ROSTER_CHANGED:
+    "El roster cambió mientras se guardaba. Actualizamos la información para que puedas revisarla.",
 
   // MATCHES
   MATCH_NOT_FOUND: "Partido no encontrado",

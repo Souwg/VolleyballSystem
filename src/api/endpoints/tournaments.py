@@ -1,9 +1,12 @@
+from collections import defaultdict
 from datetime import datetime
 from decimal import Decimal, ROUND_HALF_UP
 
 from flask import jsonify, request
 from flask_jwt_extended import jwt_required
 from sqlalchemy import func
+from sqlalchemy.exc import IntegrityError
+from sqlalchemy.orm import joinedload
 
 from src.api.api_blueprint import api
 from src.api.coach_access import (
@@ -24,6 +27,7 @@ from src.api.finance_access import (
     get_finance_payload_error,
     get_sports_finance_error,
 )
+from src.api.integrity_errors import violates_named_constraint
 from src.api.models import (
     db,
     MatchSession,
@@ -43,6 +47,7 @@ from src.api.payment_charge_helpers import (
 from src.api.season_service import (
     get_season_operation_error,
     get_team_operation_error,
+    lock_team_lifecycle,
     lock_active_season_for_operation,
     resolve_season_for_read,
 )
@@ -55,6 +60,14 @@ VALID_TOURNAMENT_STATUSES = [
     "completed",
     "cancelled"
 ]
+TOURNAMENT_TEAM_UNIQUE_CONSTRAINTS = {
+    "unique_team_per_tournament",
+    "tournament_teams.tournament_id, tournament_teams.team_id",
+}
+TOURNAMENT_PLAYER_UNIQUE_CONSTRAINTS = {
+    "unique_player_per_tournament_team",
+    "tournament_players.tournament_team_id, tournament_players.player_id",
+}
 # Cancelar no toca cargos: los pagados y sus recibos se conservan. Mientras no
 # exista una regla para los pendientes, deben resolverse antes de cancelar.
 TOURNAMENT_PENDING_CHARGES_ERROR = (
@@ -69,17 +82,189 @@ TOURNAMENT_PENDING_CHARGES_ERROR = (
 def _tournament_payload(tournament, user):
     return {
         **redact_sports_money_for_user(user, tournament.serialize()),
+        "season_name": tournament.season.name if tournament.season else None,
+        "season_status": tournament.season.status if tournament.season else None,
         "can_manage": can_manage_club_sports_entity(user),
     }
 
 
 def _tournament_entry_payload(entry, user, team_access=None):
     resolve_access = team_access or get_team_access_resolver(user)
+    serialized = redact_sports_money_for_user(user, entry.serialize())
+    tournament_payload = serialized.get("tournament")
+
+    if tournament_payload and entry.tournament:
+        tournament_payload = {
+            **tournament_payload,
+            "season_id": entry.tournament.season_id,
+            "season_name": (
+                entry.tournament.season.name
+                if entry.tournament.season
+                else None
+            ),
+            "season_status": (
+                entry.tournament.season.status
+                if entry.tournament.season
+                else None
+            ),
+        }
 
     return {
-        **redact_sports_money_for_user(user, entry.serialize()),
+        **serialized,
+        "tournament": tournament_payload,
         **resolve_access(entry.team),
     }
+
+
+def _match_summary_payload(match, user, team_access=None):
+    resolve_access = team_access or get_team_access_resolver(user)
+    team = match.team
+
+    return {
+        **redact_sports_money_for_user(user, match.serialize()),
+        **resolve_access(team),
+        "team_name": team.name if team else None,
+        "category_name": (
+            team.category.name if team and team.category else None
+        ),
+    }
+
+
+def _get_tournament_read_model(tournament_ids, user, include_matches=False):
+    """Build list/detail metrics with a bounded number of queries."""
+    result = {
+        tournament_id: {
+            "entries": [],
+            "matches": [],
+            "total_teams": 0,
+            "active_roster_count": 0,
+            "total_roster_count": 0,
+            "open_matches_count": 0,
+            "completed_matches_count": 0,
+            "total_matches": 0,
+        }
+        for tournament_id in tournament_ids
+    }
+
+    if not tournament_ids:
+        return result
+
+    entries = (
+        TournamentTeam.query
+        .options(
+            joinedload(TournamentTeam.team).joinedload(Team.category),
+            joinedload(TournamentTeam.tournament),
+        )
+        .filter(TournamentTeam.tournament_id.in_(tournament_ids))
+        .order_by(TournamentTeam.created_at.asc())
+        .all()
+    )
+    entries_by_id = {entry.id: entry for entry in entries}
+    team_access = get_team_access_resolver(user)
+
+    roster_counts = defaultdict(lambda: {"active": 0, "total": 0})
+    for entry_id, status, count in (
+        db.session.query(
+            TournamentPlayer.tournament_team_id,
+            TournamentPlayer.status,
+            func.count(TournamentPlayer.id),
+        )
+        .filter(TournamentPlayer.tournament_team_id.in_(entries_by_id))
+        .group_by(TournamentPlayer.tournament_team_id, TournamentPlayer.status)
+        .all()
+        if entries_by_id
+        else []
+    ):
+        roster_counts[entry_id]["total"] += count
+        if status == "active":
+            roster_counts[entry_id]["active"] = count
+
+    eligible_counts = dict(
+        db.session.query(
+            TournamentPlayer.tournament_team_id,
+            func.count(TournamentPlayer.id),
+        )
+        .join(
+            TournamentTeam,
+            TournamentTeam.id == TournamentPlayer.tournament_team_id,
+        )
+        .join(Player, Player.id == TournamentPlayer.player_id)
+        .join(
+            TeamPlayer,
+            (TeamPlayer.team_id == TournamentTeam.team_id)
+            & (TeamPlayer.player_id == TournamentPlayer.player_id)
+            & TeamPlayer.left_at.is_(None),
+        )
+        .filter(
+            TournamentPlayer.tournament_team_id.in_(entries_by_id),
+            TournamentPlayer.status == "active",
+            Player.is_active.is_(True),
+            TeamPlayer.status == TEAM_PLAYER_STATUS_ACTIVE,
+        )
+        .group_by(TournamentPlayer.tournament_team_id)
+        .all()
+        if entries_by_id
+        else []
+    )
+
+    match_counts = defaultdict(lambda: {"open": 0, "completed": 0, "total": 0})
+    for entry_id, is_completed, count in (
+        db.session.query(
+            MatchSession.tournament_team_id,
+            MatchSession.is_completed,
+            func.count(MatchSession.id),
+        )
+        .filter(MatchSession.tournament_team_id.in_(entries_by_id))
+        .group_by(MatchSession.tournament_team_id, MatchSession.is_completed)
+        .all()
+        if entries_by_id
+        else []
+    ):
+        match_counts[entry_id]["total"] += count
+        key = "completed" if is_completed else "open"
+        match_counts[entry_id][key] += count
+
+    for entry in entries:
+        roster = roster_counts[entry.id]
+        matches = match_counts[entry.id]
+        payload = {
+            **_tournament_entry_payload(entry, user, team_access),
+            "active_roster_count": roster["active"],
+            "total_roster_count": roster["total"],
+            "currently_eligible_players_count": eligible_counts.get(entry.id, 0),
+            "open_matches_count": matches["open"],
+            "completed_matches_count": matches["completed"],
+            "total_matches": matches["total"],
+            # Backwards-compatible alias used by existing clients.
+            "total_players": roster["active"],
+        }
+        tournament_metrics = result[entry.tournament_id]
+        tournament_metrics["entries"].append(payload)
+        tournament_metrics["total_teams"] += 1
+        tournament_metrics["active_roster_count"] += roster["active"]
+        tournament_metrics["total_roster_count"] += roster["total"]
+        tournament_metrics["open_matches_count"] += matches["open"]
+        tournament_metrics["completed_matches_count"] += matches["completed"]
+        tournament_metrics["total_matches"] += matches["total"]
+
+    if include_matches and entries_by_id:
+        matches = (
+            MatchSession.query
+            .options(
+                joinedload(MatchSession.team).joinedload(Team.category),
+                joinedload(MatchSession.tournament_team),
+            )
+            .filter(MatchSession.tournament_team_id.in_(entries_by_id))
+            .order_by(MatchSession.date.desc(), MatchSession.id.asc())
+            .all()
+        )
+        for match in matches:
+            entry = entries_by_id[match.tournament_team_id]
+            result[entry.tournament_id]["matches"].append(
+                _match_summary_payload(match, user, team_access)
+            )
+
+    return result
 
 
 def _get_club_tournament_team(tournament_team_id, user):
@@ -115,26 +300,49 @@ def _lock_tournament(tournament_id):
     ).populate_existing().with_for_update(key_share=True).first()
 
 
-def _cancel_tournament_charges_error(tournament, user):
-    pending_charge = PlayerPayment.query.join(
-        TournamentTeam,
-        PlayerPayment.tournament_team_id == TournamentTeam.id
-    ).filter(
-        TournamentTeam.tournament_id == tournament.id,
-        PlayerPayment.club_id == tournament.club_id,
-        PlayerPayment.payment_type == "tournament",
-        PlayerPayment.match_id.is_(None),
-        PlayerPayment.status.in_(["pending", "overdue"])
-    ).first()
+def _lock_tournament_entries(tournament_id):
+    return (
+        TournamentTeam.query
+        .filter_by(tournament_id=tournament_id)
+        .order_by(TournamentTeam.id.asc())
+        .populate_existing()
+        .with_for_update()
+        .all()
+    )
 
-    if not pending_charge:
+
+def _cancel_tournament_charges_error(tournament, user):
+    """Revalidate cancellation Finance blockers under deterministic locks."""
+    entries = _lock_tournament_entries(tournament.id)
+    entry_ids = [entry.id for entry in entries]
+
+    charges = (
+        PlayerPayment.query
+        .filter(
+            PlayerPayment.club_id == tournament.club_id,
+            PlayerPayment.tournament_team_id.in_(entry_ids),
+            PlayerPayment.payment_type == "tournament",
+            PlayerPayment.match_id.is_(None),
+        )
+        .order_by(PlayerPayment.id.asc())
+        .populate_existing()
+        .with_for_update()
+        .all()
+        if entry_ids
+        else []
+    )
+    blocking_count = sum(
+        charge.status in ["pending", "overdue"] for charge in charges
+    )
+
+    if not blocking_count:
         return None
 
     # Un coach no ve finanzas: recibe el aviso genérico de dependencias.
     if not can_access_finance(user):
-        return FINANCE_DEPENDENCY_ERROR
+        return (*FINANCE_DEPENDENCY_ERROR, None)
 
-    return TOURNAMENT_PENDING_CHARGES_ERROR
+    return (*TOURNAMENT_PENDING_CHARGES_ERROR, blocking_count)
 
 
 def _get_registration_charges_for_update(club_id, tournament_team_id):
@@ -346,17 +554,22 @@ def get_tournaments():
         Tournament.start_date.desc()
     ).all()
 
+    metrics_by_tournament = _get_tournament_read_model(
+        [tournament.id for tournament in tournaments],
+        user,
+    )
     result = []
-    team_access = get_team_access_resolver(user)
 
     for tournament in tournaments:
+        metrics = metrics_by_tournament[tournament.id]
         result.append({
             **_tournament_payload(tournament, user),
-            "total_teams": len(tournament.team_entries),
-            "teams": [
-                _tournament_entry_payload(entry, user, team_access)
-                for entry in tournament.team_entries
-            ]
+            **{
+                key: value
+                for key, value in metrics.items()
+                if key not in ["entries", "matches"]
+            },
+            "teams": metrics["entries"],
         })
 
     return jsonify({
@@ -393,28 +606,43 @@ def get_tournament_detail(tournament_id):
             403
         )
 
-    teams = TournamentTeam.query.filter_by(
-        tournament_id=tournament.id
-    ).order_by(TournamentTeam.created_at.asc()).all()
-
-    team_access = get_team_access_resolver(user)
+    metrics = _get_tournament_read_model(
+        [tournament.id],
+        user,
+        include_matches=True,
+    )[tournament.id]
+    pending_admin_count = (
+        PlayerPayment.query
+        .join(
+            TournamentTeam,
+            TournamentTeam.id == PlayerPayment.tournament_team_id,
+        )
+        .filter(
+            TournamentTeam.tournament_id == tournament.id,
+            PlayerPayment.club_id == tournament.club_id,
+            PlayerPayment.payment_type == "tournament",
+            PlayerPayment.match_id.is_(None),
+            PlayerPayment.status.in_(["pending", "overdue"]),
+        )
+        .count()
+    )
 
     return jsonify({
         "tournament": {
             **_tournament_payload(tournament, user),
-            "teams": [
-                {
-                    **_tournament_entry_payload(entry, user, team_access),
-                    "total_players": TournamentPlayer.query.filter_by(
-                        tournament_team_id=entry.id,
-                        status="active"
-                    ).count(),
-                    "total_matches": MatchSession.query.filter_by(
-                        tournament_team_id=entry.id
-                    ).count()
-                }
-                for entry in teams
-            ]
+            **{
+                key: value
+                for key, value in metrics.items()
+                if key not in ["entries", "matches"]
+            },
+            "teams": metrics["entries"],
+            "matches": metrics["matches"],
+            "has_pending_admin_dependencies": pending_admin_count > 0,
+            **(
+                {"pending_admin_dependencies_count": pending_admin_count}
+                if can_access_finance(user)
+                else {}
+            ),
         }
     }), 200
 
@@ -451,13 +679,6 @@ def update_tournament(tournament_id):
     if entity_error:
         return error_response(*entity_error)
 
-    if tournament.status != "active":
-        return error_response(
-            "Solo puedes editar torneos activos",
-            "TOURNAMENT_NOT_ACTIVE",
-            409
-        )
-
     body = request.get_json() or {}
 
     finance_error = get_finance_payload_error(
@@ -477,6 +698,34 @@ def update_tournament(tournament_id):
             ),
             "INVALID_TOURNAMENT_STATUS",
             400
+        )
+
+    # Metadata and terminal transitions share the first lock. Authorization,
+    # Season and status are revalidated only after waiting for it.
+    tournament = _lock_tournament(tournament.id)
+
+    if not tournament or tournament.club_id != user.club_id:
+        return error_response(
+            "No tienes acceso a este torneo",
+            "FORBIDDEN",
+            403,
+        )
+
+    entity_error = get_club_sports_entity_error(user)
+
+    if entity_error:
+        return error_response(*entity_error)
+
+    season_error = get_season_operation_error(tournament.season)
+
+    if season_error:
+        return error_response(*season_error)
+
+    if tournament.status != "active":
+        return error_response(
+            "El torneo ya no está activo. Actualiza la vista para continuar.",
+            "TOURNAMENT_NOT_ACTIVE",
+            409,
         )
 
     name = body.get("name")
@@ -625,6 +874,23 @@ def transition_tournament_status(tournament_id, target_status):
 
     tournament = _lock_tournament(tournament.id)
 
+    if not tournament or tournament.club_id != user.club_id:
+        return error_response(
+            "No tienes acceso a este torneo",
+            "FORBIDDEN",
+            403,
+        )
+
+    entity_error = get_club_sports_entity_error(user)
+
+    if entity_error:
+        return error_response(*entity_error)
+
+    season_error = get_season_operation_error(tournament.season)
+
+    if season_error:
+        return error_response(*season_error)
+
     if tournament.status == target_status:
         return jsonify({
             "message": (
@@ -676,7 +942,17 @@ def transition_tournament_status(tournament_id, target_status):
         charges_error = _cancel_tournament_charges_error(tournament, user)
 
         if charges_error:
-            return error_response(*charges_error)
+            message, code, status, blocking_count = charges_error
+
+            if blocking_count is None:
+                return error_response(message, code, status)
+
+            return jsonify({
+                "error": True,
+                "message": message,
+                "code": code,
+                "pending_charges_count": blocking_count,
+            }), status
 
     updated_count = Tournament.query.filter(
         Tournament.id == tournament.id,
@@ -817,6 +1093,18 @@ def add_team_to_tournament(tournament_id):
             403
         )
 
+    # Linked Match creation and roster writes use the same parent order:
+    # Tournament -> Team/Season. Revalidate the Team after waiting so an
+    # archive or Season transition cannot leave a stale registration behind.
+    team = lock_team_lifecycle(team.id, user.club_id)
+
+    if not team:
+        return error_response(
+            "Equipo no encontrado",
+            "TEAM_NOT_FOUND",
+            404
+        )
+
     assignment_error = get_team_assignment_error(user, team)
 
     if assignment_error:
@@ -863,8 +1151,23 @@ def add_team_to_tournament(tournament_id):
         status="active"
     )
 
-    db.session.add(tournament_team)
-    db.session.commit()
+    try:
+        db.session.add(tournament_team)
+        db.session.commit()
+    except IntegrityError as error:
+        db.session.rollback()
+
+        if not violates_named_constraint(
+            error,
+            TOURNAMENT_TEAM_UNIQUE_CONSTRAINTS,
+        ):
+            raise
+
+        return error_response(
+            "Este equipo ya está inscrito en el torneo",
+            "TEAM_ALREADY_IN_TOURNAMENT",
+            409,
+        )
 
     return jsonify({
         "message": "Equipo inscrito correctamente",
@@ -902,28 +1205,8 @@ def get_tournament_teams(tournament_id):
             403
         )
 
-    entries = TournamentTeam.query.filter_by(
-        tournament_id=tournament.id
-    ).order_by(TournamentTeam.created_at.asc()).all()
-
-    result = []
-    team_access = get_team_access_resolver(user)
-
-    for entry in entries:
-        active_players = TournamentPlayer.query.filter_by(
-            tournament_team_id=entry.id,
-            status="active"
-        ).count()
-
-        matches_count = MatchSession.query.filter_by(
-            tournament_team_id=entry.id
-        ).count()
-
-        result.append({
-            **_tournament_entry_payload(entry, user, team_access),
-            "total_players": active_players,
-            "total_matches": matches_count
-        })
+    metrics = _get_tournament_read_model([tournament.id], user)[tournament.id]
+    result = metrics["entries"]
 
     return jsonify({
         "tournament": _tournament_payload(tournament, user),
@@ -941,7 +1224,7 @@ def get_tournament_team_players(tournament_team_id):
 
     if user.role not in ["club_owner", "coach"]:
         return error_response(
-            "No tienes permisos para consultar jugadoras del torneo",
+            "No tienes permisos para consultar el roster del torneo",
             "FORBIDDEN",
             403
         )
@@ -1007,6 +1290,10 @@ def get_tournament_team_players(tournament_team_id):
                 if registration
                 else None
             ),
+            "currently_eligible": (
+                membership.status == TEAM_PLAYER_STATUS_ACTIVE
+                and membership.player.is_active
+            ),
             "player": serialize_player(membership.player)
         })
 
@@ -1046,8 +1333,18 @@ def get_tournament_team_players(tournament_team_id):
             "membership_open": False,
             "is_registered": registration.status == "active",
             "registration_status": registration.status,
+            "currently_eligible": False,
             "player": serialize_player(registration.player)
         })
+
+    matches = (
+        MatchSession.query
+        .options(joinedload(MatchSession.team).joinedload(Team.category))
+        .filter_by(tournament_team_id=tournament_team.id)
+        .order_by(MatchSession.date.desc(), MatchSession.id.asc())
+        .all()
+    )
+    team_access = get_team_access_resolver(user)
 
     return jsonify({
         "tournament_team": _tournament_entry_payload(tournament_team, user),
@@ -1057,6 +1354,20 @@ def get_tournament_team_players(tournament_team_id):
             for player in players
             if player["is_registered"]
         ),
+        "withdrawn_count": sum(
+            1
+            for player in players
+            if player["registration_status"] == "withdrawn"
+        ),
+        "currently_eligible_count": sum(
+            1
+            for player in players
+            if player["is_registered"] and player["currently_eligible"]
+        ),
+        "matches": [
+            _match_summary_payload(match, user, team_access)
+            for match in matches
+        ],
         "players": players
     }), 200
 
@@ -1112,6 +1423,29 @@ def update_tournament_team_players(tournament_team_id):
 
     tournament_team = _get_tournament_team_for_update(tournament_team.id)
 
+    team = lock_team_lifecycle(
+        tournament_team.team_id,
+        user.club_id,
+    )
+
+    if not team:
+        return error_response("Equipo no encontrado", "TEAM_NOT_FOUND", 404)
+
+    assignment_error = get_team_assignment_error(user, team)
+
+    if assignment_error:
+        return error_response(*assignment_error)
+
+    team_error = get_team_operation_error(team)
+
+    if team_error:
+        return error_response(*team_error)
+
+    season_error = get_season_operation_error(tournament_team.tournament.season)
+
+    if season_error:
+        return error_response(*season_error)
+
     if tournament_team.tournament.status != "active":
         return error_response(
             "Solo puedes modificar participantes en torneos activos",
@@ -1132,7 +1466,7 @@ def update_tournament_team_players(tournament_team_id):
 
     if not isinstance(player_ids, list):
         return error_response(
-            "La lista de jugadoras es inválida",
+            "La lista de deportistas es inválida",
             "INVALID_TOURNAMENT_PLAYERS",
             400
         )
@@ -1143,38 +1477,19 @@ def update_tournament_team_players(tournament_team_id):
         if str(player_id).strip()
     })
 
-    valid_memberships = TeamPlayer.query.filter(
-        TeamPlayer.team_id == tournament_team.team_id,
-        TeamPlayer.left_at.is_(None),
-        TeamPlayer.player_id.in_(normalized_player_ids)
-    ).all() if normalized_player_ids else []
-
-    valid_player_ids = {
-        membership.player_id
-        for membership in valid_memberships
-    }
-
-    existing_rows = TournamentPlayer.query.filter_by(
-        tournament_team_id=tournament_team.id
-    ).all()
+    existing_rows = (
+        TournamentPlayer.query
+        .filter_by(tournament_team_id=tournament_team.id)
+        .order_by(TournamentPlayer.player_id.asc())
+        .populate_existing()
+        .with_for_update()
+        .all()
+    )
 
     existing_map = {
         row.player_id: row
         for row in existing_rows
     }
-
-    invalid_player_ids = (
-        set(normalized_player_ids)
-        - valid_player_ids
-        - set(existing_map)
-    )
-
-    if invalid_player_ids:
-        return error_response(
-            "Una o más jugadoras no pertenecen al equipo",
-            "PLAYER_NOT_IN_TEAM",
-            400
-        )
 
     selected_ids = set(normalized_player_ids)
 
@@ -1188,28 +1503,69 @@ def update_tournament_team_players(tournament_team_id):
     }
 
     if player_ids_requiring_availability:
+        locked_players = (
+            Player.query
+            .filter(Player.id.in_(player_ids_requiring_availability))
+            .order_by(Player.id.asc())
+            .populate_existing()
+            .with_for_update()
+            .all()
+        )
+        locked_memberships = (
+            TeamPlayer.query
+            .filter(
+                TeamPlayer.team_id == tournament_team.team_id,
+                TeamPlayer.player_id.in_(player_ids_requiring_availability),
+                TeamPlayer.left_at.is_(None),
+            )
+            .order_by(TeamPlayer.player_id.asc())
+            .populate_existing()
+            .with_for_update()
+            .all()
+        )
+        players_by_id = {player.id: player for player in locked_players}
+        memberships_by_player = {
+            membership.player_id: membership
+            for membership in locked_memberships
+        }
+
+        missing_memberships = (
+            player_ids_requiring_availability - set(memberships_by_player)
+        )
+
+        if missing_memberships:
+            if missing_memberships <= set(existing_map):
+                return error_response(
+                    (
+                        "Una o más personas dejaron de estar disponibles para "
+                        "una nueva inscripción en el torneo"
+                    ),
+                    "PLAYER_NOT_AVAILABLE_FOR_TOURNAMENT",
+                    409,
+                )
+
+            return error_response(
+                "Una o más personas no pertenecen actualmente al equipo",
+                "PLAYER_NOT_IN_TEAM",
+                400,
+            )
+
         available_player_ids = {
             player_id
-            for (player_id,) in (
-                db.session.query(TeamPlayer.player_id)
-                .join(Player, Player.id == TeamPlayer.player_id)
-                .filter(
-                    TeamPlayer.team_id == tournament_team.team_id,
-                    TeamPlayer.left_at.is_(None),
-                    TeamPlayer.status == TEAM_PLAYER_STATUS_ACTIVE,
-                    Player.is_active.is_(True),
-                    TeamPlayer.player_id.in_(
-                        player_ids_requiring_availability
-                    ),
-                )
-                .all()
+            for player_id in player_ids_requiring_availability
+            if (
+                player_id in players_by_id
+                and players_by_id[player_id].club_id == user.club_id
+                and players_by_id[player_id].is_active
+                and memberships_by_player[player_id].status
+                == TEAM_PLAYER_STATUS_ACTIVE
             )
         }
 
         if available_player_ids != player_ids_requiring_availability:
             return error_response(
                 (
-                    "Una o más jugadoras no están disponibles para una "
+                    "Una o más personas dejaron de estar disponibles para una "
                     "nueva inscripción en el torneo"
                 ),
                 "PLAYER_NOT_AVAILABLE_FOR_TOURNAMENT",
@@ -1263,7 +1619,7 @@ def update_tournament_team_players(tournament_team_id):
     if locked_registration_charge:
         return error_response(
             (
-                "No puedes retirar una jugadora con cargos de inscripción "
+                "No puedes retirar a una persona con cargos de inscripción "
                 "pagados o con recibo"
             ),
             "TOURNAMENT_PLAYERS_FINANCIALLY_LOCKED",
@@ -1292,7 +1648,22 @@ def update_tournament_team_players(tournament_team_id):
 
         db.session.add(registration)
 
-    db.session.commit()
+    try:
+        db.session.commit()
+    except IntegrityError as error:
+        db.session.rollback()
+
+        if not violates_named_constraint(
+            error,
+            TOURNAMENT_PLAYER_UNIQUE_CONSTRAINTS,
+        ):
+            raise
+
+        return error_response(
+            "El roster cambió mientras se guardaba. Actualiza e inténtalo de nuevo.",
+            "TOURNAMENT_ROSTER_CHANGED",
+            409,
+        )
 
     active_registrations = TournamentPlayer.query.filter_by(
         tournament_team_id=tournament_team.id,
@@ -1305,7 +1676,7 @@ def update_tournament_team_players(tournament_team_id):
     )
 
     return jsonify({
-        "message": "Jugadoras inscritas correctamente",
+        "message": "Roster del torneo actualizado correctamente",
         "total_players": len(active_registrations),
         "players": [
             serialize_with_player_for_user(row, user, serialize_player)
@@ -1450,7 +1821,7 @@ def preview_tournament_registration_charges(tournament_team_id):
 
     if not registered_players:
         return error_response(
-            "Debes inscribir al menos una jugadora antes de repartir el costo",
+            "Debes inscribir al menos una persona antes de repartir el costo",
             "TOURNAMENT_PLAYERS_REQUIRED",
             400
         )
@@ -1585,7 +1956,7 @@ def generate_tournament_registration_charges(tournament_team_id):
 
     if not registered_players:
         return error_response(
-            "Debes inscribir al menos una jugadora antes de generar los cargos",
+            "Debes inscribir al menos una persona antes de generar los cargos",
             "TOURNAMENT_PLAYERS_REQUIRED",
             400
         )
@@ -1776,11 +2147,45 @@ def get_team_tournament_entries(team_id):
     ).all()
 
     team_access = get_team_access_resolver(user)
+    entry_ids = [entry.id for entry in entries]
+    eligible_counts = dict(
+        db.session.query(
+            TournamentPlayer.tournament_team_id,
+            func.count(TournamentPlayer.id),
+        )
+        .join(
+            TournamentTeam,
+            TournamentTeam.id == TournamentPlayer.tournament_team_id,
+        )
+        .join(Player, Player.id == TournamentPlayer.player_id)
+        .join(
+            TeamPlayer,
+            (TeamPlayer.team_id == TournamentTeam.team_id)
+            & (TeamPlayer.player_id == TournamentPlayer.player_id)
+            & TeamPlayer.left_at.is_(None),
+        )
+        .filter(
+            TournamentPlayer.tournament_team_id.in_(entry_ids),
+            TournamentPlayer.status == "active",
+            Player.is_active.is_(True),
+            TeamPlayer.status == TEAM_PLAYER_STATUS_ACTIVE,
+        )
+        .group_by(TournamentPlayer.tournament_team_id)
+        .all()
+        if entry_ids
+        else []
+    )
 
     return jsonify({
         "team": {**team.serialize(), **team_access(team)},
         "tournament_entries": [
-            _tournament_entry_payload(entry, user, team_access)
+            {
+                **_tournament_entry_payload(entry, user, team_access),
+                "currently_eligible_players_count": eligible_counts.get(
+                    entry.id,
+                    0,
+                ),
+            }
             for entry in entries
         ]
     }), 200

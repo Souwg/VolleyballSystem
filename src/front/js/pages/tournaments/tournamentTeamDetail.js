@@ -1,878 +1,332 @@
-import React, { useContext, useEffect, useMemo, useState } from "react";
-import { useNavigate, useParams } from "react-router-dom";
+import React, { useContext, useEffect, useMemo, useRef, useState } from "react";
+import { Link, useLocation, useNavigate, useParams } from "react-router-dom";
+import { AlertCircle, ArrowRight, CalendarDays, Check, CircleCheck, Users } from "lucide-react";
+
 import { Context } from "../../store/appContext";
 import { PageHeader } from "../../component/ui/pageHeader";
 import { Button } from "../../component/ui/button";
 import { Card } from "../../component/ui/card";
+import { ConfirmationDialog } from "../../component/ui/confirmationDialog";
+import { ReadOnlyNotice } from "../../component/ui/readOnlyNotice";
+import { FeeEditor } from "../../component/feeEditor";
 import { errorMessages } from "../../utils/errorMessages";
 import { formatMoney } from "../../utils/money";
-import {
-  Users,
-  Check,
-  AlertCircle,
-  ArrowRight,
-  CircleCheck,
-} from "lucide-react";
-
-import { ReadOnlyNotice } from "../../component/ui/readOnlyNotice";
 import { canManage, useTeamAccessLost } from "../../utils/coachAccess";
-import { FeeEditor } from "../../component/feeEditor";
 import "../../../styles/tournaments.css";
 
-const getPaymentStatus = (status) => {
-  const statuses = {
-    pending: {
-      label: "Pendiente",
-      className: "status-warning",
-    },
-    paid: {
-      label: "Pagado",
-      className: "status-success",
-    },
-    overdue: {
-      label: "Vencido",
-      className: "status-danger",
-    },
-    cancelled: {
-      label: "Cancelado",
-      className: "status-muted",
-    },
-  };
+const formatDate = (value) => value
+  ? new Intl.DateTimeFormat("es", {
+      day: "2-digit", month: "short", year: "numeric", timeZone: "UTC",
+    }).format(new Date(`${value}T00:00:00Z`))
+  : "Sin fecha";
 
-  return (
-    statuses[status] || {
-      label: status || "Sin estado",
-      className: "status-muted",
-    }
-  );
-};
+const paymentStatus = (status) => ({
+  pending: ["Pendiente", "status-warning"],
+  paid: ["Pagado", "status-success"],
+  overdue: ["Vencido", "status-danger"],
+  cancelled: ["Cancelado", "status-muted"],
+}[status] || [status || "Sin estado", "status-muted"]);
 
 export const TournamentTeamDetail = () => {
   const { store, actions } = useContext(Context);
   const { tournament_team_id } = useParams();
   const navigate = useNavigate();
+  const location = useLocation();
+  const loadRequestId = useRef(0);
+  const contextQuery = location.search.replace(/^\?/, "");
 
   const [tournamentTeam, setTournamentTeam] = useState(null);
   const [players, setPlayers] = useState([]);
-  const [selectedPlayerIds, setSelectedPlayerIds] = useState([]);
+  const [matches, setMatches] = useState([]);
+  const [originalIds, setOriginalIds] = useState([]);
+  const [selectedIds, setSelectedIds] = useState([]);
+  const [eligibleCount, setEligibleCount] = useState(0);
+  const [loadError, setLoadError] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const [errors, setErrors] = useState({});
+  const [search, setSearch] = useState("");
+  const [showOnlySelected, setShowOnlySelected] = useState(false);
+  const [confirmType, setConfirmType] = useState(null);
   const [preview, setPreview] = useState(null);
-
-  const [loadingPage, setLoadingPage] = useState(true);
-  const [savingPlayers, setSavingPlayers] = useState(false);
   const [loadingPreview, setLoadingPreview] = useState(false);
   const [generatingCharges, setGeneratingCharges] = useState(false);
-
-  const [errors, setErrors] = useState({});
-  const [selectionChanged, setSelectionChanged] = useState(false);
-  const [showOnlySelected, setShowOnlySelected] = useState(false);
-  const [showPlayerList, setShowPlayerList] = useState(false);
   const [showChargeDetails, setShowChargeDetails] = useState(false);
 
-  const loadTournamentPlayers = async () => {
-    setLoadingPage(true);
+  const loadRoster = async ({ preserveError = false } = {}) => {
+    const requestId = ++loadRequestId.current;
+    setLoading(true);
+    setLoadError(null);
+    setTournamentTeam(null);
+    setPlayers([]);
+    setMatches([]);
+    if (!preserveError) setErrors({});
 
-    try {
-      const result = await actions.getTournamentTeamPlayers(tournament_team_id);
+    const result = await actions.getTournamentTeamPlayers(tournament_team_id);
+    if (requestId !== loadRequestId.current || result.code === "STALE_RESPONSE") return;
 
-      if (!result.ok) {
-        setTournamentTeam(null);
-        setPlayers([]);
-        return;
-      }
-
-      const loadedPlayers = result.data.players || [];
-
-      setTournamentTeam(result.data.tournament_team);
-      setPlayers(loadedPlayers);
-
-      setSelectedPlayerIds(
-        loadedPlayers
-          .filter((row) => row.is_registered)
-          .map((row) => row.player_id),
-      );
-
-      setSelectionChanged(false);
-      setShowPlayerList(false);
-      setShowOnlySelected(false);
-    } finally {
-      setLoadingPage(false);
+    if (!result.ok) {
+      setLoadError(result);
+      setLoading(false);
+      return;
     }
+
+    const rows = result.data.players || [];
+    const registered = rows.filter((row) => row.is_registered).map((row) => row.player_id);
+    setTournamentTeam(result.data.tournament_team);
+    setPlayers(rows);
+    setMatches(result.data.matches || []);
+    setEligibleCount(result.data.currently_eligible_count || 0);
+    setOriginalIds(registered);
+    setSelectedIds(registered);
+    setPreview(null);
+    setLoading(false);
   };
 
-  useTeamAccessLost(() => loadTournamentPlayers());
-
   useEffect(() => {
-    loadTournamentPlayers();
-
-    return () => {
-      setPreview(null);
-    };
+    loadRoster();
+    return () => { loadRequestId.current += 1; };
   }, [tournament_team_id]);
 
-  const registeredCount = selectedPlayerIds.length;
+  useTeamAccessLost(() => loadRoster());
 
-  const selectablePlayers = useMemo(
-    () =>
-      players.filter(
-        (row) =>
-          row.team_status === "active" && row.player?.is_active !== false,
-      ),
-    [players],
-  );
-
-  const visiblePlayers = useMemo(() => {
-    if (!showOnlySelected) return players;
-
-    return players.filter((row) => selectedPlayerIds.includes(row.player_id));
-  }, [players, selectedPlayerIds, showOnlySelected]);
-
-  const registrationFee = Number(tournamentTeam?.registration_fee || 0);
-
-  const estimatedAmountPerPlayer = useMemo(() => {
-    if (registeredCount === 0) return 0;
-
-    return registrationFee / registeredCount;
-  }, [registrationFee, registeredCount]);
-
-  const existingChargesCount = preview?.existing_charges_count || 0;
-  const canManageSports = ["club_owner", "coach"].includes(store.user?.role);
+  const tournament = tournamentTeam?.tournament;
+  const team = tournamentTeam?.team;
   const canManageFinancial = store.user?.role === "club_owner";
-
-  const allChargesCreated =
-    Boolean(preview) &&
-    preview.registered_players_count > 0 &&
-    existingChargesCount === preview.registered_players_count &&
-    preview.players?.every(
-      (row) =>
-        Number(row.existing_charge?.amount) === Number(row.amount),
-    );
-
-  const clearErrors = (...codes) => {
-    setErrors((previousErrors) => {
-      const updatedErrors = { ...previousErrors };
-
-      codes.forEach((code) => {
-        updatedErrors[code] = false;
-      });
-
-      return updatedErrors;
-    });
-  };
-
-  const togglePlayer = (playerId) => {
-    setShowPlayerList(true);
-    setSelectedPlayerIds((currentIds) => {
-      const isSelected = currentIds.includes(playerId);
-
-      return isSelected
-        ? currentIds.filter((id) => id !== playerId)
-        : [...currentIds, playerId];
-    });
-
-    setSelectionChanged(true);
-    setPreview(null);
-
-    clearErrors(
-      "TOURNAMENT_PLAYERS_REQUIRED",
-      "INVALID_TOURNAMENT_PLAYERS",
-      "PLAYER_NOT_IN_TEAM",
-      "FINANCE_DEPENDENCY",
-    );
-  };
-
-  const selectAllPlayers = () => {
-    const selectableIds = players
-      .filter(
-        (row) =>
-          row.team_status === "active" && row.player?.is_active !== false,
-      )
-      .map((row) => row.player_id);
-    const unavailableRegisteredIds = players
-      .filter(
-        (row) =>
-          selectedPlayerIds.includes(row.player_id) &&
-          (row.team_status !== "active" || row.player?.is_active === false),
-      )
-      .map((row) => row.player_id);
-
-    setSelectedPlayerIds([
-      ...new Set([...selectableIds, ...unavailableRegisteredIds]),
-    ]);
-    setSelectionChanged(true);
-    setPreview(null);
-    clearErrors("FINANCE_DEPENDENCY");
-  };
-
-  const clearSelection = () => {
-    setSelectedPlayerIds([]);
-    setSelectionChanged(true);
-    setPreview(null);
-    clearErrors("FINANCE_DEPENDENCY");
-  };
-
-  const handleSavePlayers = async () => {
-    if (savingPlayers) return;
-
-    setErrors({});
-    setSavingPlayers(true);
-
-    const result = await actions.updateTournamentTeamPlayers(
-      tournament_team_id,
-      selectedPlayerIds,
-    );
-
-    setSavingPlayers(false);
-
-    if (!result.ok) {
-      // Nada se guardó: la selección vuelve a las inscripciones reales.
-      if (result.code === "FINANCE_DEPENDENCY") {
-        await loadTournamentPlayers();
-      }
-
-      setErrors({
-        [result.code || "NETWORK_ERROR"]: true,
-      });
-
-      return;
-    }
-
-    await loadTournamentPlayers();
-    setPreview(null);
-  };
-
-  const handleLoadPreview = async () => {
-    if (loadingPreview) return;
-
-    clearErrors(
-      "TOURNAMENT_PLAYERS_REQUIRED",
-      "INVALID_TOURNAMENT_REGISTRATION_FEE",
-      "TOURNAMENT_REGISTRATION_CHARGES_LOCKED",
-      "NETWORK_ERROR",
-      "FORBIDDEN",
-    );
-
-    setLoadingPreview(true);
-
-    const result = await actions.previewRegistrationCharges(tournament_team_id);
-
-    setLoadingPreview(false);
-
-    if (!result.ok) {
-      setErrors((previousErrors) => ({
-        ...previousErrors,
-        [result.code || "NETWORK_ERROR"]: true,
-      }));
-
-      setPreview(null);
-      return;
-    }
-
-    setPreview(result.data);
-  };
-
-  useEffect(() => {
-    const canLoadPreview =
-      canManageFinancial &&
-      !loadingPage &&
-      !selectionChanged &&
-      registeredCount > 0 &&
-      registrationFee > 0;
-
-    if (!canLoadPreview) {
-      setPreview(null);
-      setShowChargeDetails(false);
-      return;
-    }
-
-    handleLoadPreview();
-  }, [
-    loadingPage,
-    selectionChanged,
-    registeredCount,
-    registrationFee,
-    tournament_team_id,
-    canManageFinancial,
-  ]);
-
-  const handleGenerateCharges = async () => {
-    if (generatingCharges || !preview) return;
-
-    if (preview.existing_charges_count > 0) {
-      const confirmed = window.confirm(
-        "Se actualizarán los cobros pendientes con la distribución actual. Los pagos completados y los recibos generados no serán modificados. ¿Deseas continuar?",
-      );
-
-      if (!confirmed) return;
-    }
-
-    setErrors({});
-    setGeneratingCharges(true);
-
-    const result = await actions.generateRegistrationCharges(
-      tournament_team_id,
-    );
-
-    setGeneratingCharges(false);
-
-    if (!result.ok) {
-      setErrors({
-        [result.code || "NETWORK_ERROR"]: true,
-      });
-
-      return;
-    }
-
-    const previewResult = await actions.previewRegistrationCharges(
-      tournament_team_id,
-    );
-
-    if (previewResult.ok) {
-      setPreview(previewResult.data);
-      setShowChargeDetails(false);
-    }
-  };
-
-  const handleSaveRegistrationFee = async (amount) => {
-    const result = await actions.updateTournamentTeamRegistrationFee(
-      tournament_team_id,
-      amount,
-    );
-
-    if (result.ok) {
-      setTournamentTeam((prev) => ({
-        ...prev,
-        registration_fee: result.data.tournament_team.registration_fee,
-      }));
-      setErrors({});
-    }
-
-    return result;
-  };
-
-  const handleGoToPayments = () => {
-    navigate(
-      `/payments?payment_type=tournament&tournament_team_id=${tournament_team_id}`,
-    );
-  };
-
-  if (loadingPage) {
-    return <p>Cargando inscripción del equipo...</p>;
-  }
-
-  if (!tournamentTeam) {
-    return <p>Participación de torneo no encontrada.</p>;
-  }
-
-  const tournament = tournamentTeam.tournament;
-  const team = tournamentTeam.team;
-
-  const canEditPlayers =
-    canManageSports &&
+  const canEditRoster = Boolean(
+    tournamentTeam &&
+    ["club_owner", "coach"].includes(store.user?.role) &&
     canManage(tournamentTeam) &&
     team?.status === "active" &&
     tournamentTeam.status === "active" &&
-    tournament?.status === "active";
+    tournament?.status === "active" &&
+    tournament?.season_status === "active",
+  );
+
+  const currentRows = useMemo(() => players.filter((row) =>
+    canEditRoster
+      ? row.membership_open !== false || row.is_registered
+      : row.is_registered,
+  ), [players, canEditRoster]);
+  const historicalRows = useMemo(() => players.filter(
+    (row) => row.registration_status === "withdrawn",
+  ), [players]);
+  const visibleRows = useMemo(() => {
+    const normalized = search.trim().toLowerCase();
+    return currentRows.filter((row) => {
+      if (showOnlySelected && !selectedIds.includes(row.player_id)) return false;
+      if (!normalized) return true;
+      return `${row.player?.first_name || ""} ${row.player?.last_name || ""}`
+        .toLowerCase().includes(normalized);
+    });
+  }, [currentRows, search, selectedIds, showOnlySelected]);
+
+  const originalSet = useMemo(() => new Set(originalIds), [originalIds]);
+  const selectedSet = useMemo(() => new Set(selectedIds), [selectedIds]);
+  const additions = selectedIds.filter((id) => !originalSet.has(id));
+  const removals = originalIds.filter((id) => !selectedSet.has(id));
+  const remains = selectedIds.filter((id) => originalSet.has(id));
+  const selectionChanged = additions.length > 0 || removals.length > 0;
+
+  const nameFor = (playerId) => {
+    const row = players.find((item) => item.player_id === playerId);
+    return `${row?.player?.first_name || ""} ${row?.player?.last_name || ""}`.trim();
+  };
+
+  const togglePlayer = (row) => {
+    if (!canEditRoster) return;
+    const selected = selectedSet.has(row.player_id);
+    if (!selected && !row.currently_eligible) return;
+    setSelectedIds((current) => selected
+      ? current.filter((id) => id !== row.player_id)
+      : [...current, row.player_id]);
+    setErrors({});
+    setPreview(null);
+  };
+
+  const selectAll = () => {
+    const eligible = players.filter((row) => row.currently_eligible).map((row) => row.player_id);
+    const existingIneligible = originalIds.filter((id) =>
+      players.some((row) => row.player_id === id && !row.currently_eligible),
+    );
+    setSelectedIds([...new Set([...eligible, ...existingIneligible])]);
+    setErrors({});
+  };
+
+  const saveRoster = async () => {
+    if (saving || !selectionChanged) return;
+    if (removals.length > 0 && confirmType !== "withdraw") {
+      setConfirmType("withdraw");
+      return;
+    }
+
+    setSaving(true);
+    setErrors({});
+    const result = await actions.updateTournamentTeamPlayers(
+      tournament_team_id,
+      selectedIds,
+    );
+    setConfirmType(null);
+
+    if (!result.ok) {
+      setErrors({
+        [result.code || "NETWORK_ERROR"]: true,
+        message: result.message,
+      });
+      await loadRoster({ preserveError: true });
+      setSaving(false);
+      return;
+    }
+
+    await loadRoster();
+    setSaving(false);
+  };
+
+  const loadPreview = async () => {
+    if (!canManageFinancial || loadingPreview) return;
+    setLoadingPreview(true);
+    const result = await actions.previewRegistrationCharges(tournament_team_id);
+    setLoadingPreview(false);
+    if (result.ok) setPreview(result.data);
+    else setErrors({ [result.code || "NETWORK_ERROR"]: true, message: result.message });
+  };
+
+  useEffect(() => {
+    if (
+      canManageFinancial && !loading && !selectionChanged &&
+      originalIds.length > 0 && Number(tournamentTeam?.registration_fee || 0) > 0
+    ) loadPreview();
+    else setPreview(null);
+  }, [loading, selectionChanged, originalIds.length, tournamentTeam?.registration_fee]);
+
+  const generateCharges = async () => {
+    if (!preview || generatingCharges) return;
+    if (preview.existing_charges_count > 0 && confirmType !== "charges") {
+      setConfirmType("charges");
+      return;
+    }
+    setGeneratingCharges(true);
+    const result = await actions.generateRegistrationCharges(tournament_team_id);
+    setConfirmType(null);
+    if (!result.ok) setErrors({ [result.code || "NETWORK_ERROR"]: true, message: result.message });
+    else await loadPreview();
+    setGeneratingCharges(false);
+  };
+
+  const saveRegistrationFee = async (amount) => {
+    const result = await actions.updateTournamentTeamRegistrationFee(tournament_team_id, amount);
+    if (result.ok) await loadRoster();
+    return result;
+  };
+
+  const createMatch = () => {
+    const params = new URLSearchParams(location.search);
+    params.set("tournament_team", tournament_team_id);
+    navigate(`/teams/${team.id}/matches/new?${params.toString()}`);
+  };
+
+  if (loading) return <p role="status">Cargando participación del torneo...</p>;
+
+  if (!tournamentTeam) {
+    const message = loadError?.status === 403
+      ? "No tienes acceso a esta participación."
+      : loadError?.status === 404
+      ? "Participación de torneo no encontrada."
+      : "No se pudo cargar la participación del torneo.";
+    return <Card><div className="empty-state" role="alert"><h3>{message}</h3>{loadError?.status !== 404 && <Button onClick={loadRoster}>Volver a intentar</Button>}</div></Card>;
+  }
+
+  const registrationFee = Number(tournamentTeam.registration_fee || 0);
+  const estimatedPerPlayer = originalIds.length ? registrationFee / originalIds.length : 0;
+  const canCreateMatch = canEditRoster && eligibleCount > 0;
+  const backPath = `/tournaments/${tournamentTeam.tournament_id}${location.search}`;
+  const thisPath = `/tournament-teams/${tournament_team_id}${location.search}`;
+  const firstErrorCode = Object.keys(errors).find((code) => errors[code] === true);
 
   return (
     <div className="tournament-team-detail-page">
       <PageHeader
         variant="detail"
-        eyebrow={tournament?.name || "Torneo"}
+        eyebrow={`${tournament?.name || "Torneo"} · ${team?.category?.name || "Categoría"}`}
         title={team?.name || "Equipo"}
-        subtitle={`${registeredCount} ${
-          registeredCount === 1
-            ? "deportista inscrita"
-            : "deportistas inscritas"
-        }`}
-        onBack={() => navigate(`/tournaments/${tournamentTeam.tournament_id}`)}
+        subtitle={`${originalIds.length} en roster actual · ${historicalRows.length} retirados`}
+        onBack={() => navigate(backPath)}
       />
 
-      {!canManage(tournamentTeam) && (
-        <ReadOnlyNotice>
-          Estás consultando la inscripción de un equipo que no tienes asignado.
-        </ReadOnlyNotice>
-      )}
+      {tournament?.season_status === "closed" && <div className="tournament-context-banner historical" role="status">Consulta histórica · Temporada {tournament.season_name} cerrada</div>}
+      {!canManage(tournamentTeam) && <ReadOnlyNotice>Solo consulta · este equipo no está dentro de tu scope de gestión.</ReadOnlyNotice>}
+      {tournament?.status !== "active" && <ReadOnlyNotice>Torneo {tournament?.status === "completed" ? "completado" : "cancelado"} · la información deportiva es histórica.</ReadOnlyNotice>}
 
-      <section className="tournament-detail-section">
-        <div className="tournament-section-title">
-          <span className="tournament-section-step">1</span>
+      {firstErrorCode && <div className="tournament-inline-alert danger" role="alert"><AlertCircle size={18} /><div><strong>{errors.message || errorMessages[firstErrorCode] || errorMessages.NETWORK_ERROR}</strong>{["FINANCE_DEPENDENCY", "TOURNAMENT_PLAYERS_FINANCIALLY_LOCKED"].includes(firstErrorCode) && <p>El roster real fue actualizado de nuevo y ningún retiro bloqueado se aplicó.</p>}{["PLAYER_NOT_AVAILABLE_FOR_TOURNAMENT", "TOURNAMENT_ROSTER_CHANGED"].includes(firstErrorCode) && <p>La elegibilidad cambió durante el guardado. Revisa la selección actual.</p>}</div></div>}
 
-          <div>
-            <h3>Deportistas inscritas</h3>
-            <p>Selecciona quiénes representarán al equipo en este torneo.</p>
-          </div>
-        </div>
-
+      <section className="tournament-detail-section" aria-labelledby="current-roster-title">
+        <div className="tournament-section-heading"><div><h2 id="current-roster-title">Roster actual</h2><p>El roster del torneo define quiénes pueden participar en nuevos partidos. Cada partido mantiene su propia convocatoria y elegibilidad.</p></div></div>
         <Card className="tournament-player-selection-card">
-          <div className="tournament-selection-header">
-            <div>
-              <h4>Plantilla del torneo</h4>
+          {canEditRoster && <div className="tournament-roster-toolbar">
+            <input className="input" type="search" value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Buscar deportista" aria-label="Buscar deportista" />
+            <Button type="button" variant="secondary" onClick={selectAll}>Seleccionar elegibles</Button>
+            <Button type="button" variant="secondary" onClick={() => setSelectedIds([])}>Limpiar selección</Button>
+            <button type="button" className="tournament-selected-filter" aria-pressed={showOnlySelected} onClick={() => setShowOnlySelected((current) => !current)}>{showOnlySelected ? "Mostrar todas" : "Solo seleccionadas"}</button>
+          </div>}
 
-              <p>
-                Solo las deportistas guardadas aquí estarán disponibles en los
-                partidos de este torneo.
-              </p>
-            </div>
+          {visibleRows.length === 0 ? <div className="empty-state"><Users size={28} /><p>No hay deportistas en este grupo.</p></div> : <div className="tournament-player-list">
+            {visibleRows.map((row) => {
+              const selected = selectedSet.has(row.player_id);
+              const unavailable = !row.currently_eligible;
+              return canEditRoster ? <button
+                type="button"
+                key={row.player_id}
+                className={`tournament-player-option ${selected ? "selected" : ""}`}
+                aria-pressed={selected}
+                disabled={!selected && unavailable}
+                onClick={() => togglePlayer(row)}
+              >
+                <span className="tournament-player-check" aria-hidden="true">{selected && <Check size={16} />}</span>
+                <span className="tournament-player-copy"><strong>{row.player?.first_name} {row.player?.last_name}</strong><span>#{row.player_number || "—"}{row.player?.main_position ? ` · ${row.player.main_position}` : ""}</span></span>
+                {row.registration_status === "withdrawn" && !selected && !unavailable
+                  ? <span className="status-badge status-muted">Retirado · disponible para reactivar</span>
+                  : unavailable && <span className="status-badge status-warning">No elegible para nuevos partidos</span>}
+              </button> : row.is_registered ? <div key={row.player_id} className="tournament-player-history-row"><div><strong>{row.player?.first_name} {row.player?.last_name}</strong><span>#{row.player_number || "—"}</span></div>{unavailable ? <span className="status-badge status-warning">Actualmente no elegible</span> : <span className="status-badge status-success">Inscrito al cierre</span>}</div> : null;
+            })}
+          </div>}
 
-            {canEditPlayers && (
-              <div className="tournament-selection-toolbar">
-                <div className="tournament-selection-count">
-                  <strong>{registeredCount}</strong>
-                  <span>de {selectablePlayers.length} seleccionadas</span>
-                </div>
-
-                <div className="tournament-selection-links">
-                  <button
-                    type="button"
-                    onClick={selectAllPlayers}
-                    disabled={registeredCount === selectablePlayers.length}
-                  >
-                    Seleccionar todas
-                  </button>
-
-                  <button
-                    type="button"
-                    onClick={clearSelection}
-                    disabled={registeredCount === 0}
-                  >
-                    Limpiar
-                  </button>
-                </div>
-              </div>
-            )}
-
-            {players.length > 0 && (
-              <div className="tournament-roster-controls">
-                <button
-                  type="button"
-                  className="tournament-roster-toggle"
-                  onClick={() => {
-                    setShowPlayerList((current) => !current);
-                    setShowOnlySelected(false);
-                  }}
-                >
-                  {showPlayerList ? "Ocultar plantilla" : "Ver plantilla"}
-                </button>
-
-                {showPlayerList && registeredCount > 0 && (
-                  <button
-                    type="button"
-                    className={`tournament-selected-filter ${
-                      showOnlySelected ? "active" : ""
-                    }`}
-                    onClick={() => setShowOnlySelected((current) => !current)}
-                  >
-                    {showOnlySelected ? "Mostrar todas" : "Solo seleccionadas"}
-                  </button>
-                )}
-              </div>
-            )}
-          </div>
-
-          {players.length === 0 ? (
-            <div className="empty-state">
-              <Users size={30} />
-
-              <h4>El equipo no tiene deportistas</h4>
-
-              <p>Primero debes agregar deportistas al equipo.</p>
-            </div>
-          ) : showPlayerList ? (
-            <div className="tournament-player-list">
-              {visiblePlayers.map((row) => {
-                const isSelected = selectedPlayerIds.includes(row.player_id);
-
-                const isUnavailable =
-                  !isSelected &&
-                  (row.team_status !== "active" ||
-                    row.player?.is_active === false);
-
-                return (
-                  <button
-                    type="button"
-                    key={row.player_id}
-                    className={`tournament-player-option ${
-                      isSelected ? "selected" : ""
-                    }`}
-                    disabled={!canEditPlayers || isUnavailable}
-                    onClick={() => togglePlayer(row.player_id)}
-                  >
-                    <div className="tournament-player-check">
-                      {isSelected && <Check size={16} />}
-                    </div>
-
-                    <div className="tournament-player-copy">
-                      <strong>
-                        {row.player?.first_name} {row.player?.last_name}
-                      </strong>
-
-                      <span>
-                        #{row.player_number}
-                        {row.player?.main_position
-                          ? ` · ${row.player.main_position}`
-                          : ""}
-                        {row.membership_open === false
-                          ? " · Ya no pertenece al equipo"
-                          : ""}
-                      </span>
-                    </div>
-
-                    {canEditPlayers && isUnavailable && (
-                      <span className="status-badge status-muted">
-                        No disponible
-                      </span>
-                    )}
-                  </button>
-                );
-              })}
-            </div>
-          ) : null}
-
-          {errors.FINANCE_DEPENDENCY && (
-            <div className="tournament-inline-alert danger">
-              <AlertCircle size={18} />
-
-              <p>{errorMessages.FINANCE_DEPENDENCY}</p>
-            </div>
-          )}
-
-          {errors.TOURNAMENT_PLAYERS_FINANCIALLY_LOCKED && (
-            <div className="tournament-inline-alert danger">
-              <AlertCircle size={18} />
-
-              <p>{errorMessages.TOURNAMENT_PLAYERS_FINANCIALLY_LOCKED}</p>
-            </div>
-          )}
-
-          {errors.INVALID_TOURNAMENT_PLAYERS && (
-            <p className="form-error">
-              {errorMessages.INVALID_TOURNAMENT_PLAYERS}
-            </p>
-          )}
-
-          {errors.PLAYER_NOT_IN_TEAM && (
-            <p className="form-error">{errorMessages.PLAYER_NOT_IN_TEAM}</p>
-          )}
-
-          {errors.PLAYER_NOT_AVAILABLE_FOR_TOURNAMENT && (
-            <p className="form-error">
-              {errorMessages.PLAYER_NOT_AVAILABLE_FOR_TOURNAMENT}
-            </p>
-          )}
-
-          {selectionChanged && !errors.TOURNAMENT_PLAYERS_FINANCIALLY_LOCKED && (
-            <div className="tournament-unsaved-notice">
-              <AlertCircle size={17} />
-              <span>Tienes cambios sin guardar.</span>
-            </div>
-          )}
-
-          {canEditPlayers && (
-            <div className="form-actions tournament-selection-actions">
-              {errors.TOURNAMENT_PLAYERS_FINANCIALLY_LOCKED ? (
-                <Button
-                  type="button"
-                  variant="secondary"
-                  onClick={() => {
-                    clearErrors("TOURNAMENT_PLAYERS_FINANCIALLY_LOCKED");
-                    loadTournamentPlayers();
-                  }}
-                >
-                  Restaurar selección
-                </Button>
-              ) : (
-                <Button
-                  type="button"
-                  onClick={handleSavePlayers}
-                  disabled={
-                    savingPlayers || !selectionChanged || players.length === 0
-                  }
-                >
-                  {savingPlayers ? "Guardando..." : "Guardar deportistas"}
-                </Button>
-              )}
-            </div>
-          )}
+          {canEditRoster && selectionChanged && <div className="tournament-roster-diff" role="status">
+            <div><strong>{remains.length}</strong><span>Permanecen</span></div>
+            <div><strong>{additions.length}</strong><span>Se incorporan</span>{additions.slice(0, 3).map((id) => <small key={id}>{nameFor(id)}</small>)}</div>
+            <div><strong>{removals.length}</strong><span>Se retiran</span>{removals.slice(0, 3).map((id) => <small key={id}>{nameFor(id)}</small>)}</div>
+          </div>}
+          <p className="tournament-history-help">Los partidos ya registrados conservan su historial.</p>
+          {canEditRoster && <div className="form-actions"><Button type="button" onClick={saveRoster} disabled={!selectionChanged || saving}>{saving ? "Guardando..." : "Guardar roster"}</Button></div>}
         </Card>
       </section>
 
-      {canManageFinancial && (
-      <section className="tournament-detail-section">
-        <div className="tournament-section-title">
-          <span className="tournament-section-step">2</span>
-
-          <div>
-            <h3>Distribución del costo</h3>
-            <p>
-              Revisa cómo se distribuirá la inscripción entre las deportistas
-              guardadas.
-            </p>
-          </div>
-        </div>
-
-        {tournamentTeam.status === "active" && tournament?.status === "active" && (
-          <Card className="mb-4">
-            <FeeEditor
-              label="Costo de inscripción"
-              value={tournamentTeam.registration_fee}
-              currencyCode={tournamentTeam.currency_code}
-              helper="Los cobros pendientes no cambian solos: revisa la distribución y actualízala después de guardar."
-              onSave={handleSaveRegistrationFee}
-            />
-          </Card>
-        )}
-
-        <Card className="tournament-cost-summary-card">
-          <div>
-            <span>Inscripción del equipo</span>
-            <strong>
-              {formatMoney(registrationFee, tournamentTeam.currency_code)}
-            </strong>
-          </div>
-
-          <div>
-            <span>Deportistas</span>
-            <strong>{registeredCount}</strong>
-          </div>
-
-          <div>
-            <span>Por deportista</span>
-            <strong>
-              {registeredCount > 0
-                ? formatMoney(
-                    estimatedAmountPerPlayer,
-                    tournamentTeam.currency_code,
-                  )
-                : "—"}
-            </strong>
-          </div>
-        </Card>
-
-        <Card className="tournament-charge-card">
-          <div className="tournament-charge-heading">
-            <div>
-              <h4>Cobros por deportista</h4>
-
-              <p>
-                El costo se divide automáticamente entre las deportistas
-                guardadas. Confirma para crear los cobros en Pagos.
-              </p>
-            </div>
-          </div>
-
-          {selectionChanged && (
-            <div className="tournament-inline-alert">
-              <AlertCircle size={18} />
-
-              <p>Guarda la plantilla para calcular la nueva distribución.</p>
-            </div>
-          )}
-
-          {!selectionChanged && registeredCount === 0 && (
-            <div className="tournament-inline-alert">
-              <AlertCircle size={18} />
-
-              <p>Selecciona y guarda al menos una deportista.</p>
-            </div>
-          )}
-
-          {registrationFee <= 0 && (
-            <div className="tournament-inline-alert">
-              <AlertCircle size={18} />
-
-              <p>
-                Este equipo no tiene un costo de inscripción mayor que cero.
-              </p>
-            </div>
-          )}
-
-          {loadingPreview && (
-            <div className="tournament-charge-loading">
-              Calculando distribución...
-            </div>
-          )}
-
-          {errors.TOURNAMENT_PLAYERS_REQUIRED && (
-            <p className="form-error">
-              {errorMessages.TOURNAMENT_PLAYERS_REQUIRED}
-            </p>
-          )}
-
-          {errors.INVALID_TOURNAMENT_REGISTRATION_FEE && (
-            <p className="form-error">
-              {errorMessages.INVALID_TOURNAMENT_REGISTRATION_FEE}
-            </p>
-          )}
-
-          {errors.TOURNAMENT_REGISTRATION_CHARGES_LOCKED && (
-            <div className="tournament-inline-alert danger">
-              <AlertCircle size={18} />
-
-              <p>{errorMessages.TOURNAMENT_REGISTRATION_CHARGES_LOCKED}</p>
-            </div>
-          )}
-
-          {preview && (
-            <>
-              {allChargesCreated ? (
-                <div className="tournament-financial-success">
-                  <div className="tournament-financial-success-icon">
-                    <CircleCheck size={20} />
-                  </div>
-
-                  <div>
-                    <strong>
-                      {existingChargesCount}{" "}
-                      {existingChargesCount === 1
-                        ? "cobro creado"
-                        : "cobros creados"}
-                    </strong>
-
-                    <span>Los pagos y recibos se administran desde Pagos.</span>
-                  </div>
-                </div>
-              ) : (
-                <div className="tournament-distribution-ready">
-                  <span>Distribución lista</span>
-
-                  <strong>
-                    {preview.registered_players_count}{" "}
-                    {preview.registered_players_count === 1
-                      ? "cobro"
-                      : "cobros"}{" "}
-                    de {formatMoney(
-                      estimatedAmountPerPlayer,
-                      preview.currency_code || tournamentTeam.currency_code,
-                    )}
-                  </strong>
-                </div>
-              )}
-
-              <div className="tournament-charge-summary">
-                <div>
-                  <span>Monto total</span>
-                  <strong>
-                    {formatMoney(
-                      preview.registration_fee,
-                      preview.currency_code || tournamentTeam.currency_code,
-                    )}
-                  </strong>
-                </div>
-
-                <div>
-                  <span>Deportistas</span>
-                  <strong>{preview.registered_players_count}</strong>
-                </div>
-
-                <div>
-                  <span>Por deportista</span>
-                  <strong>
-                    {formatMoney(
-                      estimatedAmountPerPlayer,
-                      preview.currency_code || tournamentTeam.currency_code,
-                    )}
-                  </strong>
-                </div>
-              </div>
-
-              {preview.players?.length > 0 && (
-                <button
-                  type="button"
-                  className="tournament-charge-details-toggle"
-                  onClick={() => setShowChargeDetails((current) => !current)}
-                >
-                  {showChargeDetails
-                    ? "Ocultar detalle"
-                    : "Ver detalle de cobros"}
-                </button>
-              )}
-
-              {showChargeDetails && (
-                <div className="tournament-charge-list">
-                  {preview.players?.map((row) => {
-                    const paymentStatus = row.existing_charge
-                      ? getPaymentStatus(row.existing_charge.status)
-                      : null;
-
-                    return (
-                      <div
-                        key={row.player_id}
-                        className="tournament-charge-row"
-                      >
-                        <div>
-                          <strong>
-                            {row.player?.first_name} {row.player?.last_name}
-                          </strong>
-
-                          <span>
-                            #{row.player_number}
-                            {row.existing_charge
-                              ? " · Cobro creado"
-                              : " · Por crear"}
-                          </span>
-                        </div>
-
-                        <div className="tournament-charge-row-side">
-                          {paymentStatus && (
-                            <span
-                              className={`status-badge ${paymentStatus.className}`}
-                            >
-                              {paymentStatus.label}
-                            </span>
-                          )}
-
-                          <strong>
-                            {formatMoney(
-                              row.amount,
-                              preview.currency_code ||
-                                tournamentTeam.currency_code,
-                            )}
-                          </strong>
-                        </div>
-                      </div>
-                    );
-                  })}
-                </div>
-              )}
-
-              <div className="tournament-financial-actions">
-                {!allChargesCreated ? (
-                  <Button
-                    type="button"
-                    onClick={handleGenerateCharges}
-                    disabled={generatingCharges || !preview.can_generate}
-                  >
-                    {generatingCharges
-                      ? "Creando cobros..."
-                      : `Crear ${preview.registered_players_count} ${
-                          preview.registered_players_count === 1
-                            ? "cobro"
-                            : "cobros"
-                        } de ${formatMoney(
-                          estimatedAmountPerPlayer,
-                          preview.currency_code || tournamentTeam.currency_code,
-                        )}`}
-                  </Button>
-                ) : (
-                  <Button type="button" onClick={handleGoToPayments}>
-                    Ver cobros en Pagos
-                    <ArrowRight size={17} />
-                  </Button>
-                )}
-              </div>
-            </>
-          )}
-
-          {(errors.NETWORK_ERROR || errors.FORBIDDEN) && (
-            <p className="form-error">
-              {errors.NETWORK_ERROR
-                ? errorMessages.NETWORK_ERROR
-                : errorMessages.FORBIDDEN}
-            </p>
-          )}
-        </Card>
+      <section className="tournament-detail-section" aria-labelledby="roster-history-title">
+        <div className="tournament-section-heading"><div><h2 id="roster-history-title">Historial de inscripciones</h2><p>Los retiros se conservan; nunca se convierten en personas que “nunca estuvieron”.</p></div></div>
+        <Card>{historicalRows.length === 0 ? <p>No hay participantes retirados.</p> : <div className="tournament-player-history-list">{historicalRows.map((row) => <div key={row.player_id} className="tournament-player-history-row"><div><strong>{row.player?.first_name} {row.player?.last_name}</strong><span>#{row.player_number || "—"}</span></div><span className="status-badge status-muted">Retirado</span></div>)}</div>}</Card>
       </section>
-      )}
+
+      <section className="tournament-detail-section" aria-labelledby="team-matches-title">
+        <div className="tournament-section-heading"><div><h2 id="team-matches-title">Partidos</h2><p>Partidos de este equipo dentro del torneo.</p></div>{canCreateMatch && <Button onClick={createMatch}>Crear partido</Button>}</div>
+        {canEditRoster && eligibleCount === 0 && <div className="tournament-inline-alert warning" role="status"><AlertCircle size={18} /><span>Necesitas al menos una persona elegible en el roster para crear un partido.</span></div>}
+        {matches.length === 0 ? <Card><div className="empty-state"><CalendarDays size={28} /><p>No hay partidos registrados para este equipo.</p></div></Card> : <div className="tournament-match-list">{matches.map((match) => <Link key={match.id} className="tournament-match-row" to={`/matches/${match.id}${contextQuery ? `?${contextQuery}` : ""}`} state={{ from: thisPath }}><div><strong>{match.opponent_name || "Rival"}</strong><span>{formatDate(match.date)}</span></div><div className="tournament-match-side"><span className={`status-badge ${match.is_completed ? "status-success" : "status-warning"}`}>{match.is_completed ? "Completado" : "Abierto"}</span>{match.is_completed ? <strong>{match.home_sets}–{match.opponent_sets}</strong> : <span>Revisar partido</span>}</div></Link>)}</div>}
+      </section>
+
+      {canManageFinancial && <section className="tournament-detail-section tournament-admin-section" aria-labelledby="registration-admin-title">
+        <div className="tournament-section-heading"><div><h2 id="registration-admin-title">Inscripción y pagos</h2><p>Administración financiera separada del roster y los partidos.</p></div></div>
+        {canEditRoster && <Card><FeeEditor label="Costo de inscripción" value={tournamentTeam.registration_fee} currencyCode={tournamentTeam.currency_code} helper="Los cobros pendientes no cambian automáticamente. Los pagos y recibos existentes se conservan." onSave={saveRegistrationFee} /></Card>}
+        <Card className="tournament-cost-summary-card"><div><span>Inscripción del equipo</span><strong>{formatMoney(registrationFee, tournamentTeam.currency_code)}</strong></div><div><span>Deportistas</span><strong>{originalIds.length}</strong></div><div><span>Por deportista</span><strong>{originalIds.length ? formatMoney(estimatedPerPlayer, tournamentTeam.currency_code) : "—"}</strong></div></Card>
+        {loadingPreview && <p role="status">Calculando distribución...</p>}
+        {preview && <Card className="tournament-charge-card">
+          <div className="tournament-charge-heading"><div><h3>Cobros por deportista</h3><p>Los pagos y recibos se administran desde Pagos.</p></div></div>
+          <div className="tournament-charge-summary"><div><span>Cobros existentes</span><strong>{preview.existing_charges_count}</strong></div><div><span>Participantes</span><strong>{preview.registered_players_count}</strong></div></div>
+          {preview.players?.length > 0 && <button type="button" className="tournament-charge-details-toggle" aria-expanded={showChargeDetails} onClick={() => setShowChargeDetails((current) => !current)}>{showChargeDetails ? "Ocultar detalle" : "Ver detalle de cobros"}</button>}
+          {showChargeDetails && <div className="tournament-charge-list">{preview.players.map((row) => { const [label, className] = paymentStatus(row.existing_charge?.status); return <div key={row.player_id} className="tournament-charge-row"><div><strong>{row.player?.first_name} {row.player?.last_name}</strong><span>#{row.player_number || "—"}</span></div><div className="tournament-charge-row-side">{row.existing_charge && <span className={`status-badge ${className}`}>{label}</span>}<strong>{formatMoney(row.amount, preview.currency_code)}</strong></div></div>; })}</div>}
+          <div className="tournament-financial-actions">{preview.can_generate && <Button onClick={generateCharges} disabled={generatingCharges}>{generatingCharges ? "Actualizando..." : "Crear o actualizar cobros"}</Button>}<Button variant="secondary" onClick={() => navigate(`/payments?payment_type=tournament&tournament_team_id=${tournament_team_id}`)}>Ver en Pagos <ArrowRight size={17} /></Button></div>
+        </Card>}
+      </section>}
+
+      {confirmType === "withdraw" && <ConfirmationDialog busy={saving} danger title="Confirmar retiros del roster" titleId="roster-withdraw-title" descriptionId="roster-withdraw-copy" confirmLabel={`Retirar ${removals.length}`} onCancel={() => setConfirmType(null)} onConfirm={saveRoster}><p>Se retirarán {removals.length} participantes del roster activo. Los partidos ya registrados conservarán su historial.</p><p>Los pagos realizados o con recibo pueden bloquear la operación; ningún retiro se aplicará parcialmente.</p></ConfirmationDialog>}
+      {confirmType === "charges" && <ConfirmationDialog busy={generatingCharges} title="Actualizar cobros" titleId="charges-update-title" descriptionId="charges-update-copy" confirmLabel="Actualizar distribución" onCancel={() => setConfirmType(null)} onConfirm={generateCharges}><p>Se actualizarán los cobros pendientes con la distribución actual. Los pagos completados y recibos no se modificarán.</p></ConfirmationDialog>}
     </div>
   );
 };

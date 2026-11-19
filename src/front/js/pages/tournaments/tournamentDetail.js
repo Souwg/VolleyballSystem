@@ -1,5 +1,7 @@
-import React, { useContext, useEffect, useState } from "react";
-import { useNavigate, useParams } from "react-router-dom";
+import React, { useContext, useEffect, useRef, useState } from "react";
+import { Link, useLocation, useNavigate, useParams } from "react-router-dom";
+import { AlertCircle, CalendarDays, CircleDot, Trophy, Users } from "lucide-react";
+
 import { Context } from "../../store/appContext";
 import { PageHeader } from "../../component/ui/pageHeader";
 import { Input } from "../../component/ui/input";
@@ -7,15 +9,11 @@ import { FormField } from "../../component/ui/formField";
 import { Select } from "../../component/ui/select";
 import { Button } from "../../component/ui/button";
 import { Card } from "../../component/ui/card";
+import { ConfirmationDialog } from "../../component/ui/confirmationDialog";
+import { AssignedBadge, ReadOnlyBadge } from "../../component/ui/readOnlyNotice";
+import { FeeEditor } from "../../component/feeEditor";
 import { errorMessages } from "../../utils/errorMessages";
 import { formatMoney } from "../../utils/money";
-import { Trophy, Users, CalendarDays, DollarSign } from "lucide-react";
-
-import {
-  AssignedBadge,
-  ReadOnlyBadge,
-} from "../../component/ui/readOnlyNotice";
-import { FeeEditor } from "../../component/feeEditor";
 import {
   canConfigureSportsFinance,
   canManage,
@@ -26,593 +24,389 @@ import {
 } from "../../utils/coachAccess";
 import "../../../styles/tournaments.css";
 
-const formatDate = (dateValue) => {
-  if (!dateValue) return "Sin fecha";
+const formatDate = (value) => value
+  ? new Intl.DateTimeFormat("es", {
+      day: "2-digit", month: "short", year: "numeric", timeZone: "UTC",
+    }).format(new Date(`${value}T00:00:00Z`))
+  : "Sin fecha";
 
-  return new Intl.DateTimeFormat("es", {
-    day: "2-digit",
-    month: "short",
-    year: "numeric",
-    timeZone: "UTC",
-  }).format(new Date(`${dateValue}T00:00:00Z`));
-};
+const getStatusData = (status) => ({
+  active: { label: "Activo", className: "status-success" },
+  completed: { label: "Completado", className: "status-info" },
+  cancelled: { label: "Cancelado", className: "status-danger" },
+}[status] || { label: status || "Sin estado", className: "status-muted" });
 
-const getStatusData = (status) => {
-  const statuses = {
-    active: {
-      label: "Activo",
-      className: "status-success",
-    },
-    completed: {
-      label: "Completado",
-      className: "status-info",
-    },
-    cancelled: {
-      label: "Cancelado",
-      className: "status-danger",
-    },
-  };
-
-  return (
-    statuses[status] || {
-      label: status || "Sin estado",
-      className: "status-muted",
-    }
-  );
-};
+const MatchRow = ({ contextQuery, from, match }) => (
+  <Link
+    className="tournament-match-row"
+    to={`/matches/${match.id}${contextQuery ? `?${contextQuery}` : ""}`}
+    state={{ from }}
+  >
+    <div>
+      <strong>{match.team_name || "Equipo"} · {match.opponent_name || "Rival"}</strong>
+      <span>{formatDate(match.date)}</span>
+    </div>
+    <div className="tournament-match-side">
+      <span className={`status-badge ${match.is_completed ? "status-success" : "status-warning"}`}>
+        {match.is_completed ? "Completado" : "Abierto"}
+      </span>
+      {match.is_completed && <strong>{match.home_sets}–{match.opponent_sets}</strong>}
+      {!match.is_completed && <span>Revisar partido</span>}
+    </div>
+  </Link>
+);
 
 export const TournamentDetail = () => {
   const { store, actions } = useContext(Context);
   const { tournament_id } = useParams();
   const navigate = useNavigate();
+  const location = useLocation();
+  const loadRequestId = useRef(0);
+  const teamsRequestId = useRef(0);
+  const contextQuery = location.search.replace(/^\?/, "");
+  const detailPath = `/tournaments/${tournament_id}${location.search}`;
 
   const [tournament, setTournament] = useState(null);
-  const [tournamentTeams, setTournamentTeams] = useState([]);
-  const [loadingTournament, setLoadingTournament] = useState(true);
-
-  const [showAddTeamForm, setShowAddTeamForm] = useState(false);
+  const [teams, setTeams] = useState([]);
+  const [loadError, setLoadError] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [showAddTeam, setShowAddTeam] = useState(false);
+  const [showMetadata, setShowMetadata] = useState(false);
+  const [dialogTarget, setDialogTarget] = useState(null);
   const [teamId, setTeamId] = useState("");
   const [registrationFee, setRegistrationFee] = useState("");
   const [errors, setErrors] = useState({});
-  const [loadingSubmit, setLoadingSubmit] = useState(false);
-  const [transitioningStatus, setTransitioningStatus] = useState(null);
+  const [busy, setBusy] = useState(false);
+  const [metadata, setMetadata] = useState({});
 
-  const loadTournamentDetail = async () => {
-    setLoadingTournament(true);
+  const loadTournament = async () => {
+    const requestId = ++loadRequestId.current;
+    setLoading(true);
+    setLoadError(null);
+    setTournament(null);
 
-    try {
-      const result = await actions.getTournamentDetail(tournament_id);
+    const result = await actions.getTournamentDetail(tournament_id);
+    if (requestId !== loadRequestId.current || result.code === "STALE_RESPONSE") return;
 
-      if (result.ok) {
-        const loadedTournament = result.data.tournament;
-
-        setTournament(loadedTournament);
-        setTournamentTeams(loadedTournament?.teams || []);
-        return;
-      }
-
-      setTournament(null);
-      setTournamentTeams([]);
-    } finally {
-      setLoadingTournament(false);
+    if (result.ok) {
+      setTournament(result.data.tournament);
+      setMetadata({
+        name: result.data.tournament.name || "",
+        organizer_name: result.data.tournament.organizer_name || "",
+        start_date: result.data.tournament.start_date || "",
+        end_date: result.data.tournament.end_date || "",
+      });
+    } else {
+      setLoadError(result);
     }
+    setLoading(false);
+  };
+
+  const loadAvailableTeams = async () => {
+    const requestId = ++teamsRequestId.current;
+    const result = await actions.getTeams();
+    if (requestId !== teamsRequestId.current) return;
+    setTeams(result.ok ? result.data.teams || [] : []);
   };
 
   useEffect(() => {
-    loadTournamentDetail();
+    loadTournament();
+    loadAvailableTeams();
+    return () => {
+      loadRequestId.current += 1;
+      teamsRequestId.current += 1;
+    };
   }, [tournament_id]);
 
   useTeamAccessLost(() => {
-    loadTournamentDetail();
-    actions.getTeams();
+    loadTournament();
+    loadAvailableTeams();
   });
 
-  useEffect(() => {
-    const loadTeams = async () => {
-      if (!store.teams || store.teams.length === 0) {
-        await actions.getTeams();
-      }
-    };
+  const entries = tournament?.teams || [];
+  const matches = tournament?.matches || [];
+  const scopedCoach = isScopedCoach(store);
+  const canConfigureFinance = canConfigureSportsFinance(store);
+  const canManageTournament = Boolean(tournament && canManage(tournament));
+  const isOperational =
+    tournament?.status === "active" && tournament?.season_status === "active";
+  const canEditTournament = isOperational && canManageTournament;
+  // A scoped Coach cannot mutate Tournament metadata/lifecycle, but can add
+  // an assigned Team. The selectable list remains scoped by getManageableTeams.
+  const canAddTeam = Boolean(
+    isOperational && ["club_owner", "coach"].includes(store.user?.role),
+  );
+  const availableTeams = getManageableTeams(teams).filter((team) =>
+    team.status === "active" &&
+    team.season_id === tournament?.season_id &&
+    !entries.some((entry) => entry.team_id === team.id),
+  );
 
-    loadTeams();
-  }, []);
-
-  const closeAddTeamForm = () => {
-    setShowAddTeamForm(false);
-    setTeamId("");
-    setRegistrationFee("");
-    setErrors({});
-  };
-
-  const clearError = (...codes) => {
-    setErrors((previousErrors) => {
-      const updatedErrors = { ...previousErrors };
-
-      codes.forEach((code) => {
-        updatedErrors[code] = false;
-      });
-
-      return updatedErrors;
+  const setActionError = (result) => {
+    setErrors({
+      [result.code || "NETWORK_ERROR"]: true,
+      raw: result.raw || null,
+      message: result.message,
     });
   };
 
   const handleAddTeam = async (event) => {
     event.preventDefault();
-
-    if (loadingSubmit) return;
-
-    setErrors({});
-
-    const newErrors = {};
-
-    if (!teamId) {
-      newErrors.TEAM_ID_REQUIRED = true;
-    }
-
-    if (registrationFee !== "") {
-      const parsedRegistrationFee = Number(registrationFee);
-
-      if (Number.isNaN(parsedRegistrationFee) || parsedRegistrationFee < 0) {
-        newErrors.INVALID_AMOUNT = true;
-      }
-    }
-
-    if (Object.keys(newErrors).length > 0) {
-      setErrors(newErrors);
+    if (busy || !teamId) {
+      if (!teamId) setErrors({ TEAM_ID_REQUIRED: true });
       return;
     }
-
-    setLoadingSubmit(true);
-
+    setBusy(true);
+    setErrors({});
     const result = await actions.addTeamToTournament(tournament_id, {
       team_id: teamId,
-      ...(canConfigureSportsFinance(store) && {
+      ...(canConfigureFinance && {
         registration_fee: registrationFee === "" ? 0 : registrationFee,
       }),
     });
 
     if (!result.ok) {
-      setErrors({
-        [result.code || "NETWORK_ERROR"]: true,
-      });
-
-      setLoadingSubmit(false);
+      setActionError(result);
+      if (result.code === "TEAM_ALREADY_IN_TOURNAMENT") {
+        await Promise.all([loadTournament(), loadAvailableTeams()]);
+      }
+      setBusy(false);
       return;
     }
 
-    await loadTournamentDetail();
-
-    closeAddTeamForm();
-    setLoadingSubmit(false);
+    setShowAddTeam(false);
+    setTeamId("");
+    setRegistrationFee("");
+    await Promise.all([loadTournament(), loadAvailableTeams()]);
+    setBusy(false);
   };
 
-  const handleSaveDefaultRefereeFee = async (amount) => {
+  const handleSaveMetadata = async (event) => {
+    event.preventDefault();
+    if (busy) return;
+    setBusy(true);
+    setErrors({});
+    const result = await actions.updateTournament(tournament_id, metadata);
+
+    if (!result.ok) {
+      setActionError(result);
+      if (["TOURNAMENT_NOT_ACTIVE", "INVALID_TOURNAMENT_STATUS", "SEASON_CLOSED"].includes(result.code)) {
+        setShowMetadata(false);
+        await loadTournament();
+      }
+      setBusy(false);
+      return;
+    }
+
+    setShowMetadata(false);
+    await loadTournament();
+    setBusy(false);
+  };
+
+  const saveDefaultFee = async (amount) => {
     const result = await actions.updateTournament(tournament_id, {
       default_referee_fee: amount,
     });
-
-    if (result.ok) {
-      setTournament((prev) => ({
-        ...prev,
-        default_referee_fee: result.data.tournament.default_referee_fee,
-      }));
-    }
-
+    if (result.ok) await loadTournament();
+    else if (result.code === "TOURNAMENT_NOT_ACTIVE") await loadTournament();
     return result;
   };
 
-  const handleStatusTransition = async (targetStatus) => {
-    if (transitioningStatus || tournament?.status !== "active") return;
-
-    const isCompleting = targetStatus === "completed";
-    const confirmationMessage = isCompleting
-      ? "¿Marcar este torneo como completado?\n\nEl torneo quedará registrado como finalizado y ya no podrán modificarse sus equipos o participantes."
-      : "¿Cancelar este torneo?\n\nSe conservarán los participantes, cargos y demás historial registrado, pero ya no podrán realizarse nuevas operaciones sobre el torneo.";
-
-    if (!window.confirm(confirmationMessage)) return;
-
+  const runTransition = async () => {
+    const target = dialogTarget;
+    if (!target || busy) return;
+    setBusy(true);
     setErrors({});
-    setTransitioningStatus(targetStatus);
-
-    const result = isCompleting
+    const result = target === "completed"
       ? await actions.completeTournament(tournament_id)
       : await actions.cancelTournament(tournament_id);
 
     if (!result.ok) {
-      setErrors({
-        [result.code || "NETWORK_ERROR"]: true,
-      });
-      setTransitioningStatus(null);
+      setActionError(result);
+      setDialogTarget(null);
+      await loadTournament();
+      setBusy(false);
       return;
     }
 
-    setTournament((currentTournament) => ({
-      ...currentTournament,
-      ...result.data.tournament,
-      teams: currentTournament?.teams || [],
-    }));
-    setShowAddTeamForm(false);
-    setTransitioningStatus(null);
+    setDialogTarget(null);
+    setShowAddTeam(false);
+    setShowMetadata(false);
+    await loadTournament();
+    setBusy(false);
   };
 
-  const availableTeams = getManageableTeams(store.teams).filter((team) => {
-    const alreadyAdded = tournamentTeams.some(
-      (entry) => entry.team_id === team.id,
-    );
-
-    return !alreadyAdded;
-  });
-
-  if (loadingTournament) {
-    return <p>Cargando torneo...</p>;
-  }
+  if (loading) return <p role="status">Cargando torneo...</p>;
 
   if (!tournament) {
-    return <p>Torneo no encontrado.</p>;
+    const message = loadError?.status === 403
+      ? "No tienes acceso a este torneo."
+      : loadError?.status === 404
+      ? "Torneo no encontrado."
+      : "No se pudo cargar el torneo.";
+    return <Card><div className="empty-state" role="alert">
+      <h3>{message}</h3>
+      {loadError?.status !== 404 && <Button onClick={loadTournament}>Volver a intentar</Button>}
+      <Button variant="secondary" onClick={() => navigate(`/tournaments${location.search}`)}>Volver a torneos</Button>
+    </div></Card>;
   }
 
-  const statusData = getStatusData(tournament.status);
-  const scopedCoach = isScopedCoach(store);
-  const canAddTeam =
-    tournament.status === "active" &&
-    (!scopedCoach || availableTeams.length > 0);
-  const canManageLifecycle =
-    tournament.status === "active" &&
-    canManage(tournament) &&
-    ["club_owner", "coach"].includes(store.user?.role);
-  const hasRefereeFee = hasField(tournament, "default_referee_fee");
+  const status = getStatusData(tournament.status);
+  const firstErrorCode = Object.keys(errors).find((code) => errors[code] === true);
+  const openMatchBlocker = firstErrorCode === "TOURNAMENT_HAS_OPEN_MATCHES";
+  const pendingBlocker = ["TOURNAMENT_HAS_PENDING_CHARGES", "FINANCE_DEPENDENCY"].includes(firstErrorCode);
+  const canShowLifecycle = isOperational && canManageTournament;
+  const canTransition = canShowLifecycle && tournament.open_matches_count === 0;
 
   return (
     <div className="tournament-detail-page">
       <PageHeader
         variant="detail"
-        eyebrow="Torneo"
+        eyebrow={`${tournament.season_name || "Temporada"} · Torneo`}
         title={tournament.name}
-        subtitle={`${tournamentTeams.length} ${
-          tournamentTeams.length === 1 ? "equipo inscrito" : "equipos inscritos"
-        } · ${formatDate(tournament.start_date)}${
-          tournament.end_date ? ` — ${formatDate(tournament.end_date)}` : ""
-        }`}
-        onBack={() => navigate("/tournaments")}
-        actions={
-          !showAddTeamForm && canAddTeam ? (
-            <div className="form-actions">
-              <Button
-                onClick={() => {
-                  setShowAddTeamForm(true);
-                  setErrors({});
-                }}
-                disabled={Boolean(transitioningStatus)}
-              >
-                + Inscribir equipo
-              </Button>
-
-              {canManageLifecycle && (
-                <>
-                  <Button
-                    variant="secondary"
-                    onClick={() => handleStatusTransition("completed")}
-                    disabled={Boolean(transitioningStatus)}
-                  >
-                    {transitioningStatus === "completed"
-                      ? "Completando..."
-                      : "Completar torneo"}
-                  </Button>
-
-                  <Button
-                    variant="danger"
-                    onClick={() => handleStatusTransition("cancelled")}
-                    disabled={Boolean(transitioningStatus)}
-                  >
-                    {transitioningStatus === "cancelled"
-                      ? "Cancelando..."
-                      : "Cancelar torneo"}
-                  </Button>
-                </>
-              )}
-            </div>
-          ) : null
-        }
+        subtitle={`${formatDate(tournament.start_date)}${tournament.end_date ? ` — ${formatDate(tournament.end_date)}` : ""} · ${tournament.organizer_name || "Organizador no especificado"}`}
+        onBack={() => navigate(`/tournaments${location.search}`)}
       />
 
-      {(errors.INVALID_TOURNAMENT_STATUS ||
-        errors.TOURNAMENT_NOT_ACTIVE ||
-        errors.TOURNAMENT_HAS_PENDING_CHARGES ||
-        errors.FINANCE_DEPENDENCY ||
-        errors.FORBIDDEN ||
-        errors.NETWORK_ERROR) && (
-        <p className="form-error">
-          {errorMessages[
-            Object.keys(errors).find((code) => errors[code])
-          ] || errorMessages.NETWORK_ERROR}
-        </p>
+      {tournament.season_status === "closed" && (
+        <div className="tournament-context-banner historical" role="status">
+          Consulta histórica · Temporada {tournament.season_name} cerrada
+        </div>
       )}
 
-      <Card className="tournament-mobile-summary-card">
-        <div className="tournament-mobile-summary-row">
-          <span>Estado</span>
-
-          <span className={`status-badge ${statusData.className}`}>
-            {statusData.label}
-          </span>
-        </div>
-
-        <div className="tournament-mobile-summary-row">
-          <span>Fechas</span>
-
-          <strong>
-            {formatDate(tournament.start_date)}
-            {tournament.end_date ? ` — ${formatDate(tournament.end_date)}` : ""}
-          </strong>
-        </div>
-
-        {hasRefereeFee && (
-          <div className="tournament-mobile-summary-row">
-            <span>Arbitraje base</span>
-
-            <strong>
-              {formatMoney(
-                tournament.default_referee_fee,
-                tournament.currency_code,
-              )} por partido
-            </strong>
-          </div>
-        )}
-
-        <div className="tournament-mobile-summary-row">
-          <span>Organizador</span>
-
-          <strong>{tournament.organizer_name || "No especificado"}</strong>
-        </div>
-      </Card>
-
-      <div
-        className={`tournament-summary-grid tournament-summary-grid-desktop ${
-          hasRefereeFee ? "" : "tournament-summary-grid-compact"
-        }`}
-      >
+      <div className="tournament-summary-grid tournament-summary-grid-desktop">
         <Card className="tournament-summary-card">
-          <span className={`status-badge ${statusData.className}`}>
-            {statusData.label}
-          </span>
-
-          <h4>Estado del torneo</h4>
-
-          <p>{tournament.organizer_name || "Organizador no especificado"}</p>
+          <span className={`status-badge ${status.className}`}>{status.label}</span>
+          <h4>Estado del torneo</h4><p>{isOperational ? "Operación deportiva disponible" : "Información deportiva de solo consulta"}</p>
         </Card>
-
         <Card className="tournament-summary-card">
-          <div className="tournament-summary-icon">
-            <CalendarDays size={18} />
-          </div>
-
-          <h4>Fechas</h4>
-
-          <p>
-            {formatDate(tournament.start_date)}
-            {tournament.end_date ? ` — ${formatDate(tournament.end_date)}` : ""}
-          </p>
+          <Users size={18} /><h4>Equipos y roster</h4>
+          <p>{tournament.total_teams} equipos · {tournament.active_roster_count}/{tournament.total_roster_count} deportistas</p>
         </Card>
-
-        {hasRefereeFee && (
-          <Card className="tournament-summary-card">
-            <div className="tournament-summary-icon">
-              <DollarSign size={18} />
-            </div>
-
-            <h4>Arbitraje base</h4>
-
-            <p>
-              {formatMoney(
-                tournament.default_referee_fee,
-                tournament.currency_code,
-              )} por partido
-            </p>
-          </Card>
-        )}
+        <Card className="tournament-summary-card">
+          <CircleDot size={18} /><h4>Partidos</h4>
+          <p>{tournament.open_matches_count} abiertos · {tournament.completed_matches_count} completados</p>
+        </Card>
       </div>
 
-      {canConfigureSportsFinance(store) && tournament.status === "active" && (
-        <Card className="mb-4">
-          <FeeEditor
-            label="Arbitraje base por partido"
-            value={tournament.default_referee_fee}
-            currencyCode={tournament.currency_code}
-            helper="Se aplica a los partidos que se creen desde ahora. Los partidos existentes conservan su monto."
-            onSave={handleSaveDefaultRefereeFee}
-          />
-        </Card>
-      )}
-
-      {showAddTeamForm && (
-        <Card className="tournament-form-card">
-          <div className="tournament-section-heading">
-            <div>
-              <h4>Inscribir equipo</h4>
-              <p>
-                Selecciona un equipo del club y define el costo de inscripción
-                total para este torneo.
-              </p>
-            </div>
+      {firstErrorCode && (
+        <div className="tournament-inline-alert danger" role="alert">
+          <AlertCircle size={18} />
+          <div>
+            <strong>{errors.message || errorMessages[firstErrorCode] || errorMessages.NETWORK_ERROR}</strong>
+            {openMatchBlocker && <p>{errors.raw?.open_matches_count || tournament.open_matches_count} partidos requieren revisión.</p>}
+            {pendingBlocker && canConfigureFinance && <Button variant="secondary" onClick={() => navigate("/payments?payment_type=tournament")}>Revisar en Pagos</Button>}
           </div>
-
-          <form onSubmit={handleAddTeam} className="form">
-            <FormField
-              label="Equipo"
-              error={
-                errors.TEAM_ID_REQUIRED
-                  ? errorMessages.TEAM_ID_REQUIRED
-                  : errors.TEAM_ALREADY_IN_TOURNAMENT
-                  ? errorMessages.TEAM_ALREADY_IN_TOURNAMENT
-                  : errors.TEAM_NOT_FOUND
-                  ? errorMessages.TEAM_NOT_FOUND
-                  : null
-              }
-            >
-              <Select
-                value={teamId}
-                className={
-                  errors.TEAM_ID_REQUIRED ||
-                  errors.TEAM_ALREADY_IN_TOURNAMENT ||
-                  errors.TEAM_NOT_FOUND
-                    ? "input-error"
-                    : ""
-                }
-                onChange={(event) => {
-                  setTeamId(event.target.value);
-                  clearError(
-                    "TEAM_ID_REQUIRED",
-                    "TEAM_ALREADY_IN_TOURNAMENT",
-                    "TEAM_NOT_FOUND",
-                  );
-                }}
-              >
-                <option value="">Selecciona un equipo</option>
-
-                {availableTeams.map((team) => (
-                  <option key={team.id} value={team.id}>
-                    {team.name}
-                    {team.category?.name ? ` · ${team.category.name}` : ""}
-                  </option>
-                ))}
-              </Select>
-            </FormField>
-
-            {canConfigureSportsFinance(store) && (
-              <FormField
-                label={`Costo total de inscripción (${
-                  tournament.currency_code || "moneda no configurada"
-                })`}
-                helper="Luego podrás dividir este monto entre las deportistas inscritas."
-                error={
-                  errors.INVALID_AMOUNT ? errorMessages.INVALID_AMOUNT : null
-                }
-              >
-                <Input
-                  type="number"
-                  min="0"
-                  step="0.01"
-                  placeholder="Ej: 100.00"
-                  value={registrationFee}
-                  className={errors.INVALID_AMOUNT ? "input-error" : ""}
-                  onChange={(event) => {
-                    setRegistrationFee(event.target.value);
-                    clearError("INVALID_AMOUNT");
-                  }}
-                />
-              </FormField>
-            )}
-
-            {(errors.FORBIDDEN ||
-              errors.TOURNAMENT_NOT_ACTIVE ||
-              errors.NETWORK_ERROR) && (
-              <p className="form-error">
-                {errors.FORBIDDEN
-                  ? errorMessages.FORBIDDEN
-                  : errors.TOURNAMENT_NOT_ACTIVE
-                  ? errorMessages.TOURNAMENT_NOT_ACTIVE
-                  : errorMessages.NETWORK_ERROR}
-              </p>
-            )}
-
-            <div className="form-actions">
-              <Button
-                type="button"
-                variant="secondary"
-                onClick={closeAddTeamForm}
-              >
-                Cancelar
-              </Button>
-
-              <Button type="submit" disabled={loadingSubmit}>
-                {loadingSubmit ? "Inscribiendo..." : "Inscribir equipo"}
-              </Button>
-            </div>
-          </form>
-        </Card>
+        </div>
       )}
 
-      {!showAddTeamForm &&
-        (tournamentTeams.length === 0 ? (
-          <Card>
-            <div className="empty-state">
-              <Trophy size={30} />
+      <section className="tournament-detail-section" aria-labelledby="tournament-teams-title">
+        <div className="tournament-section-heading">
+          <div><h2 id="tournament-teams-title">Equipos inscritos</h2><p>Cada equipo mantiene su propio roster y sus partidos.</p></div>
+          {canAddTeam && availableTeams.length > 0 && !showAddTeam && (
+            <Button onClick={() => { setShowAddTeam(true); setErrors({}); }}>+ Inscribir equipo</Button>
+          )}
+        </div>
 
-              <h4>Aún no hay equipos inscritos</h4>
+        {canAddTeam && availableTeams.length === 0 && (
+          <div className="tournament-context-banner" role="status">
+            {scopedCoach ? "Solo puedes gestionar equipos que tienes asignados. No hay otro equipo disponible para inscribir." : "No hay equipos activos disponibles en esta temporada."}
+          </div>
+        )}
 
-              <p>
-                {canAddTeam
-                  ? "Inscribe un equipo para seleccionar jugadoras, asociar partidos y generar cargos."
-                  : "Los equipos inscritos en este torneo aparecerán aquí."}
-              </p>
-
-              {canAddTeam && (
-                <Button onClick={() => setShowAddTeamForm(true)}>
-                  Inscribir equipo
-                </Button>
-              )}
-            </div>
+        {showAddTeam && canAddTeam && (
+          <Card className="tournament-form-card">
+            <form className="form" onSubmit={handleAddTeam}>
+              <FormField label="Equipo" error={errors.TEAM_ID_REQUIRED ? errorMessages.TEAM_ID_REQUIRED : null}>
+                <Select value={teamId} onChange={(event) => setTeamId(event.target.value)}>
+                  <option value="">Selecciona un equipo</option>
+                  {availableTeams.map((team) => <option key={team.id} value={team.id}>{team.category?.name ? `${team.category.name} · ` : ""}{team.name}</option>)}
+                </Select>
+              </FormField>
+              {canConfigureFinance && <FormField label={`Costo de inscripción (${tournament.currency_code || "moneda"})`} helper="Se administrará después, separado del roster deportivo.">
+                <Input type="number" min="0" step="0.01" value={registrationFee} onChange={(event) => setRegistrationFee(event.target.value)} />
+              </FormField>}
+              <div className="form-actions">
+                <Button type="button" variant="secondary" onClick={() => setShowAddTeam(false)}>Cancelar</Button>
+                <Button type="submit" disabled={busy}>{busy ? "Inscribiendo..." : "Inscribir equipo"}</Button>
+              </div>
+            </form>
           </Card>
+        )}
+
+        {entries.length === 0 ? (
+          <Card><div className="empty-state"><Trophy size={30} /><h4>Aún no hay equipos inscritos</h4><p>El torneo puede prepararse progresivamente.</p>{canAddTeam && availableTeams.length > 0 && <Button onClick={() => setShowAddTeam(true)}>Inscribir equipo</Button>}</div></Card>
         ) : (
           <div className="tournament-teams-list">
-            {tournamentTeams.map((entry) => {
+            {entries.map((entry) => {
               const entryStatus = getStatusData(entry.status);
-
-              return (
-                <Card
-                  key={entry.id}
-                  className="tournament-team-card card-interactive"
-                  onClick={() => {
-                    navigate(`/tournament-teams/${entry.id}`);
-                  }}
-                >
-                  <div className="tournament-team-main">
-                    <div className="tournament-card-icon">
-                      <Users size={20} />
-                    </div>
-
-                    <div className="tournament-team-info">
-                      <h3>{entry.team?.name || "Equipo sin nombre"}</h3>
-
-                      <p>
-                        {entry.team?.category?.name
-                          ? `${entry.team.category.name} · `
-                          : ""}
-                        {entry.team?.gender === "female"
-                          ? "Femenino"
-                          : entry.team?.gender === "male"
-                          ? "Masculino"
-                          : "Mixto"}
-                      </p>
-                    </div>
-                  </div>
-
+              return <Link key={entry.id} className="tournament-team-card-link" to={`/tournament-teams/${entry.id}${location.search}`}>
+                <Card className="tournament-team-card">
+                  <div className="tournament-team-main"><Users size={20} /><div className="tournament-team-info">
+                    <h3>{entry.team?.category?.name ? `${entry.team.category.name} · ` : ""}{entry.team?.name || "Equipo"}</h3>
+                    <p>{entry.active_roster_count}/{entry.total_roster_count} roster · {entry.open_matches_count} abiertos · {entry.completed_matches_count} completados</p>
+                  </div></div>
                   <div className="tournament-team-meta">
-                    <span className={`status-badge ${entryStatus.className}`}>
-                      {entryStatus.label}
-                    </span>
-
-                    {scopedCoach &&
-                      (entry.is_assigned ? <AssignedBadge /> : <ReadOnlyBadge />)}
-
-                    <span>{entry.total_players || 0} deportistas</span>
-
-                    <span>{entry.total_matches || 0} partidos</span>
-
-                    {hasField(entry, "registration_fee") && (
-                      <strong>
-                        {formatMoney(
-                          entry.registration_fee,
-                          entry.currency_code || tournament.currency_code,
-                        )}
-                      </strong>
-                    )}
+                    <span className={`status-badge ${entryStatus.className}`}>{entryStatus.label}</span>
+                    {scopedCoach && (entry.is_assigned ? <AssignedBadge /> : <ReadOnlyBadge />)}
+                    {hasField(entry, "registration_fee") && <span>Administración disponible</span>}
                   </div>
                 </Card>
-              );
+              </Link>;
             })}
           </div>
-        ))}
+        )}
+      </section>
+
+      <section className="tournament-detail-section" aria-labelledby="tournament-matches-title">
+        <div className="tournament-section-heading"><div><h2 id="tournament-matches-title">Partidos</h2><p>Seguimiento contextual del torneo.</p></div></div>
+        {tournament.open_matches_count > 0 && <div className="tournament-inline-alert warning" role="status"><AlertCircle size={18} /><strong>{tournament.open_matches_count} partidos pendientes de cerrar</strong></div>}
+        {matches.length === 0 ? <Card><div className="empty-state"><CalendarDays size={28} /><h4>No hay partidos registrados</h4><p>Crea partidos desde la participación de cada equipo.</p></div></Card> : <div className="tournament-match-list">{matches.map((match) => <MatchRow key={match.id} match={match} contextQuery={contextQuery} from={detailPath} />)}</div>}
+      </section>
+
+      {canShowLifecycle && (
+        <section className="tournament-detail-section" aria-labelledby="tournament-lifecycle-title">
+          <div className="tournament-section-heading"><div><h2 id="tournament-lifecycle-title">Cerrar torneo</h2><p>Completar y cancelar son estados terminales.</p></div></div>
+          {canTransition ? <Card><div className="tournament-lifecycle-actions">
+            <Button variant="secondary" onClick={() => setDialogTarget("completed")}>Completar torneo</Button>
+            {tournament.has_pending_admin_dependencies ? <div className="tournament-inline-alert warning" role="status"><AlertCircle size={18} /><span>{canConfigureFinance ? `${tournament.pending_admin_dependencies_count} cargos pendientes impiden cancelar.` : "Existen dependencias administrativas pendientes."}</span>{canConfigureFinance && <Button variant="secondary" onClick={() => navigate("/payments?payment_type=tournament")}>Ir a Pagos</Button>}</div> : <Button variant="danger" onClick={() => setDialogTarget("cancelled")}>Cancelar torneo</Button>}
+          </div></Card> : <div className="tournament-inline-alert warning" role="status"><AlertCircle size={18} /><span>Resuelve los partidos abiertos antes de completar o cancelar.</span></div>}
+        </section>
+      )}
+
+      {(canEditTournament || canConfigureFinance) && (
+        <section className="tournament-detail-section tournament-admin-section" aria-labelledby="tournament-admin-title">
+          <div className="tournament-section-heading"><div><h2 id="tournament-admin-title">{canConfigureFinance ? "Administración" : "Información del torneo"}</h2><p>La metadata puede editarse mientras el torneo está activo; los históricos existentes no se recalculan.</p></div>{canEditTournament && !showMetadata && <Button variant="secondary" onClick={() => setShowMetadata(true)}>Editar información</Button>}</div>
+          {showMetadata && <Card><form className="form" onSubmit={handleSaveMetadata}>
+            <FormField label="Nombre"><Input value={metadata.name} onChange={(event) => setMetadata({ ...metadata, name: event.target.value })} /></FormField>
+            <FormField label="Organizador"><Input value={metadata.organizer_name} onChange={(event) => setMetadata({ ...metadata, organizer_name: event.target.value })} /></FormField>
+            <div className="tournament-form-grid"><FormField label="Inicio"><Input type="date" value={metadata.start_date} onChange={(event) => setMetadata({ ...metadata, start_date: event.target.value })} /></FormField><FormField label="Fin"><Input type="date" min={metadata.start_date} value={metadata.end_date} onChange={(event) => setMetadata({ ...metadata, end_date: event.target.value })} /></FormField></div>
+            <div className="form-actions"><Button type="button" variant="secondary" onClick={() => setShowMetadata(false)}>Descartar</Button><Button type="submit" disabled={busy}>{busy ? "Guardando..." : "Guardar información"}</Button></div>
+          </form></Card>}
+          {canEditTournament && hasField(tournament, "default_referee_fee") && <Card><FeeEditor label="Arbitraje predeterminado por partido" value={tournament.default_referee_fee} currencyCode={tournament.currency_code} helper="Se utiliza como valor predeterminado en nuevos partidos. Los partidos existentes no se modifican." onSave={saveDefaultFee} /></Card>}
+          {!canEditTournament && canConfigureFinance && <Card><p>La información deportiva está cerrada. La administración histórica permitida se conserva en sus contextos financieros.</p></Card>}
+        </section>
+      )}
+
+      {dialogTarget && <ConfirmationDialog
+        busy={busy}
+        danger={dialogTarget === "cancelled"}
+        titleId="tournament-transition-title"
+        descriptionId="tournament-transition-description"
+        title={dialogTarget === "completed" ? "Completar torneo" : "Cancelar torneo"}
+        confirmLabel={dialogTarget === "completed" ? "Confirmar completado" : "Confirmar cancelación"}
+        onCancel={() => setDialogTarget(null)}
+        onConfirm={runTransition}
+      >
+        {dialogTarget === "completed" ? <>
+          <p>El torneo quedará completado y su información deportiva dejará de ser editable. No podrá reabrirse en SportFlow 1.0.</p>
+          {tournament.total_matches === 0 && <p><strong>Este torneo no tiene partidos registrados. Aun así puedes completarlo.</strong></p>}
+          <p>El roster y los partidos registrados conservarán su historial.</p>
+        </> : <>
+          <p>La cancelación es terminal y no permite reactivación.</p>
+          <p>El roster, los partidos, los pagos y los recibos conservarán su historial.</p>
+        </>}
+      </ConfirmationDialog>}
     </div>
   );
 };

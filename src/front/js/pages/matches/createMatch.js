@@ -1,5 +1,5 @@
 import React, { useState, useContext, useEffect, useRef } from "react";
-import { useNavigate, useParams } from "react-router-dom";
+import { useNavigate, useParams, useSearchParams } from "react-router-dom";
 import { Context } from "../../store/appContext";
 
 import { PageHeader } from "../../component/ui/pageHeader";
@@ -23,6 +23,8 @@ export const CreateMatch = () => {
   const { store, actions } = useContext(Context);
   const { team_id } = useParams();
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
+  const fixedTournamentTeamId = searchParams.get("tournament_team") || "";
 
   const [opponentName, setOpponentName] = useState("");
   const [date, setDate] = useState("");
@@ -43,6 +45,7 @@ export const CreateMatch = () => {
   const selectedTournamentEntry = tournamentEntries.find(
     (entry) => entry.id === tournamentTeamId,
   );
+  const isTournamentContext = Boolean(fixedTournamentTeamId);
   const refereeCurrencyCode =
     selectedTournamentEntry?.currency_code ||
     selectedTournamentEntry?.tournament?.currency_code ||
@@ -67,7 +70,29 @@ export const CreateMatch = () => {
       setEligiblePlayersCount(playersResult.ok ? playersResult.data.length : 0);
 
       if (result.ok) {
-        setTournamentEntries(result.data.tournament_entries || []);
+        const entries = result.data.tournament_entries || [];
+        setTournamentEntries(entries);
+
+        if (fixedTournamentTeamId) {
+          const fixedEntry = entries.find(
+            (entry) => entry.id === fixedTournamentTeamId,
+          );
+
+          if (fixedEntry) {
+            setTournamentTeamId(fixedEntry.id);
+            setEligiblePlayersCount(
+              fixedEntry.currently_eligible_players_count || 0,
+            );
+            if (canConfigureFinance) {
+              setRefereeFee(
+                String(fixedEntry.tournament?.default_referee_fee ?? ""),
+              );
+            }
+          } else {
+            setErrors({ TOURNAMENT_TEAM_NOT_FOUND: true });
+            setEligiblePlayersCount(0);
+          }
+        }
       } else {
         setTournamentEntries([]);
       }
@@ -77,7 +102,7 @@ export const CreateMatch = () => {
 
     loadTournamentEntries();
     return () => { loadRequestId.current += 1; };
-  }, [team_id]);
+  }, [team_id, fixedTournamentTeamId]);
 
   const clearFieldError = (errorCode) => {
     setErrors((prev) => ({
@@ -128,6 +153,20 @@ export const CreateMatch = () => {
 
     if (!result.ok) {
       setErrors({ [result.code]: true });
+      if (result.code === "TEAM_HAS_NO_ELIGIBLE_PLAYERS") {
+        setEligiblePlayersCount(0);
+      }
+      return;
+    }
+
+    if (isTournamentContext) {
+      const next = new URLSearchParams(searchParams);
+      next.delete("tournament_team");
+      navigate(
+        `/tournament-teams/${fixedTournamentTeamId}${
+          next.toString() ? `?${next.toString()}` : ""
+        }`,
+      );
       return;
     }
 
@@ -141,13 +180,23 @@ export const CreateMatch = () => {
         eyebrow="Partido"
         title="Crear partido"
         subtitle="Prepara la información básica del partido."
-        onBack={() => navigate(`/teams/${team_id}/matches`)}
+        onBack={() => {
+          if (isTournamentContext) {
+            const next = new URLSearchParams(searchParams);
+            next.delete("tournament_team");
+            navigate(`/tournament-teams/${fixedTournamentTeamId}${next.toString() ? `?${next.toString()}` : ""}`);
+          } else {
+            navigate(`/teams/${team_id}/matches`);
+          }
+        }}
       />
 
       {!canManage(team) || !isTeamOperational(team) || eligiblePlayersCount === 0 ? (
         <ReadOnlyNotice>
           {eligiblePlayersCount === 0
-            ? "Este equipo no tiene deportistas elegibles. Agrega una deportista activa antes de crear el partido."
+            ? isTournamentContext
+              ? "Necesitas al menos una persona elegible en el roster del torneo para crear un partido."
+              : "Este equipo no tiene deportistas elegibles. Agrega una persona activa antes de crear el partido."
             : "No puedes crear partidos para este equipo en este momento."}
         </ReadOnlyNotice>
       ) : (
@@ -215,7 +264,11 @@ export const CreateMatch = () => {
 
           <FormField
             label="Competencia"
-            helper="Opcional. Selecciona un torneo activo o deja el partido como independiente."
+            helper={
+              isTournamentContext
+                ? `Contexto fijado desde ${selectedTournamentEntry?.tournament?.season_name || "la temporada del torneo"}.`
+                : "Opcional. Selecciona un torneo activo o deja el partido como independiente."
+            }
             error={
               errors.TOURNAMENT_TEAM_MISMATCH
                 ? errorMessages.TOURNAMENT_TEAM_MISMATCH
@@ -224,7 +277,11 @@ export const CreateMatch = () => {
                 : null
             }
           >
-            <Select
+            {isTournamentContext ? (
+              <div className="input" role="status">
+                {selectedTournamentEntry?.tournament?.name || "Cargando torneo..."}
+              </div>
+            ) : <Select
               value={tournamentTeamId}
               disabled={loadingTournaments}
               className={
@@ -263,7 +320,7 @@ export const CreateMatch = () => {
                   {entry.tournament?.name || "Torneo"}
                 </option>
               ))}
-            </Select>
+            </Select>}
           </FormField>
 
           {canConfigureFinance && (

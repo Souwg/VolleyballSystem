@@ -31,6 +31,9 @@ const STALE_RESPONSE = { ok: false, code: "STALE_RESPONSE" };
 const getState = ({ getStore, getActions, setStore }) => {
   let dashboardRequestId = 0;
   let clubMatchesRequestId = 0;
+  let tournamentsRequestId = 0;
+  let tournamentDetailRequestId = 0;
+  let tournamentPlayersRequestId = 0;
   let coachAccessSyncInFlight = false;
 
   const getSessionClub = () => getStore().club || getStore().user?.club;
@@ -1568,6 +1571,10 @@ const getState = ({ getStore, getActions, setStore }) => {
         }
       },
       getTournaments: async (filters = {}) => {
+        tournamentsRequestId += 1;
+        const requestId = tournamentsRequestId;
+        setStore({ tournaments: [] });
+
         try {
           const params = new URLSearchParams();
 
@@ -1588,6 +1595,7 @@ const getState = ({ getStore, getActions, setStore }) => {
           const resp = await authFetch(endpoint);
           const result = await parseResponse(resp);
 
+          if (requestId !== tournamentsRequestId) return STALE_RESPONSE;
           if (!result.ok) return result;
 
           setStore({
@@ -1596,6 +1604,7 @@ const getState = ({ getStore, getActions, setStore }) => {
 
           return successResponse(result.data);
         } catch (error) {
+          if (requestId !== tournamentsRequestId) return STALE_RESPONSE;
           return networkError("Error loading tournaments:", error);
         }
       },
@@ -1614,9 +1623,6 @@ const getState = ({ getStore, getActions, setStore }) => {
 
           if (!result.ok) return result;
 
-          const actions = getActions();
-          await actions.getTournaments();
-
           return successResponse(result.data);
         } catch (error) {
           return networkError("Error creating tournament:", error);
@@ -1624,10 +1630,15 @@ const getState = ({ getStore, getActions, setStore }) => {
       },
 
       getTournamentDetail: async (tournamentId) => {
+        tournamentDetailRequestId += 1;
+        const requestId = tournamentDetailRequestId;
+        setStore({ currentTournament: null, tournamentTeams: [] });
+
         try {
           const resp = await authFetch(`/api/tournaments/${tournamentId}`);
           const result = await parseResponse(resp);
 
+          if (requestId !== tournamentDetailRequestId) return STALE_RESPONSE;
           if (!result.ok) return result;
 
           setStore({
@@ -1637,6 +1648,7 @@ const getState = ({ getStore, getActions, setStore }) => {
 
           return successResponse(result.data);
         } catch (error) {
+          if (requestId !== tournamentDetailRequestId) return STALE_RESPONSE;
           return networkError("Error loading tournament detail:", error);
         }
       },
@@ -1654,11 +1666,6 @@ const getState = ({ getStore, getActions, setStore }) => {
           const result = await parseResponse(resp);
 
           if (!result.ok) return result;
-
-          const actions = getActions();
-
-          await actions.getTournamentDetail(tournamentId);
-          await actions.getTournaments();
 
           return successResponse(result.data);
         } catch (error) {
@@ -1679,9 +1686,6 @@ const getState = ({ getStore, getActions, setStore }) => {
 
           if (!result.ok) return result;
 
-          const actions = getActions();
-          await actions.getTournaments();
-
           return successResponse(result.data);
         } catch (error) {
           return networkError("Error completing tournament:", error);
@@ -1700,9 +1704,6 @@ const getState = ({ getStore, getActions, setStore }) => {
           const result = await parseResponse(resp);
 
           if (!result.ok) return result;
-
-          const actions = getActions();
-          await actions.getTournaments();
 
           return successResponse(result.data);
         } catch (error) {
@@ -1726,9 +1727,6 @@ const getState = ({ getStore, getActions, setStore }) => {
           const result = await parseResponse(resp);
 
           if (!result.ok) return result;
-
-          const actions = getActions();
-          await actions.getTournamentDetail(tournamentId);
 
           return successResponse(result.data);
         } catch (error) {
@@ -1757,6 +1755,10 @@ const getState = ({ getStore, getActions, setStore }) => {
       },
 
       getTournamentTeamPlayers: async (tournamentTeamId) => {
+        tournamentPlayersRequestId += 1;
+        const requestId = tournamentPlayersRequestId;
+        setStore({ tournamentPlayers: [] });
+
         try {
           const resp = await authFetch(
             `/api/tournament-teams/${tournamentTeamId}/players`
@@ -1764,6 +1766,7 @@ const getState = ({ getStore, getActions, setStore }) => {
 
           const result = await parseResponse(resp);
 
+          if (requestId !== tournamentPlayersRequestId) return STALE_RESPONSE;
           if (!result.ok) return result;
 
           setStore({
@@ -1772,6 +1775,7 @@ const getState = ({ getStore, getActions, setStore }) => {
 
           return successResponse(result.data);
         } catch (error) {
+          if (requestId !== tournamentPlayersRequestId) return STALE_RESPONSE;
           return networkError("Error loading tournament players:", error);
         }
       },
@@ -1794,9 +1798,6 @@ const getState = ({ getStore, getActions, setStore }) => {
           const result = await parseResponse(resp);
 
           if (!result.ok) return result;
-
-          const actions = getActions();
-          await actions.getTournamentTeamPlayers(tournamentTeamId);
 
           return successResponse(result.data);
         } catch (error) {

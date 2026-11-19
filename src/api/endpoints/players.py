@@ -565,9 +565,16 @@ def update_player_active_status(player_id):
             403
         )
 
-    player = Player.query.get(player_id)
+    # Tournament roster writes lock the same Player row before eligibility.
+    player = (
+        Player.query
+        .filter_by(id=player_id, club_id=user.club_id)
+        .populate_existing()
+        .with_for_update()
+        .first()
+    )
 
-    if not player or player.club_id != user.club_id:
+    if not player:
         return error_response(
             "Jugador no encontrado",
             "PLAYER_NOT_FOUND",
@@ -1454,9 +1461,17 @@ def update_player_status(player_id):
             403
         )
 
-    player = Player.query.get(player_id)
+    # Shared eligibility order with Tournament roster writes: Player first,
+    # then the concrete TeamPlayer membership.
+    player = (
+        Player.query
+        .filter_by(id=player_id, club_id=user.club_id)
+        .populate_existing()
+        .with_for_update()
+        .first()
+    )
 
-    if not player or player.club_id != user.club_id:
+    if not player:
         return error_response(
             "Jugador no encontrado",
             "PLAYER_NOT_FOUND",
@@ -1488,7 +1503,7 @@ def update_player_status(player_id):
         player_id=player.id,
         team_id=team_id,
         left_at=None
-    ).first()
+    ).populate_existing().with_for_update().first()
 
     if not membership:
         return error_response(

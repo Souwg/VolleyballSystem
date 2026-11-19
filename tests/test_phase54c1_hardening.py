@@ -23,6 +23,7 @@ from src.api.models import (
     Country,
     PaymentReceipt,
     PlayerPayment,
+    Season,
     Team,
     Tournament,
     TournamentTeam,
@@ -369,7 +370,11 @@ def test_registration_locks_tournament_before_reading_status(
     )
 
     assert response.status_code == 201
-    assert locks == [(Tournament, True)]
+    assert locks == [
+        (Tournament, True),
+        (Team, False),
+        (Season, False),
+    ]
 
 
 @pytest.mark.parametrize("action", ["complete", "cancel"])
